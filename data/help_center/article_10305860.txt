@@ -1,0 +1,62 @@
+Title: Guest Reviews – How to Manage Property Ratings?
+Body: <h3 id="h_f6711b2c5b" class="intercom-align-justify"><b>What are Guest Reviews?</b></h3>
+<p class="intercom-align-justify no-margin"><br>Guest reviews are a vital part of building trust and reputation for any property. They provide valuable feedback for future Guests looking for a place that meets their expectations, while also helping hosts better understand Guest needs and improve their services. This, in turn, leads to increased bookings.</p>
+<p class="intercom-align-justify no-margin"></p>
+<div class="intercom-container"><img src="https://downloads.intercomcdn.com/i/o/xa8cb3gu/1310169833/0912225a230f337232713cc5575a/image.png?expires=1740333600&amp;signature=e37d3e6fdd10a3a430d0867d65946490dce4638d77de6cac1210981ee6c3087a&amp;req=dSMmFsh4lIlcWvMW1HO4zRZIa6uM0%2FSCpASEeQbpsVd5XK%2FgqjeK8ZD%2FSif9%0AGBxx%0A" width="500"></div><p class="intercom-align-justify no-margin"><br>​</p>
+<h3 id="h_aa3c5b2737" class="intercom-align-justify">
+<b>What does a review consist of?</b><br>
+</h3>
+<p class="intercom-align-justify no-margin">Each review includes:</p>
+<ul>
+<li>
+<p class="intercom-align-justify no-margin">Star rating from 1 to 5</p>
+</li>
+<li>
+<p class="intercom-align-justify no-margin">Guest's comment</p>
+</li>
+<li>
+<p class="intercom-align-justify no-margin">Host's reply<br>​ </p>
+</li>
+</ul><h3 id="h_6afaf69e83" class="intercom-align-justify"><b>How can Guests leave a review?</b></h3>
+<p class="intercom-align-justify no-margin"><br>After the guest's stay, an email with a link to leave a review is sent. The first email arrives 24 hours post-checkout, with 3-4 reminder emails sent within the next month. Reviews can also be submitted directly from the reservation window.</p>
+<p class="intercom-align-justify no-margin"></p>
+<p class="intercom-align-justify no-margin"><b>Important! Only guests who have made a reservation and completed their stay at your property can leave a review.</b><br>​</p>
+<h3 id="h_e39fac094f" class="intercom-align-justify"><b>How to respond to a review?</b></h3>
+<p class="intercom-align-justify no-margin"><br>To reply, follow these steps:</p>
+<ol>
+<li>
+<p class="intercom-align-justify no-margin">Log in to your profile on <a href="http://www.alohacamp.com" target="_blank" class="intercom-content-link">www.alohacamp.com</a></p>
+</li>
+<li>
+<p class="intercom-align-justify no-margin">In the top menu, click on <b>My Places</b>.</p>
+</li>
+<li>
+<p class="intercom-align-justify no-margin">Select the property you wish to respond to reviews for and click <b>Reviews Management.</b></p>
+</li>
+<li>
+<p class="intercom-align-justify no-margin">You will see all reviews for that property.</p>
+<p class="no-margin"></p>
+<div class="intercom-container"><img src="https://downloads.intercomcdn.com/i/o/xa8cb3gu/1310170196/f75a6bbd40b025ba0bab077fa6cd/image.png?expires=1740333600&amp;signature=b1814c6b9bb4c38a6a2f002b36cf2c85a5a636b3523de9f2c54eaf8084478247&amp;req=dSMmFsh5nYBWX%2FMW1HO4zfak5RTjDRAgTp91QhGc5trxJZqIzfAN0Cr%2Bdzu%2B%0A6O1p%0A"></div>
+<p class="no-margin"></p>
+</li>
+<li>
+<p class="intercom-align-justify no-margin">Click <b>Reply,</b> write your comment, and save it by clicking <b>Publish Reply</b>.<br>​</p>
+<div class="intercom-container"><img src="https://downloads.intercomcdn.com/i/o/xa8cb3gu/1310170624/8d8374baf4ac239b6b7389d3fdea/image.png?expires=1740333600&amp;signature=bad53e1f354170fb8c652ed3d5c03428be63cc2f0ee10cab7819c3f6990d7f9c&amp;req=dSMmFsh5nYddXfMW1HO4zU6GMbZ%2FQAiz%2BWZ%2B%2FM63%2BGie9OEAYuVEmap2xnA4%0AvBvL%0A"></div>
+<p class="no-margin"></p>
+</li>
+<li>
+<p class="no-margin">Once saved, your reply will be visible on your property page.</p>
+<p class="no-margin"></p>
+<div class="intercom-container"><img src="https://downloads.intercomcdn.com/i/o/xa8cb3gu/1310171134/a8b1c35a01c1f6b58cc16bf93cd6/image.png?expires=1740333600&amp;signature=debe70323821daa8b807f7f36eb99e84f62d257c4b5044ebd03e29249cee6bdf&amp;req=dSMmFsh5nIBcXfMW1HO4zcdmx6D60KzfjsN0rRlsc1pmoPmV0B26FSFCieES%0AJxC6%0A"></div>
+<p class="no-margin"></p>
+</li>
+</ol><p class="no-margin"></p>
+<p class="intercom-align-justify no-margin">If you need to edit your response, please contact us at <a target="_blank" class="intercom-content-link">hello@alohacamp.com</a>.</p>
+<p class="intercom-align-justify no-margin"></p>
+<h3 id="h_d1c31de991" class="intercom-align-justify"><b>Can a review be removed?</b></h3>
+<p class="intercom-align-justify no-margin"><br>Sometimes you may receive a negative review. Reviews cannot be removed as this ensures transparency and builds trust with future Guests. Every user has the right to share a subjective opinion based on their experience at your property.</p>
+<p class="intercom-align-justify no-margin"></p>
+<p class="intercom-align-justify no-margin">If you disagree with a review or find it unfair, we recommend reaching out to the Guest to clarify the situation. Upon their request, we will edit the review.</p>
+<p class="intercom-align-justify no-margin"></p>
+<p class="intercom-align-justify no-margin">If a review contains false information or was left by a Guest who did not stay at your property, please contact us via email at <a target="_blank" class="intercom-content-link">hello@alohacamp.com</a> for verification and resolution.</p>
+Metadata: source=HelpCenter, type=Article, language=en, area=Uncategorized

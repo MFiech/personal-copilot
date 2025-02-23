@@ -1,0 +1,60 @@
+Title: Legal Distribution of Responsibilities
+Body: <p class="no-margin">On this page, you will find information about the roles of AlohaCamp and Hosts in facilitating your stay. Please note that AlohaCamp does not operate accommodation facilities or provide tourist services. Our role is to provide access to the alohacamp.com platform, where Hosts post their listings.</p>
+<p class="no-margin"></p>
+<p class="no-margin">Accommodation services and tourist services are provided directly by the Hosts and are their responsibility.</p>
+<p class="no-margin"></p>
+<p class="no-margin">Payment services are handled by a licensed payment operator - Stripe Payments Europe Ltd., located at 1 Grand Canal Street Lower D02 H210 Dublin.</p>
+<p class="no-margin"></p>
+<p class="no-margin">Below you will find a detailed breakdown of the responsibilities between AlohaCamp and the Hosts.</p>
+<ol>
+<li>
+<p class="no-margin">The Host is responsible for the fulfillment of the accommodation contract. They are accountable for your stay and the services you book with them. The Host also determines the cancellation policy, including any associated costs. The Host is responsible for the quality of your stay.</p>
+</li>
+<li>
+<p class="no-margin">On the page of each property, we inform whether the Host is a business entity or not. If the Host is not a business entity, consumer protection laws do not apply to such a reservation.</p>
+</li>
+<li>
+<p class="no-margin">AlohaCamp administers the alohacamp.com platform. AlohaCamp posts the Host's offer on the platform and transmits, on behalf of the Host, the information they have provided about: </p>
+<p class="no-margin"></p>
+<ul>
+<li>
+<p class="no-margin">the price for accommodation services, including the accepted payment method, payment terms, and cancellation policy and costs,</p>
+</li>
+<li>
+<p class="no-margin">the location of the property,</p>
+</li>
+<li>
+<p class="no-margin">accommodation conditions, amenities at the property, property location,</p>
+</li>
+<li>
+<p class="no-margin">the number of people who can stay at the property,</p>
+</li>
+<li>
+<p class="no-margin">the possible availability of the property for persons with disabilities,</p>
+</li>
+<li>
+<p class="no-margin">the possible availability of the property for pets,</p>
+</li>
+<li>
+<p class="no-margin">the possible availability of parking spaces at the property.</p>
+<p class="no-margin"></p>
+</li>
+</ul>
+</li>
+<li>
+<p class="no-margin">AlohaCamp, on its behalf, provides recommendations regarding possible reservations and attractions in the region.</p>
+</li>
+<li>
+<p class="no-margin">AlohaCamp is not responsible for the fulfillment of the contract with the Host. If you wish to file a complaint regarding the Host's services, you must contact the Host directly.</p>
+</li>
+<li>
+<p class="no-margin">If you encounter any issues with the operation of the alohacamp.com platform, please contact our customer service department at <a href="mailto:hello@alohacamp.com" target="_blank" class="intercom-content-link">hello@alohacamp.com</a>.</p>
+</li>
+<li>
+<p class="no-margin">AlohaCamp is not a payment entity and does not accept payments on behalf of the Host. If you have payment issues, please contact the payment operator - Stripe Payments Europe Ltd. You can find contact information and how to handle disputes at the following link:<a href="https://support.stripe.com/questions/how-to-handle-disputes" target="_blank" class="intercom-content-link"> https://support.stripe.com/questions/how-to-handle-disputes</a>. You can also contact your bank (the issuer of your payment card).</p>
+</li>
+<li>
+<p class="no-margin">If you want to request a refund for a canceled reservation and you are entitled to a full or partial refund according to the terms, please contact the Host directly. Our customer service department can assist you in establishing contact with the Host.</p>
+</li>
+</ol><p class="no-margin"></p>
+Metadata: source=HelpCenter, type=Article, language=en, area=Uncategorized

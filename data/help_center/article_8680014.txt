@@ -1,0 +1,35 @@
+Title: What kind of photos should be used in the property's profile?
+Body: <p class="no-margin">Photos play a key role in creating a first impression, as they provide a visual representation of your place. They are an extremely effective tool for attracting Guests, as they allow them to quickly understand and evaluate the attractiveness of a destination. Through aesthetic and carefully thought-out photographs, you can effectively convey the atmosphere, style and unique features of your property, which affects potential Guests' decision to choose it. Therefore, taking care of high quality and appropriate presentation of photos is a crucial element in building the uniqueness of your offer.</p>
+<p class="no-margin"></p>
+<p class="no-margin"><b>How do you choose the main photo?</b></p>
+<p class="no-margin"></p>
+<p class="no-margin">The main photo is very important, as it is the first impression Guests get when browsing our website. It is their first contact with the accommodation that competes with other available options. It attracts their attention, prompting them to go into the details of your particular offer. A properly composed, attractive and encouraging main photo can determine the choice of our Guests.</p>
+<p class="no-margin">The main photo should show the entirety of your property from the outside, along with possible surroundings. Avoid photos showing only the front part of the facility, narrow frames or very detailed shots. Try to adapt the main photo to the season. Guests highly appreciate the atmosphere and ambience in the photos, as it is a foretaste of what they expect to find when they arrive there. In winter, bet on photos with snow or Christmas decorations, in spring show nature awakening around, and in autumn play with colors that create atmosphere.</p>
+<p class="no-margin"></p>
+<p class="no-margin"><b>Main gallery</b></p>
+<p class="no-margin"></p>
+<p class="no-margin">To give the best presentation of your facility, include in the gallery photos of all the most important places from the inside. Besides, also try to accurately portray the facility from the outside and its surroundings. Remember that AlohaCamp is all about nature. Guests also want to see the area around the place where they plan to go, so don't hesitate to show where you are.</p>
+<p class="no-margin"></p>
+<p class="no-margin"><b>Photos of the property</b></p>
+<p class="no-margin"></p>
+<p class="no-margin">These photos should include in more specifics that Guests will not find in the main gallery. Here, focus on the details. Include photos of all the rooms that are included, and indicate any available amenities. If you have several facilities that are different from each other, make sure this is visible when looking through each one's gallery.</p>
+<p class="no-margin"></p>
+<p class="no-margin"><b>Be honest</b></p>
+<p class="no-margin"></p>
+<p class="no-margin">It is extremely important that photos accurately reflect reality and provide reliable information about the offered place. When browsing photos, Guests imagine what awaits them upon arrival. If any photo suggests the presence of elements or amenities that are not actually there, it is crucial to honestly indicate this in the description of the property. Transparency in the presentation of the offer is key to building trust with Guests and avoiding disappointment upon arrival. This approach not only builds a positive image, but also contributes to the satisfaction and enjoyment of clients.</p>
+<p class="no-margin"></p>
+<p class="no-margin"><b>AlohaPhoto</b></p>
+<p class="no-margin"></p>
+<p class="no-margin">If you don't have professional photos yet, but would like to improve the visual presentation of your accommodation, we warmly encourage you to join our <b>AlohaPhoto</b> program. Under this program, we offer the services of talented photographers who are willing to come to your property. In exchange for a night's stay, they commit to a professional photography session that will provide you with great quality photos for use on your website or in promotional materials. This is a great opportunity to enhance the presentation of your offer and attract the attention of potential Guests.</p>
+<p class="no-margin"></p>
+<p class="no-margin">To join AlohaPhoto you need to:</p>
+<p class="no-margin"></p>
+<p class="no-margin">1. Go to <b>My Places</b></p>
+<p class="no-margin">2) Go to the Edit <b>Object</b> tab</p>
+<p class="no-margin">3. In <b>Basic Data</b>, tick permission to communicate with photographers</p>
+<p class="no-margin"></p>
+<div class="intercom-container"><img src="https://downloads.intercomcdn.com/i/o/902243207/48dd298c49d24a86f9f0522c/image.png?expires=1740333600&amp;signature=b8dc5310308e85c69115e6515f887dfb6415fcd29ddbefd17467611a8990ec13&amp;req=fSAlFM19n4FYFb4f3HP0gOffjchMQeqstHU%2BEdA7Z8vcrBcu4DVcYustPGFx%0AbPM%3D%0A"></div><p class="no-margin"></p>
+<p class="no-margin">From now on, photographers will be able to send you collaboration offers.</p>
+<p class="no-margin"></p>
+<p class="no-margin">Once the collaboration is completed, you will receive photos that you can use on AlohaCamp or your personal website and to promote the facility. The photos cannot be used on competitive booking platforms.</p>
+Metadata: source=HelpCenter, type=Article, language=en, area=Uncategorized

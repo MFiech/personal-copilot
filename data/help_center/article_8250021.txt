@@ -1,0 +1,22 @@
+Title: Restoring a cancelled reservation
+Body: <p class="no-margin">If the Host or Guest cancels a reservation that has not yet been paid for, but the customer still wishes to come, there is a possibility to restore such a reservation.</p>
+<p class="no-margin">To restore a canceled reservation, you need to:</p>
+<ol>
+<li>
+<p class="no-margin">Log in to your profile at www.alohacamp.com</p>
+</li>
+<li>
+<p class="no-margin">In the upper right corner go to the menu and select <b>My Objects</b> and choose <b>Reservations</b>.</p>
+</li>
+<li>
+<p class="no-margin">In the <i>Canceled</i> tab you will find all our canceled reservations. Select the reservation you want to restore and click <b>Edit Reservation.</b></p>
+</li>
+<li>
+<p class="no-margin">In the editing window we have the possibility to change the place, dates the number of Guests or the price.</p>
+</li>
+</ol><div class="intercom-container"><img src="https://downloads.intercomcdn.com/i/o/805629542/b5ad566dd56591c1fa652ec2/fe82fc2a-ecd0-478e-96c9-ef526664bd07?expires=1740333600&amp;signature=bf84cf4c260aeb9b060b22454670bc6d2490ac204c833be3e2d99e7c27541994&amp;req=fCAiEMt3mIVdFb4f3HP0gG8pgLc7HvZEHhV8PnflXPPLhbMg2%2F6sAxZxAzu7%0A1%2FM%3D%0A" width="200"></div><div class="intercom-container"><img src="https://downloads.intercomcdn.com/i/o/805629547/74b0acbdbe640d4255454572/bb6c5939-ff8c-4fa7-919f-15429aabf407?expires=1740333600&amp;signature=b336ce24afc7a7a2633828d20ab3fa2d6f2318c5b005450a825214024bc54530&amp;req=fCAiEMt3mIVYFb4f3HP0gOj0YQHvbTBDwdm6QXwMzcL7Hi%2Bu94ldk6twhWVh%0AGJU%3D%0A" width="300"></div><p class="no-margin"></p>
+<p class="no-margin">6. After saving the changes, it will automatically extend the time for payment by <b>1 hour. </b></p>
+<p class="no-margin">7. You can extend this time by going once again into Edit Reservation and add additional hours for payment.</p>
+<p class="no-margin"></p>
+<div class="intercom-container"><img src="https://downloads.intercomcdn.com/i/o/805629546/b4df12c7ec7fe659750f6e35/ab0c0437-1fea-47ae-972f-b8611f059e45?expires=1740333600&amp;signature=eb592c87f0334ce8ba221699837617f0b9320b1b825ee54c06a4f563187735f3&amp;req=fCAiEMt3mIVZFb4f3HP0gP%2FxWIQkHeNkPfGs4LFzwx2vOefP%2Bq1ExhacAEDv%0AOkg%3D%0A" width="300"></div>
+Metadata: source=HelpCenter, type=Article, language=en, area=Uncategorized

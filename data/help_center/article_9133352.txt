@@ -1,0 +1,90 @@
+Title: Additional fees
+Body: <p class="no-margin">Price is one of the main factors to consider when making a reservation, so remember to keep your price list updated at all times. If you charge additional fees at your property, add them as soon as possible. This way, your Guests will know what the final cost of their stay at your property is, and which additional activities they will have to pay for at the property.</p>
+<p class="no-margin"></p>
+<p class="no-margin"><b>How to set the price list of additional fees?</b></p>
+<p class="no-margin"></p>
+<ul>
+<li>
+<p class="no-margin">Log in to your profile at <a href="http://www.alohacamp.com/" target="_blank" class="intercom-content-link">www.alohacamp.com</a></p>
+</li>
+<li>
+<p class="no-margin">In the top menu, select <b>My places</b></p>
+</li>
+<li>
+<p class="no-margin">Choose the property where you want to add additional fees and go to <b>Types of accommodation, prices.</b></p>
+</li>
+<li>
+<p class="no-margin">Then go to <b>Manage fees</b> (remember that additional fees are added per object, it is not possible to divide them between different places in one object)</p>
+</li>
+</ul><p class="no-margin"></p>
+<div class="intercom-container"><img src="https://downloads.intercomcdn.com/i/o/xa8cb3gu/1304630572/79c176924d82414a1fe27e4de87e/image.png?expires=1740333600&amp;signature=f5400bcee11ac932b62cfd30aea76f5f9ea388be8e7cd827b3e60215a3229dfc&amp;req=dSMnEs99nYRYW%2FMW1HO4zdGTKLaeuMaKMBtHBcNylL2EmkOhuP9SScJsXAD6%0Ar812%0A"></div><p class="no-margin"></p>
+<div class="intercom-container"><img src="https://downloads.intercomcdn.com/i/o/xa8cb3gu/1229715987/de6287abca65998b955d1e3a450f/image.png?expires=1740333600&amp;signature=8381c6dba61d2f3c1e51df846a8588cbae5a7425225da28c68782b8acb0dcd8d&amp;req=dSIlH85%2FmIhXXvMW1HO4zcjl%2FiJx%2BKIr5zpghbyY7rV%2BnNaQOE2LXFWqBED5%0A98w7%0A" width="591"></div><ul><li>
+<p class="no-margin"><b>Fees added automatically to the reservation price:</b></p>
+<p class="no-margin"></p>
+<p class="no-margin">To charge the following fees, move the slider on the right, then enter the amount and select the unit.</p>
+<ul>
+<li>
+<p class="no-margin"><b>tourist tax</b> - charged automatically per person and per day of stay ((no commission is charged on this fee)</p>
+</li>
+<li>
+<p class="no-margin"><b>cleaning fee </b>- charged as a one-time rate</p>
+</li>
+<li>
+<p class="no-margin"><b>pet fee</b> - charged as a one-time rate, per day of stay, per animal or per animal per day.</p>
+</li>
+</ul>
+</li></ul><div class="intercom-container"><img src="https://downloads.intercomcdn.com/i/o/xa8cb3gu/1229719595/741e16298877a6107eea512a419b/image.png?expires=1740333600&amp;signature=4cd7e77285cb9031f8c8dcf3af80412372cdee0f3634bfa443149a8ca69782cb&amp;req=dSIlH85%2FlIRWXPMW1HO4zUfqOeZTetMxHFoVyg%2F0QSOLOwKOYWJk5hdnb82U%0A5xsC%0A" width="612"></div><ul><li>
+<p class="no-margin"><b>Fees not automatically charged, for which the Host shall settle with the Guest independently:</b></p>
+<p class="no-margin"></p>
+<p class="no-margin">Some of the charges (hot tub, sauna and jacuzzi) may appear automatically. This is information enlisted from previously introduced amenities in the facility.</p>
+<p class="no-margin"></p>
+<p class="no-margin">Example: If you specify that there is a jacuzzi in the accommodation, the charge for it will attach automatically. If this amenity has an additional cost, move the slider, enter the price and unit, and guests will see this charge on the property's page.</p>
+<div class="intercom-container"><img src="https://downloads.intercomcdn.com/i/o/xa8cb3gu/1234839863/c0ed0f8dc856e17cbc1320124255/image.png?expires=1740333600&amp;signature=53c06b82d6751fbb7fc9aee523e157ff3408b0d1ec099f2c1928ac6ab2098c24&amp;req=dSIkEsF9lIlZWvMW1HO4zQ6p3ZuU6tPv8UKO%2BqaFXEbCpH0nTP9Jb%2BBfg51F%0Au89S%0A"></div>
+<p class="no-margin"></p>
+<div class="intercom-container"><img src="https://downloads.intercomcdn.com/i/o/xa8cb3gu/1234839712/85109c32eb2c4b05bb78c47b94bd/image.png?expires=1740333600&amp;signature=2cf3838118c409016a3fb58d5d722b9e324bf84ec94f60ec051d5a6e21046299&amp;req=dSIkEsF9lIZeW%2FMW1HO4zU4uQ0jZM5AzK9S7ZrAlCnhgHatqdDg6xilL6Lnw%0AZqTs%0A"></div>
+<p class="no-margin"><br>​ </p>
+<p class="no-margin">Other additional fees should be added using the <b>Add New Fee</b> button. A new window with the additional fee will then appear:</p>
+<p class="no-margin"></p>
+<div class="intercom-container"><img src="https://downloads.intercomcdn.com/i/o/xa8cb3gu/1229722295/d2c7b4f43348ba642835ad569fe4/image.png?expires=1740333600&amp;signature=6d714669620d1e0769a660169352202af14a9aba06b237ca4afd4b9517f1f85c&amp;req=dSIlH858n4NWXPMW1HO4zRjBKGTj947osNPS1ZYuKGt205fdBmHigyvL4%2Bym%0AscNA%0A" width="602"></div>
+<p class="no-margin"></p>
+<p class="no-margin">To select the corresponding fee, expand the available options and click one of them, then enter the amount and unit.</p>
+</li></ul><p class="no-margin"></p>
+<div class="intercom-container"><img src="https://downloads.intercomcdn.com/i/o/xa8cb3gu/1229722707/f0083bec0c3500e702a7e875bede/image.png?expires=1740333600&amp;signature=45c5a4c99303f28b2fa34c5758bc25075d090ee3a17420abb8715594175ed313&amp;req=dSIlH858n4ZfXvMW1HO4zQ9FMGJQB7HQac6wlnqeKbzoR6K8PzvRQikTn94a%0AviGm%0A"></div><p class="no-margin"><br>Proceed in the same way with each available charge:<br>​<br>​</p>
+<div class="intercom-container"><img src="https://downloads.intercomcdn.com/i/o/xa8cb3gu/1229723234/5f6e1d5d5b0b22c4c209a86cce5e/image.png?expires=1740333600&amp;signature=111f83eaab65e1a8b6cb57aec065a7d90850b1e8771f33a73297f3928ae9c8f5&amp;req=dSIlH858noNcXfMW1HO4zT7FHlpKS6EGhCfoxf%2B0HiIbz5Bw9YlRHqaoCV9X%0A1Ev3%0A"></div><p class="no-margin">To remove a charge, click the red botton on the right.</p>
+<p class="no-margin"></p>
+<p class="no-margin">Specification of units available for each additional charge:</p>
+<p class="no-margin"></p>
+<ul>
+<li>
+<p class="no-margin"><b>deposit</b> - you can specify whether you want to charge in advance or on the day of arrival</p>
+</li>
+<li>
+<p class="no-margin"><b>optional meals</b> - can be charged: per day, one-time rate, per person per day or an individual calculation</p>
+</li>
+<li>
+<p class="no-margin"><b>breakfast </b>- can be charged: per day, one-time rate, per person per day or an individual calculation</p>
+</li>
+<li>
+<p class="no-margin"><b>fuel </b>- you can charge: per day, one-time fee, per use</p>
+</li>
+<li>
+<p class="no-margin"><b>hot tub</b> - can be charged: per day, as a one-time fee, per hour or per session</p>
+</li>
+<li>
+<p class="no-margin"><b>sauna -</b> can be charged: per day, as a one-time rate, per hour or per session</p>
+</li>
+<li>
+<p class="no-margin"><b>jacuzzi </b>- can be charged: per day, as a one-time rate, per hour or per session</p>
+</li>
+<li>
+<p class="no-margin"><b>parking</b> - can be charged: per day or as a one-time rate</p>
+</li>
+<li>
+<p class="no-margin"><b>electricity</b> - can be charged: as a one-time rate, per day or per usage</p>
+</li>
+</ul><p class="no-margin"></p>
+<p class="no-margin">Important! Remember that these fees are not automatically included in the price. Guests are informed about them in the profile of the property, however, each Host individually should charge for them.</p>
+<p class="no-margin"></p>
+<p class="no-margin"></p>
+<div class="intercom-container"><img src="https://downloads.intercomcdn.com/i/o/xa8cb3gu/1229725597/f8d5027310003847b1e1e4c236bd/image.png?expires=1740333600&amp;signature=9f349561cade7c80873b98b72e26aa2717e0d259f0510cdf45b8751a8df6885d&amp;req=dSIlH858mIRWXvMW1HO4zSoJwgYOp5faTq%2FZZyfaCM8fCwgp24vLUdhTb%2B%2Bj%0A5Y7z%0A"></div><p class="no-margin"><br>​</p>
+Metadata: source=HelpCenter, type=Article, language=en, area=Uncategorized

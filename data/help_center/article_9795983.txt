@@ -1,0 +1,33 @@
+Title: What information do I need to provide to AlohaCamp due to the DAC7 directive?
+Body: <p class="intercom-align-justify no-margin">In accordance with new legal regulations, AlohaCamp is required to report information about transactions made by Hosts to the appropriate tax authorities. This is due to the implementation of the DAC7 directive, which obliges digital platforms to report such data. </p>
+<p class="no-margin"></p>
+<p class="no-margin">These data can be entered by going to the <b>My Account</b> tab and then selecting the <b>Data compliance form</b>.<br>​</p>
+<div class="intercom-container"><img src="https://downloads.intercomcdn.com/i/o/xa8cb3gu/1276535309/11b70483d8554f65d79600643ae5/image.png?expires=1740333600&amp;signature=64a1e574bcd8dee15028079698bd4c9841826591526504bf6cad754bec727d5f&amp;req=dSIgEMx9mIJfUPMW1HO4zRTTDX103zHkGgQHfMItSRwxOcxqHaskRL09nypu%0AKkrd%0A"></div><p class="intercom-align-justify no-margin"></p>
+<p class="intercom-align-justify no-margin"><b>What information do we need?</b></p>
+<p class="intercom-align-justify no-margin"></p>
+<p class="intercom-align-justify no-margin">Depending on your status as a Host, different documentation will be required. Below are the details of the information we will need from you:</p>
+<p class="intercom-align-justify no-margin"></p>
+<p class="intercom-align-justify no-margin"><b>For individual hosts:</b></p>
+<p class="intercom-align-justify no-margin">- First and last name</p>
+<p class="intercom-align-justify no-margin">- Main address</p>
+<p class="intercom-align-justify no-margin">- Tax identifiers (e.g., TIN, PESEL) assigned to you (if not available - place of birth)</p>
+<p class="intercom-align-justify no-margin">- VAT number (if applicable)</p>
+<p class="intercom-align-justify no-margin">- Date of birth</p>
+<p class="intercom-align-justify no-margin">- Financial account identifier (bank account)</p>
+<p class="intercom-align-justify no-margin">- Name or company of the holder of the financial account (bank account) into which the salary is deposited or to which it is credited (if different from yours)</p>
+<p class="intercom-align-justify no-margin">- Addresses of properties available for booking on the platform</p>
+<p class="intercom-align-justify no-margin">- Property registration numbers (if applicable)</p>
+<p class="intercom-align-justify no-margin"></p>
+<p class="intercom-align-justify no-margin"><b>For legal entities (companies, foundations, etc.):</b></p>
+<p class="intercom-align-justify no-margin">- Name</p>
+<p class="intercom-align-justify no-margin">- Main address</p>
+<p class="intercom-align-justify no-margin">- Tax identifiers (TIN) assigned to the seller (if not available - place of birth)</p>
+<p class="intercom-align-justify no-margin">- VAT number</p>
+<p class="intercom-align-justify no-margin">- Registration number (in Poland, KRS)</p>
+<p class="intercom-align-justify no-margin">- Financial account identifier (bank account), if available</p>
+<p class="intercom-align-justify no-margin">- Name or company of the holder of the financial account (bank account) into which the salary is paid or to which it is credited (if different from yours)</p>
+<p class="intercom-align-justify no-margin">- Addresses of properties available for booking on the platform</p>
+<p class="intercom-align-justify no-margin">- Property registration numbers (if applicable)</p>
+<p class="intercom-align-justify no-margin"></p>
+<p class="intercom-align-justify no-margin">Timely submission of this information is crucial for compliance with legal regulations. We strive to make the process as transparent and user-friendly as possible, so if you have any questions or concerns, please contact us at <a href="mailto:hello@alohacamp.com" target="_blank" class="intercom-content-link">hello@alohacamp.com</a>. Our team is at your disposal.</p>
+Metadata: source=HelpCenter, type=Article, language=en, area=Uncategorized

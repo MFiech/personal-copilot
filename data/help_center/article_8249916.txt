@@ -1,0 +1,37 @@
+Title: Instant Bookings and Booking Requests
+Body: <p class="no-margin">On AlohaCamp, you can choose between two options for handling reservations: <b>Instant Bookings</b> and <b>Booking Requests</b>. The choice of the appropriate mode depends on your preferences and how you manage your property's availability.</p>
+<p class="no-margin"></p>
+<h3 id="h_73f791f7d0">Instant Bookings</h3>
+<p class="no-margin">If your calendar is in sync or you keep it up to date, we recommend that you enable the <b>Instant Reservation</b> option. Thanks to this, you will save time and you will not have to accept each incoming request, as well as determine the payment deadline. <br><br>In the filters, your place will be marked with the Instant Booking label, which indicates to Guests that your space can be reserved directly on the dates that interest them. The places that have activated this possibility are the most popular, since Guests appreciate how easy and fast the reservation process is on AlohaCamp.</p>
+<p class="no-margin"></p>
+<p class="no-margin">Once the reservation is made, you do not have to determine the payment deadline, since the guest has an hour to make it. Otherwise, the reservation will be cancelled.</p>
+<p class="no-margin"></p>
+<p class="no-margin">How to enable <b>Instant Booking</b>?</p>
+<ol>
+<li>
+<p class="no-margin">Log in to <a href="http://www.alohacamp.com/" target="_blank" class="intercom-content-link">www.alohacamp.com</a></p>
+</li>
+<li>
+<p class="no-margin">In the main menu select <b>My places</b>.</p>
+</li>
+<li>
+<p class="no-margin">Choose the property you want to modify and go to the <b>Types of Accomodation, prices</b> tab.</p>
+</li>
+<li>
+<p class="no-margin">Click <b>Edit Prices</b> and check the <b>Instant Reservation </b>option, located in the <b>Check-in Preferences</b> section.<br>​</p>
+<div class="intercom-container"><img src="https://downloads.intercomcdn.com/i/o/xa8cb3gu/1344888396/ff5acec2e20a3690504706ad1c50/image.png?expires=1740333600&amp;signature=575bde0cbed96c1c6edda1e2d2a08b38d4ad1a3c7ab0891d784babe742750f9d&amp;req=dSMjEsF2lYJWX%2FMW1HO4zZOogxc%2F3U%2FQlKHKkI7TQPl2G3yDTpVjAODlRWqZ%0A8cff%0A"></div>
+<p class="no-margin"></p>
+</li>
+<li>
+<p class="no-margin">Save your changes by clicking the button at the bottom of the page.</p>
+</li>
+</ol><p class="no-margin"></p>
+<p class="no-margin"><b>Attention!</b> Remember that when you activate Instant Booking, you have to keep your calendar updated so that overbooking does not occur.<br>​</p>
+<p class="no-margin"></p>
+<h2 id="h_58991eb1e4">Booking Requests</h2>
+<p class="no-margin">If you prefer not to have reservations automatically accepted, you can use the Booking Request option. In this mode, the guest sends a booking request, and you have 24 hours to accept it (this period may be extended during weekends). When accepting the request, you set a deadline for the guest to complete the payment.<br>​</p>
+<p class="no-margin">If the guest pays within the specified timeframe, the reservation will be confirmed. If they do not, the reservation will be automatically canceled by the system. If the guest misses the payment deadline but still wishes to confirm the reservation, you can restore it. Click <a href="#" target="_blank" class="intercom-content-link">here</a> to learn how to do this.<br>​</p>
+<p class="no-margin">If you cannot accept the reservation, you must reject it. If you do not respond within 24 hours, the system will automatically treat the reservation as rejected. Keep in mind that booking requests do not exempt you from updating your calendar and prices regularly. Each rejected reservation negatively impacts the algorithm and reduces your property’s visibility in search results.<br>​</p>
+<p class="no-margin"></p>
+<p class="no-margin"><b>Note:</b> If you do not have Instant Bookings enabled, the commission for each reservation increases by <b>2% + VAT</b>. To maintain the base rate, Instant Bookings must be enabled for all properties managed by the host.</p>
+Metadata: source=HelpCenter, type=Article, language=en, area=Uncategorized

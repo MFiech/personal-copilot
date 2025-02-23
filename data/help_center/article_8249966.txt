@@ -1,0 +1,37 @@
+Title: PrePayments
+Body: <p class="no-margin">As a host, you can choose between two payment methods for each type of accommodation: full payment upfront for the entire stay or payment through an advance. If you choose the advance option, the guest can decide whether to pay only the advance or the total amount for the stay. Information about the payment method (advance or full payment) will be sent to the guest in the booking confirmation email and will be visible in the booking window.</p>
+<p class="no-margin"></p>
+<h3 id="h_19a76d3624">How to enable prepayments?</h3>
+<ol>
+<li>
+<p class="no-margin">Log in to <a href="http://www.alohacamp.com/" target="_blank" class="intercom-content-link">www.alohacamp.com</a></p>
+</li>
+<li>
+<p class="no-margin">In the main menu select <b>My places</b>.</p>
+</li>
+<li>
+<p class="no-margin">Choose your place in which you want to enable prepayment and go to<br>​<b>Types of accommodation, prices</b> <b>-&gt; Edit prices.</b></p>
+</li>
+<li>
+<p class="no-margin">Find the <b>Advances</b> section and set the percentage to be paid upfront.<br>​</p>
+<div class="intercom-container"><img src="https://downloads.intercomcdn.com/i/o/xa8cb3gu/1344975422/169a3fc6237d4b9e6b5f5b3837d1/image.png?expires=1740333600&amp;signature=4d0373910750035fb56f1d48c5f3ea86669e4b0371f2cd93b5a39a9cf0fa5ee4&amp;req=dSMjEsB5mIVdW%2FMW1HO4zZIdnXxCaAU4cXjvZOcVnIFOx%2F8e8vmfGEQG5Hql%0AWqDT%0A"></div>
+<p class="no-margin"></p>
+</li>
+<li>
+<p class="no-margin">Click <b>Save</b> and wait until the confirmation bar appears at<br>the bottom left.</p>
+</li>
+</ol><p class="no-margin"></p>
+<p class="no-margin"><b>Attention!</b> Pre-payment must be enabled for each site. Otherwise,<br>the system will allow it only for the chosen sites.</p>
+<p class="no-margin"><br>​</p>
+<h3 id="h_e76f99cb14">Adding the Commission to the Advance Payment</h3>
+<p class="no-margin">You also have the option to include the commission you pay for the reservation in the advance payment.<br>​</p>
+<p class="no-margin"><b>Example:</b></p>
+<p class="no-margin">Suppose the total booking value is 1,000 PLN, and the guest pays an advance of 50%.</p>
+<p class="no-margin">The commission of 15% + VAT for this booking will be <b>184.50 PLN</b>.</p>
+<p class="no-margin">In this case, the advance payment the guest needs to make will be <b>684.50 PLN</b>.</p>
+<p class="no-margin"></p>
+<p class="no-margin"></p>
+<h3 id="h_8d62d7ea31">How is the Commission Calculated for Advances?</h3>
+<p class="no-margin">The commission is calculated in the same way as for full upfront payments. The commission for the total booking value is deducted from the advance amount. The host must collect the second part of the payment directly from the guest.<br><br>​</p>
+<p class="no-margin"><b>Important:</b> Remember that the remaining amount cannot be paid through the platform. The host is responsible for collecting the second part of the payment directly from the guest.</p>
+Metadata: source=HelpCenter, type=Article, language=en, area=Uncategorized

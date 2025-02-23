@@ -1,0 +1,37 @@
+Title: Invoices
+Body: <p class="no-margin">Your invoice is issued when the reservation is paid. You can download it at any<br>moment, once you are logged in.</p>
+<p class="no-margin"></p>
+<p class="no-margin"><b>How to add billing details?</b></p>
+<ol>
+<li>
+<p class="no-margin">Sign in to <a href="http://www.alohacamp.com/" target="_blank" class="intercom-content-link">www.alohacamp.com</a></p>
+<p class="no-margin"></p>
+</li>
+<li>
+<p class="no-margin">Select <b>My account</b> in the upper-right corner, and then<b> My profile.</b></p>
+<p class="no-margin"></p>
+<div class="intercom-container"><img src="https://downloads.intercomcdn.com/i/o/xa8cb3gu/1275981459/ae4d92e926767c2725ce0ddc946b/image.png?expires=1740333600&amp;signature=9723e6669a1b061ef12b81c392d38b7aead882354fbfb576311afd7f81c1297b&amp;req=dSIgE8B2nIVaUPMW1HO4zUN3oDP0CpXFwc6WzrOuMVGJqcWq2ZSBsd5ze4ZG%0Amahb%0A"></div>
+<p class="no-margin"></p>
+</li>
+<li>
+<p class="no-margin">Scroll down to <b>Edit billing details </b>section. Provide us<br>with all necessary data and if you are registered as a company, check the<br>​<b>Company </b>box, and add its’ name and Tax Identification Number;<br>otherwise the invoice will be issued in your name. </p>
+</li>
+</ol><p class="no-margin"><b>How to download the commission invoice?</b></p>
+<ol>
+<li>
+<p class="no-margin">Sign in to <a href="http://www.alohacamp.com/" target="_blank" class="intercom-content-link">www.alohacamp.com</a></p>
+</li>
+<li>
+<p class="no-margin">Select <b>My places </b>from the main menu. </p>
+</li>
+<li>
+<p class="no-margin">Choose a place and go to <b>Reservations</b>. </p>
+</li>
+<li>
+<p class="no-margin">Go to <b>Paid</b> or <b>Archive</b>.</p>
+</li>
+<li>
+<p class="no-margin">Click <b>Invoice</b>, button on the booking you want; the downloading will start automatically.</p>
+</li>
+</ol><p class="no-margin"><b>Keep in mind</b> that the invoice is already paid. As the commission<br>and taxes are already deducted from the amount that is transferred to you, all<br>bills are set straight away.</p>
+Metadata: source=HelpCenter, type=Article, language=en, area=Uncategorized

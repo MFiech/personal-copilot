@@ -1,0 +1,17 @@
+Title: Types of places in AlohaCamp
+Body: <p class="no-margin">An accurate and reliably created profile of your facility significantly affects the number of reservations it receives. To make the search process easier for Guests, it is crucial to assign your facility to the correct category of place type. Here are some tips to help you do this:</p>
+<p class="no-margin"></p>
+<p class="no-margin"><b>Camping, caravanning or tent site</b> – a site where Guests arrive with their own campers, caravans or with tents. Provided with the basic amenities required for this type of facility, i.e. a flat land that will not be boggy after rain, and in the case of a tent site, with a bathroom.</p>
+<p class="no-margin"></p>
+<p class="no-margin"><b>Glamping Tent</b> - a glamping dome, safari tent or tipi, which are similar in shape to tents, offering special amenities, convenience and comfort.</p>
+<p class="no-margin"></p>
+<p class="no-margin"><b>Yurt</b> - a distinctive object that combines the features of a glamping tent and a lodge.</p>
+<p class="no-margin"></p>
+<p class="no-margin"><b>Tree house</b> - facilities built in the crown of trees or at the base of a tree trunk.</p>
+<p class="no-margin"></p>
+<p class="no-margin"><b>Tiny House</b> - cottages with a relatively small surface area, designed for a smaller number of guests.</p>
+<p class="no-margin"></p>
+<p class="no-margin"><b>House</b> - facilities with a larger surface area, which are able to accommodate a greater number of Guests and have multiple rooms.</p>
+<p class="no-margin"></p>
+<p class="no-margin"><b>House on the water</b> - an object built on a platform that floats on the water. These are known as houseboats, or houses on platforms.</p>
+Metadata: source=HelpCenter, type=Article, language=en, area=Uncategorized

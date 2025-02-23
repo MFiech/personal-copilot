@@ -1,0 +1,3 @@
+Title: Czy mogę edytować przewodnik po publikacji? Czy muszę go na nowo publikować?
+Body: 
+Metadata: source=HelpCenter, type=Article, language=en, area=Uncategorized

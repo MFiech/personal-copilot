@@ -1,0 +1,3 @@
+Title: Mam kilka obiektów – czy mogę utworzyć więcej niż jeden przewodnik?
+Body: 
+Metadata: source=HelpCenter, type=Article, language=en, area=Uncategorized

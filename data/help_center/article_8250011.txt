@@ -1,0 +1,34 @@
+Title: Edit reservation: change price, date, place and time for payment
+Body: <p class="no-margin">There is a possibility to edit an unpaid reservation. Many different situations happen, such as marking the incorrect number of Guests, or changing the dates of the trip. Or perhaps you would like to give a discount to your Guest? We provide Hosts with such options just by editing an unpaid reservation.</p>
+<p class="no-margin">How to edit a reservation?</p>
+<ol>
+<li>
+<p class="no-margin">Log in to <a href="https://alohacamp.com/" target="_blank" class="intercom-content-link">www.alohacamp.com</a></p>
+</li>
+<li>
+<p class="no-margin">Next, go to <b>My Places</b> in the upper right corner in the menu.</p>
+</li>
+<li>
+<p class="no-margin">Select the <b>Reservations</b> section and, depending on whether the reservation has already been accepted or not, choose: <b>Pending Payment </b>or <b>New Requests.</b></p>
+</li>
+<li>
+<p class="no-margin">After clicking on the <b>Edit Reservation</b> option, you will be able to edit: the place, dates, number of Guests, price and extend the time for payment. After you save the changes in the bottom right, a notification will be automatically send to the Guest in the reservation chat informing them of the modifications that have been made.  </p>
+</li>
+</ol><p class="no-margin"></p>
+<div class="intercom-container"><img src="https://downloads.intercomcdn.com/i/o/805623940/f664288c73a0e5dc6a65ae83/48137c37-be2a-4ccb-9566-b34016a325ab?expires=1740333600&amp;signature=0763279212f3b824fb6d6024a00b214955109e2f7ee1e6e0ae20ba7095bbd82f&amp;req=fCAiEMt9lIVfFb4f3HP0gOnRoyhl1O%2BHEvmgTeEtszbJLax5wLi4pKp7rX8f%0AXl4%3D%0A" width="200"></div><div class="intercom-container"><img src="https://downloads.intercomcdn.com/i/o/805623942/64fba9dbe194d620c03a0ff5/610a6cc8-fd47-4aef-9609-aeea2100e0d1?expires=1740333600&amp;signature=5f71fdcf5f42b1c576ece875bc1317456dee3beb1ed4782a3dc7e1a18f15f037&amp;req=fCAiEMt9lIVdFb4f3HP0gEAanYN57Rj%2FqRHCCdKyL16IeT62Yj7QVsucu%2B5s%0AOko%3D%0A" width="300"></div><p class="no-margin"></p>
+<p class="no-margin">Edit the place: remember that the place and dates you change the reservation to must remain free in your AlohaCamp calendar. You can remove a manual lock by clicking on the lock bar, while ical locks must first be removed at the source.</p>
+<p class="no-margin"></p>
+<p class="no-margin"><b>Edit the number of Guests:</b> possible at all times, for any reservation that has not yet been completed.</p>
+<p class="no-margin"></p>
+<p class="no-margin"><b>Edit price: </b>possible only if the reservation has not been paid yet. Just enter the correct amount and save the changes.</p>
+<p class="no-margin"></p>
+<p class="no-margin"><b>Extend the time for payment:</b> possible in bookings with a status of " Pending payment", or after restoring a canceled reservation.</p>
+<p class="no-margin">Click <a href="https://help.alohacamp.com/en/articles/8250021-restoring-a-cancelled-reservation" target="_blank" class="intercom-content-link">here</a> to learn how to restore a canceled reservation.</p>
+<p class="no-margin">Edit date: possible at all times, for any booking that has not yet been completed. </p>
+<p class="no-margin"></p>
+<p class="no-margin">Remember that the dates for which you want to change your reservation must remain blank on the calendar. Note that changing the dates must be in accordance with your property's stay policy. This means that it will not be possible to transfer a 3-day reservation to a season that has 4 days set as the minimum stay. In such a situation, you must first modify the season and then make the change of dates. If this is an exceptional situation, you can restore the previous season settings after saving the reservation changes.</p>
+<p class="no-margin">Sometimes the synchronization will reflect the reservation in your system and put an ical on it, which locks your calendar and prevents you from making any changes for that date, as in the example below:</p>
+<p class="no-margin"></p>
+<div class="intercom-container"><img src="https://downloads.intercomcdn.com/i/o/805623941/3ab36aa30f0664b52e00fa86/4e44a9a2-dbc1-4d05-8b35-98b37640ddac?expires=1740333600&amp;signature=f74b204034187dc9ec7572154688627e6ba7bff6a7a0e0f6bb17fe7057b0e71c&amp;req=fCAiEMt9lIVeFb4f3HP0gCW5i1cIKH1Kk1CohhBrbd70P5YE2oqV7XSbd14b%0AiYs%3D%0A" width="300"></div><p class="no-margin"></p>
+<p class="no-margin">In order to be able to move the dates of this reservation for example by 1 day, you must first remove the ical at the source (in this case in roomadmin), wait a while for the calendar to sync and then edit the dates of the reservation.</p>
+Metadata: source=HelpCenter, type=Article, language=en, area=Uncategorized
