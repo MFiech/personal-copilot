@@ -1,0 +1,71 @@
+.veyra-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  padding: 16px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  margin-top: 8px;
+}
+
+.veyra-section {
+  margin-bottom: 24px;
+}
+
+.veyra-section h2 {
+  font-size: 18px;
+  color: #333;
+  margin-bottom: 16px;
+}
+
+.veyra-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+@media (max-width: 600px) {
+  .veyra-results {
+    grid-template-columns: 1fr;
+    padding: 12px;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 768px) {
+  .veyra-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.calendar-event-card {
+  transition: all 0.2s ease-in-out;
+}
+
+.calendar-event-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1) !important;
+}
+
+.event-time {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.event-time svg {
+  font-size: 14px;
+}
+
+.event-location {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+@keyframes fadeOut {
+  0% { opacity: 1; }
+  70% { opacity: 1; }
+  100% { opacity: 0; }
+} 

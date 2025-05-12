@@ -1,3 +1,0 @@
-Title: Atención al cliente
-Body: <p class="no-margin">También puedes hablar con nuestros Support Heroes durante las horas laborables de lunes a viernes, de 9 a 21, y los fines de semana de 10 a 13 y de 16 a 20. El costo de la llamada dependerá de la tarifa del operador.<br>Teléfono: <a href="tel:+34518900644" target="_blank" class="intercom-content-link">+34 518 90 06 44</a></p>
-Metadata: source=HelpCenter, type=Article, language=en, area=Uncategorized

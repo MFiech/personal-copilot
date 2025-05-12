@@ -1,3 +1,0 @@
-Title: Jak sprawić, aby sekcja była widoczna w przewodniku?
-Body: 
-Metadata: source=HelpCenter, type=Article, language=en, area=Uncategorized

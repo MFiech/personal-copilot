@@ -1,0 +1,444 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Box,
+  CssBaseline,
+  ThemeProvider,
+  createTheme,
+  Drawer,
+  List,
+  ListItem,
+  ListItemText,
+  Paper,
+  Typography,
+  TextField,
+  Button,
+  IconButton,
+  Grid,
+  CircularProgress,
+  Snackbar,
+  List as MUIList,
+  ListItem as MUIListItem,
+} from '@mui/material';
+import SaveIcon from '@mui/icons-material/Save';
+import MenuIcon from '@mui/icons-material/Menu';
+import './App.css';
+
+const theme = createTheme({
+  palette: {
+    mode: 'light',
+    primary: { main: '#1976d2' },
+    secondary: { main: '#388e3c' },
+  },
+});
+
+function App() {
+  const [threads, setThreads] = useState([]);
+  const [currentThreadId, setCurrentThreadId] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 600);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  // Add state for VeyraX confirmation
+  const [pendingConfirmation, setPendingConfirmation] = useState(null);
+
+  // Handle resize for mobile detection
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 600);
+    window.addEventListener('resize', handleResize);
+    fetchThreads();
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Fetch threads from backend
+  const fetchThreads = async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch('http://localhost:5001/threads');
+      const data = await response.json();
+      setThreads(data.threads || []);
+    } catch (error) {
+      console.error('Error fetching threads:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Load a specific thread
+  const loadThread = async (threadId) => {
+    setIsLoading(true);
+    try {
+      const response = await fetch(`http://localhost:5001/chat/${threadId}`);
+      const data = await response.json();
+      setMessages(data.messages || []);
+      setCurrentThreadId(threadId);
+      if (isMobile) setDrawerOpen(false);
+    } catch (error) {
+      console.error('Error loading thread:', error);
+      setMessages([...messages, { role: 'assistant', content: `Error: ${error.message}` }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Send a message to the Co-Pilot
+  const sendMessage = async (e) => {
+    e.preventDefault();
+    if (!input.trim()) return;
+
+    const userMessage = { role: 'user', content: input };
+    setMessages([...messages, userMessage]);
+    setInput('');
+    setIsLoading(true);
+
+    const payload = { query: input };
+    if (currentThreadId) payload.thread_id = currentThreadId;
+
+    try {
+      const response = await fetch('http://localhost:5001/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const data = await response.json();
+      
+      // Handle confirmation requests
+      if (data.requires_confirmation && data.confirmation_context) {
+        setPendingConfirmation({
+          context: data.confirmation_context,
+          threadId: data.thread_id
+        });
+      }
+      
+      setCurrentThreadId(data.thread_id);
+      setMessages((prev) => [...prev, { role: 'assistant', content: data.response }]);
+      fetchThreads();
+    } catch (error) {
+      setMessages((prev) => [...prev, { role: 'assistant', content: `Error: ${error.message}` }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Handle VeyraX confirmation
+  const handleConfirmation = async (confirmed) => {
+    if (!pendingConfirmation) return;
+    
+    console.log("Handling confirmation:", confirmed);
+    console.log("Pending confirmation context:", pendingConfirmation);
+    
+    setIsLoading(true);
+    
+    if (confirmed) {
+      // User confirmed, proceed with VeyraX data fetch
+      try {
+        const payload = {
+          query: "Yes, please proceed with that.",
+          thread_id: pendingConfirmation.threadId,
+          confirm_veyrax: true,
+          veyrax_context: pendingConfirmation.context
+        };
+        
+        console.log("Sending confirmation request with payload:", payload);
+        
+        const response = await fetch('http://localhost:5001/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const data = await response.json();
+        console.log("Received confirmation response:", data);
+        
+        setMessages((prev) => [
+          ...prev,
+          { role: 'user', content: "Yes, please proceed with that." },
+          { role: 'assistant', content: data.response }
+        ]);
+        setCurrentThreadId(data.thread_id);
+      } catch (error) {
+        console.error("Error during confirmation:", error);
+        setMessages((prev) => [...prev, { role: 'assistant', content: `Error: ${error.message}` }]);
+      }
+    } else {
+      // User declined
+      setMessages((prev) => [
+        ...prev,
+        { role: 'user', content: "No, don't proceed with that." },
+        { role: 'assistant', content: "I understand, I won't access that information." }
+      ]);
+    }
+    
+    // Reset confirmation state
+    setPendingConfirmation(null);
+    setIsLoading(false);
+    fetchThreads();
+  };
+
+  // Save user message as insight
+  const saveInsight = async (content) => {
+    try {
+      const response = await fetch('http://localhost:5001/save_insight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+      });
+      if (!response.ok) throw new Error('Failed to save insight');
+      setSnackbarOpen(true);
+    } catch (error) {
+      alert(`Error saving insight: ${error.message}`);
+    }
+  };
+
+  // Start a new thread
+  const startNewThread = () => {
+    setMessages([]);
+    setCurrentThreadId(null);
+    setPendingConfirmation(null);
+    if (isMobile) setDrawerOpen(false);
+  };
+
+  // Render message content with proper formatting
+  const renderMessage = (content) => {
+    const lines = content.split('\n');
+    let inList = false;
+    const elements = lines.map((line, index) => {
+      if (line.startsWith('•')) {
+        if (!inList) {
+          inList = true;
+          return (
+            <MUIList key={index} dense sx={{ p: 0, m: 0 }}>
+              <MUIListItem sx={{ py: 0 }}>{line.slice(1).trim()}</MUIListItem>
+            </MUIList>
+          );
+        }
+        return <MUIListItem key={index} sx={{ py: 0 }}>{line.slice(1).trim()}</MUIListItem>;
+      } else {
+        if (inList) inList = false;
+        const linkMatch = line.match(/\[([^\]]+)\]\(([^)]+)\)/);
+        if (linkMatch) {
+          const [_, text, url] = linkMatch;
+          return (
+            <Typography key={index}>
+              <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: '#1976d2' }}>
+                {text}
+              </a>
+            </Typography>
+          );
+        }
+        return <Typography key={index}>{line}</Typography>;
+      }
+    });
+    return elements;
+  };
+
+  return (
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <Box sx={{ display: 'flex', height: '100vh' }}>
+        {/* Sidebar */}
+        {isMobile && (
+          <IconButton onClick={() => setDrawerOpen(true)} sx={{ position: 'absolute', top: 8, left: 8 }}>
+            <MenuIcon />
+          </IconButton>
+        )}
+        <Drawer
+          variant={isMobile ? 'temporary' : 'permanent'}
+          open={isMobile ? drawerOpen : true}
+          onClose={() => setDrawerOpen(false)}
+          sx={{
+            width: 240,
+            flexShrink: 0,
+            '& .MuiDrawer-paper': { width: 240 },
+          }}
+        >
+          <Box sx={{ p: 2 }}>
+            <Button onClick={startNewThread} variant="outlined" fullWidth sx={{ mb: 2 }}>
+              New Thread
+            </Button>
+            <List>
+              {threads.map((thread) => (
+                <ListItem button key={thread.thread_id} onClick={() => loadThread(thread.thread_id)}>
+                  <ListItemText primary={thread.title} />
+                </ListItem>
+              ))}
+            </List>
+          </Box>
+        </Drawer>
+
+        {/* Main Chat Area */}
+        <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
+          <Box
+            sx={{
+              flexGrow: 1,
+              overflowY: 'auto',
+              p: 2,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 1,
+            }}
+          >
+            {messages.map((msg, index) => (
+              <Box
+                key={index}
+                component="Paper"
+                elevation={1}
+                sx={{
+                  p: 2,
+                  bgcolor: msg.role === 'user' ? 'primary.light' : 'grey.100',
+                  alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                  maxWidth: { xs: '90%', md: '70%' },
+                  borderRadius: 2,
+                  position: 'relative',
+                }}
+              >
+                {renderMessage(msg.content)}
+                {msg.role === 'user' && (
+                  <IconButton
+                    onClick={() => saveInsight(msg.content)}
+                    size="small"
+                    sx={{ position: 'absolute', bottom: 4, right: 4 }}
+                  >
+                    <SaveIcon />
+                  </IconButton>
+                )}
+              </Box>
+            ))}
+            {isLoading && <CircularProgress sx={{ alignSelf: 'center', my: 2 }} />}
+            
+            {/* Confirmation Buttons (only shown when waiting for confirmation) */}
+            {pendingConfirmation && !isLoading && (
+              <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, my: 2 }}>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  onClick={() => handleConfirmation(true)}
+                >
+                  Yes, proceed
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  onClick={() => handleConfirmation(false)}
+                >
+                  No, don't proceed
+                </Button>
+              </Box>
+            )}
+          </Box>
+
+          {/* Input Area */}
+          <Box
+            component="form"
+            onSubmit={sendMessage}
+            sx={{
+              position: { xs: 'fixed', md: 'static' },
+              bottom: { xs: 0, md: 'auto' },
+              left: 0,
+              right: 0,
+              p: 2,
+              bgcolor: 'background.default',
+              borderTop: { xs: '1px solid', md: 'none' },
+              borderColor: 'divider',
+            }}
+          >
+            <Grid container spacing={1}>
+              <Grid item xs={10}>
+                <TextField
+                  fullWidth
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Ask your Co-Pilot..."
+                  aria-label="Chat input"
+                  variant="outlined"
+                  disabled={pendingConfirmation !== null}
+                />
+              </Grid>
+
+              <Grid item xs={10}>
+                <TextField
+                  fullWidth
+                  multiline
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Only send on Cmd+Enter (Mac) or Ctrl+Enter (Windows/Linux)
+                    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                      e.preventDefault();
+                      sendMessage(e);
+                    }
+                    // Regular Enter just adds a new line (default behavior)
+                  }}
+                  placeholder="Ask your Co-Pilot... (Cmd+Enter or Ctrl+Enter to send)"
+                  aria-label="Chat input"
+                  variant="outlined"
+                  disabled={pendingConfirmation !== null}
+                />
+              </Grid>
+
+              <Grid item xs={2}>
+                <Button
+                  type="submit"
+                  variant="contained"
+                  fullWidth
+                  aria-label="Send message"
+                  disabled={pendingConfirmation !== null}
+                >
+                  Send
+                </Button>
+              </Grid>
+            </Grid>
+
+            <Grid container spacing={1}>
+              <Grid item xs={10}>
+                <TextField
+                  fullWidth
+                  multiline
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Only send on Cmd+Enter (Mac) or Ctrl+Enter (Windows/Linux)
+                    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                      e.preventDefault();
+                      sendMessage(e);
+                    }
+                    // Regular Enter just adds a new line (default behavior)
+                  }}
+                  placeholder="Ask your Co-Pilot... (Cmd+Enter or Ctrl+Enter to send)"
+                  aria-label="Chat input"
+                  variant="outlined"
+                  disabled={pendingConfirmation !== null}
+                />
+              </Grid>
+              <Grid item xs={2}>
+                <Button
+                  type="submit"
+                  variant="contained"
+                  fullWidth
+                  aria-label="Send message"
+                  disabled={pendingConfirmation !== null}
+                >
+                  Send
+                </Button>
+              </Grid>
+            </Grid>
+          </Box>
+        </Box>
+
+        {/* Snackbar for Save Confirmation */}
+        <Snackbar
+          open={snackbarOpen}
+          autoHideDuration={3000}
+          onClose={() => setSnackbarOpen(false)}
+          message="Insight saved!"
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        />
+      </Box>
+    </ThemeProvider>
+  );
+}
+
+export default App;

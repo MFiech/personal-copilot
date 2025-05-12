@@ -1,5 +1,0 @@
-Title: Jak podejrzeć, jak wygląda przewodnik?
-Body: <p class="no-margin">Na każdym etapie tworzenia przewodnika, w prawym górnym rogu znajdziesz opcję: „Podgląd”.</p>
-<p class="no-margin"></p>
-<div class="intercom-container"><img src="https://alohacamp.intercom-attachments-7.com/i/o/925825545/4e19d2ebb911d5d3ecc86543/DBvDXJYHJiI8Mujo14m88FcYkLaV5-zq1fMJ__MNQT8-Zdt1BfyKg81nnYkOdHKBsH-7ptzoeD56hzbIznVejnVAqydJgK4zNmlomkNlFMPXOD2m9F2-T23EVDN-CCFSAHdxP30LPtdJjVHQXpFgN9c?expires=1740333600&amp;signature=9d97c5362e562e20a7e7b69e212f1e20bc80b56ca7a22270e0113f0659988cd9&amp;req=fSIiHst7mIVaFb4f3HP0gE0myzPjJefDDQP%2BD62IimU5Pwpo8vVFcScInMR3%0AtkA%3D%0A" width="650"></div>
-Metadata: source=HelpCenter, type=Article, language=en, area=Uncategorized

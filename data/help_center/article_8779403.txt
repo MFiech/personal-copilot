@@ -1,3 +1,0 @@
-Title: Jak usunąć przewodnik?
-Body: <p class="no-margin"></p>
-Metadata: source=HelpCenter, type=Article, language=en, area=Uncategorized

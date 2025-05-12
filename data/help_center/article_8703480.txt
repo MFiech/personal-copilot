@@ -1,4 +1,0 @@
-Title: Czy przewodnik jest od razu widoczny? Jak go opublikować?
-Body: <p class="no-margin">Nie, jest on widoczny dopiero po kliknięciu w opcję „Publikuj przewodnik” i wybraniu przycisku „Publiczny”.</p>
-<div class="intercom-container"><img src="https://alohacamp.intercom-attachments-7.com/i/o/908247991/b4d8a690ef046c754caa426b/kGVq0Q_0xO7Hgn8lDC0Tg-BN5et5-Ff3rERXYf_9qT2K-N0GPICjtcx6mTEeBzbdlsBzpT9IKPpXlX0ZWhHvQKfa_MUFA7sKaBoGNJIVtvoudXwq5JBrpT3vNW91vJiTGwvLK95IxhZlGcOeO7iIvSU?expires=1740333600&amp;signature=69d85d2feebe0fb20409586c473e0bc51725d26029d1cfd445e56826fc277df4&amp;req=fSAvFM15lIheFb4f3HP0gC%2BfY56aU7iweD4KMRZybvObpUz8yo01J14m%2ByLx%0AQlI%3D%0A"></div>
-Metadata: source=HelpCenter, type=Article, language=en, area=Uncategorized

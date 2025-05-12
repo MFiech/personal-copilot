@@ -1,3 +1,0 @@
-Title: Ile kosztuje korzystanie z przewodnika?
-Body: <p class="no-margin">Nic. Korzystanie z przewodnika jest całkowicie darmowe. </p>
-Metadata: source=HelpCenter, type=Article, language=en, area=Uncategorized
