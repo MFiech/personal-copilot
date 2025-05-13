@@ -3,7 +3,7 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from langchain_pinecone import PineconeVectorStore
 from langchain_openai import OpenAIEmbeddings
 from langchain_anthropic import ChatAnthropic
@@ -22,6 +22,15 @@ from models.insight import Insight
 from utils.mongo_client import get_db
 from config.mongo_config import init_collections
 from models.thread import Thread
+from prompts import (
+    master_intent_router_prompt,
+    email_results_intro_prompt,
+    calendar_results_intro_prompt,
+    general_qa_prompt,
+    email_summarization_prompt
+)
+from bs4 import BeautifulSoup
+from pymongo import MongoClient
 
 app = Flask(__name__)
 CORS(app, resources={
@@ -45,6 +54,7 @@ if not all([pinecone_api_key, openai_api_key, anthropic_api_key]):
 # Initialize MongoDB
 db = get_db()
 init_collections(db)
+conversations_collection = db.conversations
 
 # Initialize VeyraX service (if API key is available)
 veyrax_service = None
@@ -182,24 +192,217 @@ For non-email and non-calendar queries, provide a helpful response based on the 
     
     return "\n\n".join(prompt_parts), insight_id
 
+# Function to get email content from the database using thread_id
+def get_email_content_from_db(thread_id, email_id):
+    """
+    Finds an email by its ID within a conversation thread in MongoDB and extracts its content.
+    Searches any document within the given thread_id for the email with the given email_id.
+    """
+    # Find any message document within the thread that contains Veyra results and the specific email ID
+    message_document = conversations_collection.find_one(
+        {
+            "thread_id": thread_id, # Find within the correct thread
+            "veyra_results.emails.id": email_id # CORRECTED PATH: Removed "metadata."
+        },
+        # Projection: only include the emails array from the found document
+        {"veyra_results.emails": 1, "_id": 0} # CORRECTED PATH: Removed "metadata."
+    )
+
+    # Fallback to original path if the corrected one fails
+    if not message_document:
+        print(f"[DEBUG] Query with 'veyra_results.emails.id' failed. Trying 'metadata.veyra_results.emails.id' as fallback.")
+        message_document = conversations_collection.find_one(
+            {
+                "thread_id": thread_id,
+                "metadata.veyra_results.emails.id": email_id # Original path
+            },
+            {"metadata.veyra_results.emails": 1, "_id": 0} # Original path
+        )
+
+    if not message_document:
+        log_message = f"Email with ID {email_id} not found within thread {thread_id} using either path."
+        print(log_message)
+        return None
+
+    # Determine the correct path to access emails based on which query succeeded
+    if 'veyra_results' in message_document and 'emails' in message_document.get('veyra_results', {}):
+        print("[DEBUG] Accessing emails via 'veyra_results.emails'")
+        emails = message_document['veyra_results']['emails']
+    elif 'metadata' in message_document and 'veyra_results' in message_document.get('metadata', {}) and 'emails' in message_document['metadata']['veyra_results']:
+        print("[DEBUG] Accessing emails via 'metadata.veyra_results.emails'")
+        emails = message_document['metadata']['veyra_results']['emails']
+    else:
+        print("[DEBUG] Found document but could not locate emails array in expected paths.")
+        return None
+
+    # Find the specific email within the returned emails array
+    email_data = next((email for email in emails if email.get('id') == email_id), None)
+
+    if not email_data:
+        log_message = f"Email data structure error: ID {email_id} found in document but couldn't extract from array in thread {thread_id}"
+        print(log_message)
+        return None
+
+    # --- Start Inserted Debugging ---
+    print(f"[DEBUG] Email data structure for ID {email_id}:")
+    body = email_data.get('body', {}) # Get the body object
+    print(f"[DEBUG]   Body object type: {type(body)}")
+    print(f"[DEBUG]   Body object keys: {list(body.keys()) if isinstance(body, dict) else 'Not a dict or empty'}")
+
+    html_content = body.get('html') if isinstance(body, dict) else None
+    text_content = body.get('text') if isinstance(body, dict) else None
+    print(f"[DEBUG]   HTML content type: {type(html_content)}, Length: {len(html_content) if html_content else 0}")
+    print(f"[DEBUG]   Text content type: {type(text_content)}, Length: {len(text_content) if text_content else 0}")
+
+    # Explicit checks for None or empty strings
+    if html_content is None: print("[DEBUG]   HTML content is None")
+    elif html_content == "": print("[DEBUG]   HTML content is an empty string")
+    if text_content is None: print("[DEBUG]   Text content is None")
+    elif text_content == "": print("[DEBUG]   Text content is an empty string")
+    # --- End Inserted Debugging ---
+
+    # Extract the content (prefer HTML)
+    content = email_data.get('body', {}).get('html') or email_data.get('body', {}).get('text')
+
+    # Debugging the final content decision
+    print(f"[DEBUG] Final extracted content type: {type(content)}, Is truthy: {bool(content)}")
+
+    if not content:
+        print(f"Content (HTML or text) not found for email ID {email_id} in thread {thread_id}")
+        return None
+
+    return content
+
 @app.route('/chat', methods=['POST'])
 def chat():
     try:
         data = request.get_json()
         query = data.get('query')
         thread_id = data.get('thread_id')
+        action = data.get('action')
+        email_id_to_summarize = data.get('email_id')
+        message_id_for_summary = data.get('message_id')
         
         print(f"\n=== New Chat Request ===")
         print(f"Query: {query}")
         print(f"Thread ID: {thread_id}")
+        print(f"Action: {action}")
+        print(f"Email ID: {email_id_to_summarize}")
+        print(f"Message ID for Summary Context: {message_id_for_summary}")
         
+        if action == "summarize_email":
+            # Check for required email_id parameter before proceeding
+            if not email_id_to_summarize:
+                print("Error: Missing email_id for summarize_email action")
+                return jsonify({
+                    "response": "Missing required parameter: email_id",
+                    "thread_id": thread_id,
+                    "message_id": str(uuid.uuid4())
+                }), 400
+            # Remove check for message_id_for_summary
+            # if not message_id_for_summary:
+            #     print("Error: Missing message_id for summarize_email action context")
+            #     return jsonify({
+            #         "response": "Missing required parameter: message_id for context",
+            #         "thread_id": thread_id,
+            #         "message_id": str(uuid.uuid4())
+            #     }), 400
+
+            # Parameters are present, proceed with summarization
+            print(f"Attempting to summarize email {email_id_to_summarize} within thread {thread_id}")
+            email_content = get_email_content_from_db(thread_id, email_id_to_summarize)
+
+            if email_content:
+                anthropic_client = anthropic.Anthropic(api_key=anthropic_api_key)
+                try:
+                    # Construct prompt for Anthropic using the dedicated prompt
+                    prompt = email_summarization_prompt(email_content)
+
+                    summary_response = anthropic_client.messages.create(
+                        model="claude-3-haiku-20240307",
+                        max_tokens=300,
+                        messages=[
+                            {"role": "user", "content": prompt}
+                        ]
+                    )
+                    summary_text = summary_response.content[0].text
+
+                    # Prepare response and save to DB
+                    response_message_id = str(uuid.uuid4())
+                    response_content = f"Summary for email ID {email_id_to_summarize}:\n{summary_text}"
+                    response_data = {
+                        "response": response_content,
+                        "thread_id": thread_id,
+                        "veyra_results": None,
+                        "message_id": response_message_id
+                    }
+
+                    # Save summary as a new assistant message
+                    new_message = Conversation(
+                        thread_id=thread_id,
+                        role="assistant",
+                        content=response_content,
+                        metadata={}
+                    )
+                    new_message.save()
+
+                    print(f"Successfully generated and saved summary for email {email_id_to_summarize}")
+                    return jsonify(response_data)
+
+                except Exception as e:
+                    print(f"Error calling Anthropic API or saving summary: {e}")
+                    response_content = f"Sorry, I encountered an error trying to summarize email {email_id_to_summarize} (context message: {message_id_for_summary})."
+                    # Save error message to DB and return
+                    error_message_id = str(uuid.uuid4())
+                    error_message = Conversation(
+                        thread_id=thread_id,
+                        role="assistant",
+                        content=response_content,
+                        metadata={"error": str(e)}
+                    )
+                    error_message.save()
+                    return jsonify({
+                        "response": response_content,
+                        "thread_id": thread_id,
+                        "veyra_results": None,
+                        "message_id": error_message.message_id
+                    }), 500
+
+            else:
+                # Content not found or couldn't be extracted
+                response_content = f"Sorry, I couldn't find the content for email ID {email_id_to_summarize} (context message: {message_id_for_summary}) to summarize it."
+                # Save error message to DB and return
+                error_message_id = str(uuid.uuid4())
+                error_message = Conversation(
+                    thread_id=thread_id,
+                    role="assistant",
+                    content=response_content,
+                    metadata={}
+                )
+                error_message.save()
+                return jsonify({
+                    "response": response_content,
+                    "thread_id": thread_id,
+                    "veyra_results": None,
+                    "message_id": error_message.message_id
+                }), 404
+        
+        # Check if query is None AFTER handling action-specific logic
         if not query:
-            return jsonify({"error": "No query provided"}), 400
-            
+            if not action:
+                # Only return error if BOTH query and action are missing
+                return jsonify({"error": "No query or action provided"}), 400
+            else:
+                # If action was provided (and handled above or doesn't need a query),
+                # proceed without a query. Intent router will handle this.
+                print(f"Proceeding with action '{action}' and no query.")
+        
         # Create or update thread
         if not thread_id:
             # New thread - create with first message as title
-            thread = Thread(title=query[:50] + "..." if len(query) > 50 else query)
+            # Use action as title if query is None, otherwise use query
+            thread_title = query or action
+            thread = Thread(title=thread_title[:50] + "..." if len(thread_title) > 50 else thread_title)
             thread.save()
             thread_id = thread.thread_id
         else:
@@ -207,7 +410,9 @@ def chat():
             thread = Thread.get_by_id(thread_id)
             if not thread:
                 # Thread doesn't exist, create it
-                thread = Thread(thread_id=thread_id, title=query[:50] + "..." if len(query) > 50 else query)
+                # Use action as title if query is None, otherwise use query
+                thread_title = query or action
+                thread = Thread(thread_id=thread_id, title=thread_title[:50] + "..." if len(thread_title) > 50 else thread_title)
                 thread.save()
         
         # Get thread history
@@ -223,81 +428,173 @@ def chat():
         
         print(f"Thread history length: {len(thread_history)}")
         
-        # First, check for VeyraX data
+        # Step 1: Use the Master Intent Router to identify the user's intent
+        intent = "general_knowledge_qa"  # Default intent
+        parameters = {}
+        intent_json_error = False
+        
+        try:
+            intent_prompt = master_intent_router_prompt(query, thread_history[-6:] if len(thread_history) > 6 else thread_history)
+            intent_response = llm.invoke(intent_prompt)
+            
+            try:
+                intent_data = json.loads(intent_response.content)
+                intent = intent_data.get("intent", "general_knowledge_qa")
+                parameters = intent_data.get("parameters", {})
+                print(f"Identified intent: {intent}")
+                print(f"Parameters: {parameters}")
+            except json.JSONDecodeError as json_error:
+                intent_json_error = True
+                print(f"Error parsing intent JSON: {str(json_error)}")
+                print(f"Raw intent response: {intent_response.content}")
+                
+                # Try to extract intent from the raw response using regex if it's not valid JSON
+                intent_match = re.search(r'"intent"\s*:\s*"(\w+)"', intent_response.content)
+                if intent_match:
+                    extracted_intent = intent_match.group(1)
+                    if extracted_intent in ["search_emails", "search_calendar_events", "general_knowledge_qa", 
+                                         "initiate_send_email", "initiate_create_event"]:
+                        intent = extracted_intent
+                        print(f"Extracted intent from raw response: {intent}")
+                
+        except Exception as e:
+            print(f"Error in intent classification: {str(e)}")
+        
+        # Step 2: Process the intent accordingly
         veyra_results = None
         veyra_context = None
-        if veyrax_service:
-            try:
-                print("\n=== Processing VeyraX Query ===")
-                print(f"Using VeyraX service: {type(veyrax_service).__name__}")
-                veyrax_data = veyrax_service.process_query(query, thread_history)
-                print(f"VeyraX data received: {veyrax_data}")
-                
-                if veyrax_data:
-                    source_type = veyrax_data.get("source_type", "")
-                    print(f"VeyraX source type: {source_type}")
+        response_text = ""
+        
+        # Always check if it's an email query when intent classification has problems
+        if intent_json_error and veyrax_service:
+            print("\n=== Checking for email query directly ===")
+            email_keywords = ["email", "e-mail", "mail", "gmail", "inbox", "message", "received", "sent"]
+            query_lower = query.lower()
+            if any(keyword in query_lower for keyword in email_keywords) or "email" in query_lower or "e-mail" in query_lower:
+                intent = "search_emails"
+                print(f"Directly detected email query, overriding intent to: {intent}")
+        
+        if intent == "search_emails":
+            # Use VeyraX to search for emails
+            if veyrax_service:
+                try:
+                    print("\n=== Processing Email Search ===")
+                    veyrax_data = veyrax_service.process_query(query, thread_history)
                     
-                    if source_type in ["mail", "gmail"]:
+                    print(f"VeyraX response type: {type(veyrax_data)}")
+                    print(f"VeyraX data: {json.dumps(veyrax_data, default=str) if veyrax_data else 'None'}")
+                    
+                    if veyrax_data and veyrax_data.get("source_type") in ["mail", "gmail"]:
                         messages = veyrax_data.get("data", {}).get("messages", [])
-                        print(f"VeyraX messages found: {len(messages) if messages else 0}")
+                        
+                        print(f"Found {len(messages)} email messages")
+                        
                         if messages:
                             veyra_results = {"emails": messages}
                             veyra_context = veyrax_data
-                            print(f"VeyraX results prepared: {veyra_results}")
-                    elif source_type == "google-calendar":
+                            # Use the email results intro prompt
+                            response_text = email_results_intro_prompt(True)
+                        else:
+                            response_text = email_results_intro_prompt(False)
+                    else:
+                        # If VeyraX didn't return email data, use a fallback message
+                        print(f"No email data returned from VeyraX: {veyrax_data}")
+                        response_text = "I couldn't find any emails matching your query."
+                except Exception as e:
+                    print(f"Error in email search: {str(e)}")
+                    import traceback
+                    print(f"Email search error traceback: {traceback.format_exc()}")
+                    response_text = "I encountered an error while searching for emails. Please try again."
+            else:
+                print("VeyraX service not available")
+                response_text = "Email search is not available at the moment."
+        
+        elif intent == "search_calendar_events":
+            # Use VeyraX to search for calendar events
+            if veyrax_service:
+                try:
+                    print("\n=== Processing Calendar Search ===")
+                    veyrax_data = veyrax_service.process_query(query, thread_history)
+                    
+                    if veyrax_data and veyrax_data.get("source_type") == "google-calendar":
                         events = veyrax_data.get("data", {}).get("events", [])
-                        print(f"VeyraX calendar events found: {len(events) if events else 0}")
+                        
                         if events:
                             veyra_results = {"calendar_events": events}
                             veyra_context = veyrax_data
-                            print(f"VeyraX results prepared: {veyra_results}")
+                            # Use the calendar results intro prompt
+                            response_text = calendar_results_intro_prompt(True)
+                        else:
+                            response_text = calendar_results_intro_prompt(False)
+                    else:
+                        # If VeyraX didn't return calendar data, use a fallback message
+                        response_text = "I couldn't find any calendar events matching your query."
+                except Exception as e:
+                    print(f"Error in calendar search: {str(e)}")
+                    response_text = "I encountered an error while searching for calendar events. Please try again."
+            else:
+                response_text = "Calendar search is not available at the moment."
+        
+        elif intent == "general_knowledge_qa":
+            # Get relevant documents using the retriever
+            try:
+                result = qa_chain.invoke({"query": query})
+                retrieved_docs = result["source_documents"]
+                
+                # Build the general QA prompt
+                qa_prompt = general_qa_prompt(query, thread_history, retrieved_docs)
+                
+                # Get response from LLM
+                qa_response = llm.invoke(qa_prompt)
+                response_text = qa_response.content.strip()
+                
             except Exception as e:
-                print(f"Error processing VeyraX data: {str(e)}")
-                print(f"Error type: {type(e)}")
-                import traceback
-                print(f"Traceback: {traceback.format_exc()}")
+                print(f"Error in QA chain: {str(e)}")
+                if "overloaded_error" in str(e):
+                    error_message = "The AI service is currently experiencing high load. Please try again in a few moments."
+                    return jsonify({"error": error_message}), 503
+                response_text = "I encountered an error trying to answer your question. Please try again."
+        
+        elif intent == "initiate_send_email":
+            # For now, just acknowledge and provide a placeholder
+            response_text = "I see you want to send an email. This feature is coming soon!"
+        
+        elif intent == "initiate_create_event":
+            # For now, just acknowledge and provide a placeholder
+            response_text = "I see you want to create a calendar event. This feature is coming soon!"
+        
         else:
-            print("VeyraX service not initialized")
-        
-        # Get relevant documents using the retriever
-        try:
-            result = qa_chain.invoke({"query": query})  # Using invoke instead of __call__
-            retrieved_docs = result["source_documents"]
-        except Exception as e:
-            print(f"Error in QA chain: {str(e)}")
-            retrieved_docs = []
-        
-        # Build prompt with context and get response from LLM
-        prompt, insight_id = build_prompt(query, retrieved_docs, thread_history, veyra_context)
-        
-        try:
-            response = llm.invoke(prompt)
-            response_text = response.content.strip()
-        except Exception as e:
-            if "overloaded_error" in str(e):
-                error_message = "The AI service is currently experiencing high load. Please try again in a few moments."
-                return jsonify({"error": error_message}), 503
-            raise e
+            # Unknown intent, fall back to general QA
+            response_text = "I'm not sure what you're asking for. Can you please clarify?"
         
         # Save conversation using the Conversation class
         conversation = Conversation(
             thread_id=thread_id,
-            query=query,
-            response=response_text,
-            insight_id=insight_id,
+            role="user",
+            content=query,
+            veyra_results=None
+        )
+        conversation.save()
+        
+        # Save assistant response
+        assistant_conversation = Conversation(
+            thread_id=thread_id,
+            role="assistant",
+            content=response_text,
             veyra_results=veyra_results
         )
-        print(f"\n=== Saving Conversation ===")
-        print(f"VeyraX results being saved: {veyra_results}")
-        conversation.save()
+        assistant_conversation.save()
         
         response_data = {
             "response": response_text,
             "thread_id": thread_id,
-            "veyra_results": veyra_results
+            "veyra_results": veyra_results,
+            "message_id": assistant_conversation.message_id
         }
+        
         print(f"\n=== Sending Response ===")
         print(f"Response data: {response_data}")
+
         return jsonify(response_data)
         
     except Exception as e:

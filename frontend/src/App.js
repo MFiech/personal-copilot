@@ -346,20 +346,35 @@ function App() {
     if (isMobile) setDrawerOpen(false);
   };
 
+  // Function to add a new assistant message to the state
+  const handleNewAssistantMessage = (newMessageData) => {
+    // Ensure the message has the minimum required fields
+    const formattedMessage = {
+      role: 'assistant',
+      content: newMessageData.response || "Summary received.", // Use response field from backend
+      message_id: newMessageData.message_id || `temp-${Date.now()}`, // Use message_id from backend
+      timestamp: Date.now() / 1000, // Approximate timestamp
+      veyra_results: newMessageData.veyra_results || null // Include if backend sends it
+    };
+    console.log("[App.js] Adding new assistant message:", formattedMessage);
+    setMessages(prevMessages => [...prevMessages, formattedMessage]);
+  };
+
   // Render message content with proper formatting
-  const renderMessage = (content, veyraResults, message_id) => {
+  const renderMessage = (content, veyraResults, message_id, onNewMessage) => {
     console.log('renderMessage called with:', { content, veyraResults, message_id });
     return (
-      <Box sx={{ mb: 0 }}> {/* Removed mb if VeyraResults handles spacing */}
+      <Box sx={{ mb: 0 }}>
         <Typography variant="body1" component="div" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
           {content}
         </Typography>
         {veyraResults && (
-          <Box sx={{ mt: 1, bgcolor: 'transparent', borderRadius: 1 }}> {/* Adjusted Veyra results styling if needed */}
+          <Box sx={{ mt: 1, bgcolor: 'transparent', borderRadius: 1 }}>
             <VeyraResults 
               results={veyraResults} 
               currentThreadId={threadId}
-              message_id={message_id}  // Pass the message_id
+              message_id={message_id}
+              onNewMessageReceived={onNewMessage}
             />
           </Box>
         )}
@@ -633,8 +648,14 @@ function App() {
                     color: message.role === 'user' ? theme.palette.text.userMessage : theme.palette.text.primary,
                     wordBreak: 'break-word', // Ensure long words break
                   }}
+                  {...(message.role === 'assistant' && message.message_id && { 'data-message-id': message.message_id })}
                 >
-                  {renderMessage(message.content, message.veyra_results, message.message_id)}
+                  {renderMessage(
+                    message.content, 
+                    message.metadata?.veyra_results || message.veyra_results,
+                    message.message_id,
+                    handleNewAssistantMessage
+                  )}
                 </Paper>
               </Box>
             ))}

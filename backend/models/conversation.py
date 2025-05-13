@@ -5,47 +5,56 @@ import time
 import uuid
 
 class Conversation:
-    def __init__(self, thread_id=None, query=None, response=None, insight_id=None, metadata=None, veyra_results=None):
+    def __init__(self, thread_id=None, role=None, content=None, insight_id=None, metadata=None, veyra_results=None, query=None, response=None):
         self.thread_id = thread_id
-        self.query = query
-        self.response = response
+        self.role = role
+        self.content = content
+        
+        # For backward compatibility - map query/response to role/content if used
+        if query is not None and role is None:
+            self.role = 'user'
+            self.content = query
+        elif response is not None and role is None:
+            self.role = 'assistant'
+            self.content = response
+        
         self.insight_id = insight_id
         self.metadata = metadata
         self.veyra_results = veyra_results
-        self.query_timestamp = int(time.time())
-        self.response_timestamp = None
+        self.timestamp = int(time.time())
+        self.message_id = None  # Will be set after save
         self.collection = get_collection(CONVERSATIONS_COLLECTION)
 
     def save(self):
         """Save conversation to MongoDB with validation"""
-        # Generate unique message IDs
-        user_message_id = str(uuid.uuid4())
-        ai_message_id = str(uuid.uuid4())
+        # Generate unique message ID
+        self.message_id = str(uuid.uuid4())
         
-        # Save user message
-        user_message = {
-            'message_id': user_message_id,
+        # Ensure content is a string, not None, for validation
+        if self.content is None:
+            print(f"Warning: Conversation content was None for role '{self.role}'. Setting to empty string.")
+            self.content = ""
+        
+        # Create message document
+        message = {
+            'message_id': self.message_id,
             'thread_id': self.thread_id,
-            'role': 'user',
-            'content': self.query,
-            'timestamp': self.query_timestamp,
+            'role': self.role,
+            'content': self.content,
+            'timestamp': self.timestamp,
             'metadata': self.metadata or {}  # Ensure metadata is an object, not null
         }
-        self.collection.insert_one(user_message)
-
-        # Save AI response with veyra_results if available
-        ai_message = {
-            'message_id': ai_message_id,
-            'thread_id': self.thread_id,
-            'role': 'assistant',
-            'content': self.response,
-            'timestamp': self.response_timestamp or (int(time.time()) + 1),
-            'insight_id': self.insight_id,
-            'metadata': self.metadata or {}  # Ensure metadata is an object, not null
-        }
+        
+        # Add insight_id if present
+        if self.insight_id:
+            message['insight_id'] = self.insight_id
+            
+        # Add veyra_results if present
         if self.veyra_results:
-            ai_message['veyra_results'] = self.veyra_results
-        return self.collection.insert_one(ai_message)
+            message['veyra_results'] = self.veyra_results
+            
+        # Insert document and return result
+        return self.collection.insert_one(message)
 
     @classmethod
     def get_by_thread_id(cls, thread_id):
