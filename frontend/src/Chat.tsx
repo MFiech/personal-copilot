@@ -262,16 +262,21 @@ export const Chat: React.FC = () => {
                   return (
                     <div 
                       key={tileKey}
-                      className="relative tile-container m-1"
+                      className={`relative tile-container m-1 ${isChecked ? 'ring-2 ring-blue-500' : ''}`}
                       onMouseEnter={() => setHoveredTileKey(tileKey)}
                       onMouseLeave={() => setHoveredTileKey(null)}
                     >
+                       {isCheckboxVisible && (
+                         <div className="absolute bottom-0 right-0 w-8 h-8 bg-white bg-opacity-80 rounded-tl-md z-[9998]"></div>
+                       )}
                        <input
                         type="checkbox"
-                        className="absolute top-1 right-1 z-[9999] tile-checkbox pointer-events-auto"
+                        className="absolute bottom-1 right-1 z-[9999] tile-checkbox pointer-events-auto w-5 h-5"
                         style={{
                           opacity: isCheckboxVisible ? 1 : 0,
-                          transition: 'opacity 0.2s ease-in-out'
+                          transition: 'opacity 0.2s ease-in-out',
+                          backgroundColor: 'white',
+                          border: '2px solid #1976d2' 
                         }}
                         checked={isChecked}
                         disabled={isDisabled}

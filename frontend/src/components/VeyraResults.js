@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { 
   Card, 
   Typography, 
@@ -17,6 +17,40 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
   const [deletedEmails, setDeletedEmails] = useState(new Set());
   const [deletedEvents, setDeletedEvents] = useState(new Set());
   const [clickedElement, setClickedElement] = useState(null);
+
+  // New state for hover and selection within VeyraResults
+  const [hoveredTileKey, setHoveredTileKey] = useState(null);
+  const [selectedTiles, setSelectedTiles] = useState({});
+  // activeSelectionMessageId might not be needed if VeyraResults is always one message context
+  // For now, selections are local to this instance of VeyraResults mapped by message_id
+
+  const makeTileKey = (itemType, itemId) => {
+    return `${message_id}-${itemType}-${itemId}`;
+  };
+
+  const handleTileMouseEnter = useCallback((key) => {
+    setHoveredTileKey(key);
+  }, []);
+
+  const handleTileMouseLeave = useCallback(() => {
+    setHoveredTileKey(null);
+  }, []);
+
+  const handleTileSelect = useCallback((itemType, itemId) => {
+    const key = makeTileKey(itemType, itemId);
+    setSelectedTiles(prev => {
+      const newSelected = { ...prev };
+      if (newSelected[key]) {
+        delete newSelected[key];
+      } else {
+        newSelected[key] = true;
+      }
+      // If we need to communicate selection up to Chat.tsx, this is where it would happen
+      // For now, console.log the selection
+      console.log('VeyraResults selectedTiles:', newSelected);
+      return newSelected;
+    });
+  }, [message_id, makeTileKey]); // Add message_id to dependencies if it can change
 
   const formatEventDateTime = (dateTime) => {
     try {
@@ -223,7 +257,16 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
   }
 
   return (
-    <Grid container spacing={2} sx={{ bgcolor: 'rgba(0, 0, 0, 0.02)' }}>
+    <Grid container spacing={2} sx={{ bgcolor: 'rgba(0, 0, 0, 0.02)', position: 'relative' }}>
+      {/* Optional: Control Panel for VeyraResults if needed - similar to SelectionControlPanel */}
+      {/* This would require passing down onDeselectAll etc. or handling it locally */}
+      {Object.keys(selectedTiles).length > 0 && (
+        <div style={{ position: 'absolute', top: -40, left: 0, width: '100%', background: '#f0f2f5', padding: '5px', zIndex: 100, textAlign: 'center' }}>
+          {Object.keys(selectedTiles).length} items selected in this result block.
+          <button onClick={() => setSelectedTiles({})} style={{ marginLeft: '10px'}}>Deselect All in Block</button>
+        </div>
+      )}
+
       {/* Filter Information */}
       {results.filter_applied && (
         <Grid item xs={12}>
@@ -267,6 +310,12 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
             </Grid>
           );
         }
+        const emailId = email.id || `email-fallback-${index}`;
+        const tileKey = makeTileKey('email', emailId);
+        const isChecked = !!selectedTiles[tileKey];
+        const isCheckboxVisible = hoveredTileKey === tileKey || isChecked;
+        console.log('[Email Tile] isCheckboxVisible:', isCheckboxVisible, 'hoveredTileKey:', hoveredTileKey, 'tileKey:', tileKey, 'isChecked:', isChecked); // DEBUG LOG
+
         return (
           <Grid item xs={12} sm={6} md={3} key={`email-${index}`}>
             <Card 
@@ -276,12 +325,32 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
                 boxShadow: 'none',
                 border: '1px solid rgba(0, 0, 0, 0.08)',
                 bgcolor: 'white',
-                '&:hover': {
-                  border: '1px solid rgba(0, 0, 0, 0.12)'
-                }
+                position: 'relative', // For checkbox positioning
+                outline: isChecked ? '2px solid #1976d2' : 'none', // Selected outline
               }}
-              data-email-id={email.id}
+              data-email-id={emailId}
+              onMouseEnter={() => handleTileMouseEnter(tileKey)}
+              onMouseLeave={handleTileMouseLeave}
             >
+              {isCheckboxVisible && (
+                <div className="absolute bottom-0 right-0 w-8 h-8 bg-white bg-opacity-80 rounded-tl-md z-[9998]" style={{zIndex: 9998}}></div>
+              )}
+              <input
+                type="checkbox"
+                className="absolute bottom-1 right-1 z-[9999] w-5 h-5"
+                style={{
+                  opacity: isCheckboxVisible ? 1 : 0, // TEMPORARILY SET TO 1 FOR DEBUGGING
+                  transition: 'opacity 0.2s ease-in-out',
+                  backgroundColor: 'white',
+                  border: '2px solid #1976d2',
+                  cursor: 'pointer',
+                  zIndex: 9999
+                }}
+                checked={isChecked}
+                // isDisabled: false, // Or some logic if VeyraResults has its own disabling scope
+                onChange={() => handleTileSelect('email', emailId)}
+                onClick={(e) => e.stopPropagation()} 
+              />
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <Box sx={{ flex: 1, mr: 1 }}>
                   <Typography 
@@ -360,6 +429,12 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
             </Grid>
           );
         }
+        const eventId = event.id || `event-fallback-${index}`;
+        const tileKey = makeTileKey('event', eventId);
+        const isChecked = !!selectedTiles[tileKey];
+        const isCheckboxVisible = hoveredTileKey === tileKey || isChecked;
+        console.log('[Event Tile] isCheckboxVisible:', isCheckboxVisible, 'hoveredTileKey:', hoveredTileKey, 'tileKey:', tileKey, 'isChecked:', isChecked); // DEBUG LOG
+
         return (
           <Grid item xs={12} sm={6} md={3} key={`event-${index}`}>
             <Card 
@@ -370,15 +445,32 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
                 boxShadow: 'none',
                 border: '1px solid rgba(0, 0, 0, 0.08)',
                 bgcolor: 'white',
-                '&:hover': {
-                  border: '1px solid rgba(0, 0, 0, 0.12)',
-                  transform: 'translateY(-2px)',
-                  boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1) !important'
-                },
-                transition: 'all 0.2s ease-in-out'
+                position: 'relative', // For checkbox positioning
+                outline: isChecked ? '2px solid #1976d2' : 'none', // Selected outline
               }}
-              data-event-id={event.id}
+              data-event-id={eventId}
+              onMouseEnter={() => handleTileMouseEnter(tileKey)}
+              onMouseLeave={handleTileMouseLeave}
             >
+              {isCheckboxVisible && (
+                <div className="absolute bottom-0 right-0 w-8 h-8 bg-white bg-opacity-80 rounded-tl-md z-[9998]" style={{zIndex: 9998}}></div>
+              )}
+              <input
+                type="checkbox"
+                className="absolute bottom-1 right-1 z-[9999] w-5 h-5"
+                style={{
+                  opacity: isCheckboxVisible ? 1 : 0, // TEMPORARILY SET TO 1 FOR DEBUGGING
+                  transition: 'opacity 0.2s ease-in-out',
+                  backgroundColor: 'white',
+                  border: '2px solid #1976d2',
+                  cursor: 'pointer',
+                  zIndex: 9999
+                }}
+                checked={isChecked}
+                // isDisabled: false, // Or some logic if VeyraResults has its own disabling scope
+                onChange={() => handleTileSelect('event', eventId)}
+                onClick={(e) => e.stopPropagation()}
+              />
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <Box sx={{ flex: 1, mr: 1 }}>
                   <Typography 
