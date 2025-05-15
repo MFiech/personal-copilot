@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import { 
   Card, 
   Typography, 
@@ -6,52 +6,24 @@ import {
   IconButton, 
   Menu, 
   MenuItem,
-  Grid
+  Grid,
+  Paper,
+  Button
 } from '@mui/material';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import './VeyraResults.css';
 
-const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceived }) => {
+const VeyraResults = ({ results, currentThreadId, message_id }) => {
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedItem, setSelectedItem] = useState(null);
   const [deletedEmails, setDeletedEmails] = useState(new Set());
   const [deletedEvents, setDeletedEvents] = useState(new Set());
   const [clickedElement, setClickedElement] = useState(null);
-  const [summarizing, setSummarizing] = useState(false);
-
-  // New state for hover and selection within VeyraResults
-  const [hoveredTileKey, setHoveredTileKey] = useState(null);
   const [selectedTiles, setSelectedTiles] = useState({});
-  // activeSelectionMessageId might not be needed if VeyraResults is always one message context
-  // For now, selections are local to this instance of VeyraResults mapped by message_id
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
-  const makeTileKey = (itemType, itemId) => {
-    return `${message_id}-${itemType}-${itemId}`;
-  };
-
-  const handleTileMouseEnter = useCallback((key) => {
-    setHoveredTileKey(key);
-  }, []);
-
-  const handleTileMouseLeave = useCallback(() => {
-    setHoveredTileKey(null);
-  }, []);
-
-  const handleTileSelect = useCallback((itemType, itemId) => {
-    const key = makeTileKey(itemType, itemId);
-    setSelectedTiles(prev => {
-      const newSelected = { ...prev };
-      if (newSelected[key]) {
-        delete newSelected[key];
-      } else {
-        newSelected[key] = true;
-      }
-      // If we need to communicate selection up to Chat.tsx, this is where it would happen
-      // For now, console.log the selection
-      console.log('VeyraResults selectedTiles:', newSelected);
-      return newSelected;
-    });
-  }, [message_id, makeTileKey]); // Add message_id to dependencies if it can change
+  console.log('[VeyraResults] Props received:', { results, currentThreadId, message_id });
+  console.log('[VeyraResults] Current selectedTiles:', selectedTiles);
 
   const formatEventDateTime = (dateTime) => {
     try {
@@ -78,8 +50,10 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
   const handleMenuClick = (event, item) => {
     setAnchorEl(event.currentTarget);
     setSelectedItem(item);
+    // Save the nearest Card element that has a data attribute
     const cardElement = event.currentTarget.closest('[data-email-id], [data-event-id]');
     setClickedElement(cardElement);
+    console.log('[VeyraResults] Menu clicked for item:', item, 'Card element:', cardElement);
   };
 
   const handleMenuClose = () => {
@@ -89,80 +63,8 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
   };
 
   const handleAction = async (action, item) => {
-    if (action === 'summarize') {
-      const currentEmailId = item.id;
-
-      if (!currentEmailId || !currentThreadId) {
-        console.error('Missing required IDs for summarization (email_id or thread_id):', { email_id: currentEmailId, thread_id: currentThreadId });
-        alert('Cannot summarize: Missing email ID or thread ID.');
-        handleMenuClose();
-        return;
-      }
-
-      // Get message_id from the clicked tile's dataset
-      const messageIdFromTile = clickedElement?.dataset?.messageId;
-      console.log('handleAction - summarize - messageId from tile dataset:', messageIdFromTile);
-
-      if (!messageIdFromTile) {
-        console.error("Could not retrieve message_id from the clicked tile's data-message-id attribute.");
-        alert('Cannot summarize: Could not find context message ID on the email tile.');
-        handleMenuClose();
-        return;
-      }
-
-      setSummarizing(currentEmailId);
-      
-      try {
-        // Log both message_id values for comparison
-        console.log('[VeyraResults] Summarize Action - ID from Prop:', message_id);
-        console.log('[VeyraResults] Summarize Action - ID from Tile Dataset:', messageIdFromTile);
-
-        const payload = {
-          action: 'summarize_email',
-          email_id: currentEmailId,
-          thread_id: currentThreadId,
-          message_id: messageIdFromTile // Use the ID retrieved from the tile
-        };
-        
-        console.log('Sending summarize request to /chat with payload:', payload);
-        
-        const response = await fetch('http://localhost:5001/chat', { 
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(payload)
-        });
-        
-        const data = await response.json();
-        console.log('Summarize response from /chat:', data);
-        
-        if (!response.ok) {
-           console.error('Summarization request failed:', data.error || response.statusText);
-           // Optionally, show an error to the user via alert or notification
-           // alert(`Failed to start summarization: ${data.error || response.statusText}`);
-        } else {
-           console.log('Summarization request sent successfully. Received data:', data);
-
-           // Call the callback function passed from App.js with the new message data
-           if (onNewMessageReceived && data.response && data.message_id) {
-             onNewMessageReceived(data); // Pass the whole response data object
-           } else {
-             console.warn("onNewMessageReceived callback missing or summary data incomplete, UI might not update without refresh.");
-             // Optionally, fallback to reload if callback isn't available
-             // window.location.reload(); 
-           }
-        }
-
-      } catch (error) {
-        console.error('Error sending summarization request:', error);
-        // Optionally show error to user
-        // alert(`Error requesting summarization: ${error.message}`);
-      } finally {
-        setSummarizing(false); // Reset loading state regardless of item ID
-        handleMenuClose();
-      }
-    } else if (action === 'delete') {
+    console.log(`[VeyraResults] Action: ${action} for item:`, item);
+    if (action === 'delete') {
       // Check if this is a calendar event or an email
       if (item.start) { // This is a calendar event
         try {
@@ -204,7 +106,12 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
           console.log('Delete event response:', data);
           
           // Update UI regardless of API response to ensure events disappear
-          setDeletedEvents(prev => new Set([...prev, item.id]));
+          setDeletedEvents(prev => {
+            const newSet = new Set(prev);
+            newSet.add(item.id);
+            console.log('[VeyraResults] Updated deletedEvents (optimistic):', newSet);
+            return newSet;
+          });
           
           if (data.success) {
             console.log('Event successfully deleted');
@@ -214,7 +121,12 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
         } catch (error) {
           console.error('Error deleting event:', error);
           // Even if there's an error, mark the event as deleted in the UI
-          setDeletedEvents(prev => new Set([...prev, item.id]));
+          setDeletedEvents(prev => {
+            const newSet = new Set(prev);
+            newSet.add(item.id);
+            console.log('[VeyraResults] Updated deletedEvents (error catch):', newSet);
+            return newSet;
+          });
         } finally {
           handleMenuClose();
           
@@ -288,7 +200,12 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
           
           // Update UI regardless of API response to ensure emails disappear
           // This improves UX even if there are backend issues
-          setDeletedEmails(prev => new Set([...prev, item.id]));
+          setDeletedEmails(prev => {
+            const newSet = new Set(prev);
+            newSet.add(item.id);
+            console.log('[VeyraResults] Updated deletedEmails (optimistic):', newSet);
+            return newSet;
+          });
           
           if (data.success) {
             console.log('Email successfully deleted');
@@ -302,7 +219,12 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
           console.error('Error deleting email:', error);
           // Even if there's an error, mark the email as deleted in the UI
           // This improves UX when there are network issues
-          setDeletedEmails(prev => new Set([...prev, item.id]));
+          setDeletedEmails(prev => {
+            const newSet = new Set(prev);
+            newSet.add(item.id);
+            console.log('[VeyraResults] Updated deletedEmails (error catch):', newSet);
+            return newSet;
+          });
         } finally {
           handleMenuClose();
           
@@ -325,21 +247,138 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
   };
 
   if (!results || (!results.emails?.length && !results.calendar_events?.length)) {
-    console.log('No results to display');
+    console.log('[VeyraResults] No results to display');
     return null;
   }
 
-  return (
-    <Grid container spacing={2} sx={{ bgcolor: 'rgba(0, 0, 0, 0.02)', position: 'relative' }}>
-      {/* Optional: Control Panel for VeyraResults if needed - similar to SelectionControlPanel */}
-      {/* This would require passing down onDeselectAll etc. or handling it locally */}
-      {Object.keys(selectedTiles).length > 0 && (
-        <div style={{ position: 'absolute', top: -40, left: 0, width: '100%', background: '#f0f2f5', padding: '5px', zIndex: 100, textAlign: 'center' }}>
-          {Object.keys(selectedTiles).length} items selected in this result block.
-          <button onClick={() => setSelectedTiles({})} style={{ marginLeft: '10px'}}>Deselect All in Block</button>
-        </div>
-      )}
+  // --- Methods for tile selection ---
+  const makeTileKey = (itemType, itemId) => {
+    // Using message_id from props to ensure it's the assistant's message ID
+    // Changed delimiter from '-' to '|' for robustness with itemIDs containing hyphens
+    return `${message_id}|${itemType}|${itemId}`;
+  };
 
+  const handleTileSelect = (itemType, itemId) => {
+    const key = makeTileKey(itemType, itemId);
+    setSelectedTiles(prev => {
+      const newSelected = { ...prev, [key]: !prev[key] };
+      console.log('[VeyraResults] Tile selection changed. Key:', key, 'New selectedTiles:', newSelected);
+      return newSelected;
+    });
+  };
+  
+  const getSelectedCount = () => {
+    return Object.values(selectedTiles).filter(isSelected => isSelected).length;
+  };
+
+  const handleBulkDelete = async () => {
+    const itemsToDelete = [];
+    for (const key in selectedTiles) {
+      if (selectedTiles[key]) { // Ensure it's truly selected
+        const keyParts = key.split('|'); // Use new delimiter '|'
+
+        if (keyParts.length === 3) {
+          // keyParts[0] is message_id (from the VeyraResults block)
+          // keyParts[1] is itemType ('email' or 'event')
+          // keyParts[2] is itemId
+          const itemTypeFromKey = keyParts[1];
+          const itemIdFromKey = keyParts[2];
+          
+          itemsToDelete.push({
+            item_id: itemIdFromKey,
+            item_type: itemTypeFromKey, // This should now correctly be 'email' or 'event'
+          });
+        } else {
+          console.error('[VeyraResults] Error parsing tile key for bulk delete. Key:', key, 'Expected 3 parts, got:', keyParts.length);
+          // Optionally, alert the user or skip this item
+        }
+      }
+    }
+
+    if (itemsToDelete.length === 0) {
+      alert("No items selected for deletion.");
+      console.log('[VeyraResults] Bulk delete attempted with no items selected.');
+      return;
+    }
+
+    setIsBulkDeleting(true);
+    console.log('[VeyraResults] Starting bulk delete for items:', itemsToDelete);
+
+    // `message_id` prop is the assistant's message ID
+    // `currentThreadId` prop is the chat thread ID
+    const payload = {
+      message_id: message_id, 
+      thread_id: currentThreadId, 
+      items: itemsToDelete
+    };
+
+    console.log('[VeyraResults] Sending bulk delete request with payload:', payload);
+
+    try {
+      const response = await fetch('http://localhost:5001/bulk_delete_items', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+      console.log('[VeyraResults] Bulk delete response received:', data);
+
+      if (data.success && data.results) {
+        const successfullyDeletedEmailIds = new Set();
+        const successfullyDeletedEventIds = new Set();
+        let successfulDeletes = 0;
+        let failedDeletes = 0;
+
+        data.results.forEach(result => {
+          if (result.deleted) {
+            successfulDeletes++;
+            if (result.item_type === 'email') {
+              successfullyDeletedEmailIds.add(result.item_id);
+            } else if (result.item_type === 'event') {
+              successfullyDeletedEventIds.add(result.item_id);
+            }
+          } else {
+            failedDeletes++;
+            console.warn(`[VeyraResults] Failed to delete ${result.item_type} with ID ${result.item_id}: ${result.error || 'Unknown reason'}`);
+          }
+        });
+
+        setDeletedEmails(prev => {
+          const newSet = new Set([...prev, ...successfullyDeletedEmailIds]);
+          console.log('[VeyraResults] Updated deletedEmails after bulk delete:', newSet);
+          return newSet;
+        });
+        setDeletedEvents(prev => {
+          const newSet = new Set([...prev, ...successfullyDeletedEventIds]);
+          console.log('[VeyraResults] Updated deletedEvents after bulk delete:', newSet);
+          return newSet;
+        });
+
+        setSelectedTiles({}); // Clear selection
+        console.log('[VeyraResults] Cleared selectedTiles after bulk delete.');
+        alert(`${successfulDeletes} item(s) processed for deletion. ${failedDeletes > 0 ? `${failedDeletes} item(s) failed.` : ''} Check console for details.`);
+      
+      } else {
+        console.error('[VeyraResults] Bulk delete API call failed or returned unexpected data:', data.error || data);
+        alert(`Bulk delete request failed: ${data.error || 'Server error. Check console.'}`);
+      }
+    } catch (error) {
+      console.error('[VeyraResults] Error during bulk delete fetch operation:', error);
+      alert(`Error during bulk delete: ${error.message}. Check console.`);
+    } finally {
+      setIsBulkDeleting(false);
+      console.log('[VeyraResults] Bulk delete operation finished.');
+    }
+  };
+  // --- End of methods for tile selection ---
+
+  const selectedCount = getSelectedCount();
+
+  return (
+    <Grid container spacing={2} sx={{ bgcolor: 'rgba(0, 0, 0, 0.02)' }}>
       {/* Filter Information */}
       {results.filter_applied && (
         <Grid item xs={12}>
@@ -357,8 +396,53 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
         </Grid>
       )}
 
+      {/* Selection Control Panel */}
+      {selectedCount > 0 && (
+        <Grid item xs={12}>
+          <Paper 
+            elevation={2} 
+            sx={{ 
+              p: 1.5, 
+              mb: 2, 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              backgroundColor: 'rgba(25, 118, 210, 0.1)' // Light blueish background
+            }}
+          >
+            <Typography variant="subtitle2" sx={{ color: 'primary.main' }}>
+              {selectedCount} item(s) selected in this block.
+            </Typography>
+            <Box>
+              <Button 
+                onClick={() => {
+                  setSelectedTiles({});
+                  console.log('[VeyraResults] Deselected all tiles in this block.');
+                }} 
+                size="small"
+                sx={{ mr: 1 }}
+              >
+                Deselect All
+              </Button>
+              <Button 
+                onClick={handleBulkDelete} 
+                variant="contained" 
+                color="error" 
+                size="small"
+                disabled={isBulkDeleting}
+              >
+                {isBulkDeleting ? 'Deleting...' : 'Delete Selected'}
+              </Button>
+            </Box>
+          </Paper>
+        </Grid>
+      )}
+
       {/* Email Tiles */}
       {results.emails && results.emails.map((email, index) => {
+        const tileKey = makeTileKey('email', email.id);
+        const isSelected = !!selectedTiles[tileKey];
+
         if (deletedEmails.has(email.id)) {
           return (
             <Grid item xs={12} sm={6} md={3} key={`email-${index}`}>
@@ -383,13 +467,6 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
             </Grid>
           );
         }
-        
-        const emailId = email.id || `email-fallback-${index}`;
-        const tileKey = makeTileKey('email', emailId);
-        const isChecked = !!selectedTiles[tileKey];
-        const isCheckboxVisible = hoveredTileKey === tileKey || isChecked;
-        console.log('[Email Tile] isCheckboxVisible:', isCheckboxVisible, 'hoveredTileKey:', hoveredTileKey, 'tileKey:', tileKey, 'isChecked:', isChecked); // DEBUG LOG
-
         return (
           <Grid item xs={12} sm={6} md={3} key={`email-${index}`}>
             <Card 
@@ -397,38 +474,19 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
                 height: '100%', 
                 p: 2, 
                 boxShadow: 'none',
-                border: '1px solid rgba(0, 0, 0, 0.08)',
-                bgcolor: 'white',
-                position: 'relative', // For checkbox positioning
-                outline: isChecked ? '2px solid #1976d2' : 'none', // Selected outline
+                border: isSelected ? '2px solid #1976d2' : '1px solid rgba(0, 0, 0, 0.08)',
+                bgcolor: isSelected ? '#e3f2fd' : 'white',
+                cursor: 'pointer',
+                '&:hover': {
+                  border: isSelected ? '2px solid #1565c0' : '1px solid rgba(0, 0, 0, 0.12)',
+                  transform: 'translateY(-1px)',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+                },
+                transition: 'all 0.2s ease-in-out'
               }}
-
-              data-email-id={emailId}
-              onMouseEnter={() => handleTileMouseEnter(tileKey)}
-              onMouseLeave={handleTileMouseLeave}
-
               data-email-id={email.id}
-              data-message-id={message_id}
+              onClick={() => handleTileSelect('email', email.id)}
             >
-              {isCheckboxVisible && (
-                <div className="absolute bottom-0 right-0 w-8 h-8 bg-white bg-opacity-80 rounded-tl-md z-[9998]" style={{zIndex: 9998}}></div>
-              )}
-              <input
-                type="checkbox"
-                className="absolute bottom-1 right-1 z-[9999] w-5 h-5"
-                style={{
-                  opacity: isCheckboxVisible ? 1 : 0, // TEMPORARILY SET TO 1 FOR DEBUGGING
-                  transition: 'opacity 0.2s ease-in-out',
-                  backgroundColor: 'white',
-                  border: '2px solid #1976d2',
-                  cursor: 'pointer',
-                  zIndex: 9999
-                }}
-                checked={isChecked}
-                // isDisabled: false, // Or some logic if VeyraResults has its own disabling scope
-                onChange={() => handleTileSelect('email', emailId)}
-                onClick={(e) => e.stopPropagation()} 
-              />
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <Box sx={{ flex: 1, mr: 1 }}>
                   <Typography 
@@ -462,8 +520,7 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
                     variant="body2" 
                     sx={{ 
                       fontSize: '0.75rem',
-                      color: 'text.secondary',
-                      mb: 0.5
+                      color: 'text.secondary'
                     }}
                   >
                     {formatEventDateTime(email.date)}
@@ -477,12 +534,6 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
                   <MoreVertIcon />
                 </IconButton>
               </Box>
-              {/* Loading indicator for summarization */}
-              {summarizing === email.id && (
-                <Box mt={1} textAlign="center">
-                  <Typography variant="caption" color="textSecondary">Summarizing...</Typography>
-                </Box>
-              )}
             </Card>
           </Grid>
         );
@@ -490,6 +541,9 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
 
       {/* Calendar Event Tiles */}
       {results.calendar_events && results.calendar_events.map((event, index) => {
+        const tileKey = makeTileKey('event', event.id);
+        const isSelected = !!selectedTiles[tileKey];
+
         if (deletedEvents.has(event.id)) {
           return (
             <Grid item xs={12} sm={6} md={3} key={`event-${index}`}>
@@ -514,12 +568,6 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
             </Grid>
           );
         }
-        const eventId = event.id || `event-fallback-${index}`;
-        const tileKey = makeTileKey('event', eventId);
-        const isChecked = !!selectedTiles[tileKey];
-        const isCheckboxVisible = hoveredTileKey === tileKey || isChecked;
-        console.log('[Event Tile] isCheckboxVisible:', isCheckboxVisible, 'hoveredTileKey:', hoveredTileKey, 'tileKey:', tileKey, 'isChecked:', isChecked); // DEBUG LOG
-
         return (
           <Grid item xs={12} sm={6} md={3} key={`event-${index}`}>
             <Card 
@@ -528,39 +576,19 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
                 height: '100%', 
                 p: 2, 
                 boxShadow: 'none',
-                border: '1px solid rgba(0, 0, 0, 0.08)',
-                bgcolor: 'white',
-                position: 'relative', // For checkbox positioning
-                outline: isChecked ? '2px solid #1976d2' : 'none', // Selected outline
+                border: isSelected ? '2px solid #1976d2' : '1px solid rgba(0, 0, 0, 0.08)',
+                bgcolor: isSelected ? '#e3f2fd' : 'white',
+                cursor: 'pointer',
+                '&:hover': {
+                  border: isSelected ? '2px solid #1565c0' : '1px solid rgba(0, 0, 0, 0.12)',
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1) !important'
+                },
+                transition: 'all 0.2s ease-in-out'
               }}
-
-              data-event-id={eventId}
-              onMouseEnter={() => handleTileMouseEnter(tileKey)}
-              onMouseLeave={handleTileMouseLeave}
-
               data-event-id={event.id}
-              data-message-id={message_id}
-
+              onClick={() => handleTileSelect('event', event.id)}
             >
-              {isCheckboxVisible && (
-                <div className="absolute bottom-0 right-0 w-8 h-8 bg-white bg-opacity-80 rounded-tl-md z-[9998]" style={{zIndex: 9998}}></div>
-              )}
-              <input
-                type="checkbox"
-                className="absolute bottom-1 right-1 z-[9999] w-5 h-5"
-                style={{
-                  opacity: isCheckboxVisible ? 1 : 0, // TEMPORARILY SET TO 1 FOR DEBUGGING
-                  transition: 'opacity 0.2s ease-in-out',
-                  backgroundColor: 'white',
-                  border: '2px solid #1976d2',
-                  cursor: 'pointer',
-                  zIndex: 9999
-                }}
-                checked={isChecked}
-                // isDisabled: false, // Or some logic if VeyraResults has its own disabling scope
-                onChange={() => handleTileSelect('event', eventId)}
-                onClick={(e) => e.stopPropagation()}
-              />
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <Box sx={{ flex: 1, mr: 1 }}>
                   <Typography 
@@ -626,25 +654,38 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
         open={Boolean(anchorEl)}
         onClose={handleMenuClose}
       >
-        {selectedItem && !selectedItem.start && (
+        {selectedItem && selectedItem.start ? (
+          // Calendar event options
           <>
-            <MenuItem onClick={() => handleAction('summarize', selectedItem)}>
-              Summarize
+            <MenuItem onClick={() => handleAction('display', selectedItem)}>
+              Display
             </MenuItem>
-            <MenuItem onClick={() => handleAction('delete', selectedItem)}>
-              Delete
+            <MenuItem onClick={() => handleAction('modify', selectedItem)}>
+              Modify the event
             </MenuItem>
-          </>
-        )}
-        {selectedItem && selectedItem.start && (
-          <>
             {selectedItem.htmlLink && (
               <MenuItem onClick={() => handleAction('open', selectedItem)}>
                 Open in Calendar
               </MenuItem>
             )}
             <MenuItem onClick={() => handleAction('delete', selectedItem)}>
-              Delete
+              Delete Event
+            </MenuItem>
+          </>
+        ) : (
+          // Email options
+          <>
+            <MenuItem onClick={() => handleAction('summarize', selectedItem)}>
+              Summarize
+            </MenuItem>
+            <MenuItem onClick={() => handleAction('display', selectedItem)}>
+              Display
+            </MenuItem>
+            <MenuItem onClick={() => handleAction('view_gmail', selectedItem)}>
+              View in GMail
+            </MenuItem>
+            <MenuItem onClick={() => handleAction('delete', selectedItem)}>
+              Delete Email
             </MenuItem>
           </>
         )}
