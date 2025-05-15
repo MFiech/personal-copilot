@@ -8,9 +8,19 @@ import {
   MenuItem,
   Grid,
   Paper,
-  Button
+  Button,
+  List,
+  ListItem,
+  ListItemText,
+  Checkbox
 } from '@mui/material';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
+import ClearAllIcon from '@mui/icons-material/ClearAll';
+import DeleteIcon from '@mui/icons-material/Delete';
+import NotesIcon from '@mui/icons-material/Notes';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import CircularProgress from '@mui/material/CircularProgress';
 import './VeyraResults.css';
 
 const VeyraResults = ({ results, currentThreadId, message_id }) => {
@@ -377,8 +387,40 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
 
   const selectedCount = getSelectedCount();
 
+  // Helper to get selected email items
+  const getSelectedEmailItems = () => {
+    if (!results.emails) return [];
+    return results.emails.filter(email => {
+      const key = makeTileKey('email', email.id);
+      return !!selectedTiles[key];
+    });
+  };
+
+  // Email action handler
+  const handleEmailAction = (actionType, selectedEmails) => {
+    if (!selectedEmails || selectedEmails.length === 0) {
+      alert("No email selected for this action.");
+      return;
+    }
+    const firstSelectedEmail = selectedEmails[0];
+    if (actionType === 'summarize') {
+      alert(`Summarize action for: ${firstSelectedEmail.subject}`);
+    } else if (actionType === 'display') {
+      alert(`Display action for: ${firstSelectedEmail.subject}`);
+    } else if (actionType === 'view_gmail') {
+      const webLink = firstSelectedEmail.webLink || firstSelectedEmail.alternateLink;
+      if (webLink) {
+        window.open(webLink, '_blank');
+      } else {
+        alert("No direct link available for this email.");
+      }
+    }
+  };
+
+  const selectedEmailItems = getSelectedEmailItems();
+
   return (
-    <Grid container spacing={2} sx={{ bgcolor: 'rgba(0, 0, 0, 0.02)' }}>
+    <Grid container spacing={2} sx={{ bgcolor: 'rgba(0, 0, 0, 0.02)', p: 1 }}>
       {/* Filter Information */}
       {results.filter_applied && (
         <Grid item xs={12}>
@@ -396,148 +438,163 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
         </Grid>
       )}
 
-      {/* Selection Control Panel */}
-      {selectedCount > 0 && (
+      {/* Selection Control Panel - Email actions as icons */}
+      {selectedEmailItems.length > 0 && (
         <Grid item xs={12}>
           <Paper 
             elevation={2} 
             sx={{ 
-              p: 1.5, 
+              p: 1, 
               mb: 2, 
               display: 'flex', 
               justifyContent: 'space-between', 
               alignItems: 'center',
-              backgroundColor: 'rgba(25, 118, 210, 0.1)' // Light blueish background
+              backgroundColor: 'rgba(25, 118, 210, 0.05)'
             }}
           >
-            <Typography variant="subtitle2" sx={{ color: 'primary.main' }}>
-              {selectedCount} item(s) selected in this block.
+            <Typography variant="body2" sx={{ color: 'primary.main', ml: 1 }}>
+              {selectedEmailItems.length} email(s) selected
             </Typography>
             <Box>
-              <Button 
-                onClick={() => {
-                  setSelectedTiles({});
-                  console.log('[VeyraResults] Deselected all tiles in this block.');
-                }} 
+              <IconButton 
+                onClick={() => setSelectedTiles({})} 
                 size="small"
-                sx={{ mr: 1 }}
+                title="Deselect All"
+                sx={{ mr: 0.5 }}
               >
-                Deselect All
-              </Button>
-              <Button 
+                <ClearAllIcon />
+              </IconButton>
+              <IconButton
+                title="Summarize selected email(s)"
+                size="small"
+                onClick={() => handleEmailAction('summarize', selectedEmailItems)}
+                disabled={selectedEmailItems.length === 0 || isBulkDeleting}
+                sx={{ mr: 0.5 }}
+              >
+                <NotesIcon />
+              </IconButton>
+              <IconButton
+                title="Display selected email"
+                size="small"
+                onClick={() => handleEmailAction('display', selectedEmailItems)}
+                disabled={selectedEmailItems.length !== 1 || isBulkDeleting}
+                sx={{ mr: 0.5 }}
+              >
+                <VisibilityIcon />
+              </IconButton>
+              <IconButton
+                title="View selected email in GMail"
+                size="small"
+                onClick={() => handleEmailAction('view_gmail', selectedEmailItems)}
+                disabled={selectedEmailItems.length !== 1 || isBulkDeleting}
+                sx={{ mr: 0.5 }}
+              >
+                <OpenInNewIcon />
+              </IconButton>
+              <IconButton 
                 onClick={handleBulkDelete} 
-                variant="contained" 
                 color="error" 
                 size="small"
-                disabled={isBulkDeleting}
+                title="Delete Selected Email(s)"
+                disabled={isBulkDeleting || selectedEmailItems.length === 0}
               >
-                {isBulkDeleting ? 'Deleting...' : 'Delete Selected'}
-              </Button>
+                {isBulkDeleting ? <CircularProgress size={20} color="inherit" /> : <DeleteIcon />}
+              </IconButton>
             </Box>
           </Paper>
         </Grid>
       )}
 
-      {/* Email Tiles */}
-      {results.emails && results.emails.map((email, index) => {
-        const tileKey = makeTileKey('email', email.id);
-        const isSelected = !!selectedTiles[tileKey];
-
-        if (deletedEmails.has(email.id)) {
-          return (
-            <Grid item xs={12} sm={6} md={3} key={`email-${index}`}>
-              <Card sx={{ 
-                height: '100%', 
-                p: 2, 
-                boxShadow: 'none',
-                border: '1px solid rgba(0, 0, 0, 0.08)',
-                bgcolor: 'white',
-                animation: 'fadeOut 2s ease-in-out',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                '@keyframes fadeOut': {
-                  '0%': { opacity: 1 },
-                  '70%': { opacity: 1 },
-                  '100%': { opacity: 0 }
-                }
-              }}>
-                <Typography>🙌 Successfully deleted</Typography>
-              </Card>
-            </Grid>
-          );
-        }
-        return (
-          <Grid item xs={12} sm={6} md={3} key={`email-${index}`}>
-            <Card 
-              sx={{ 
-                height: '100%', 
-                p: 2, 
-                boxShadow: 'none',
-                border: isSelected ? '2px solid #1976d2' : '1px solid rgba(0, 0, 0, 0.08)',
-                bgcolor: isSelected ? '#e3f2fd' : 'white',
-                cursor: 'pointer',
-                '&:hover': {
-                  border: isSelected ? '2px solid #1565c0' : '1px solid rgba(0, 0, 0, 0.12)',
-                  transform: 'translateY(-1px)',
-                  boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
-                },
-                transition: 'all 0.2s ease-in-out'
-              }}
-              data-email-id={email.id}
-              onClick={() => handleTileSelect('email', email.id)}
-            >
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <Box sx={{ flex: 1, mr: 1 }}>
-                  <Typography 
-                    variant="h6" 
-                    sx={{ 
-                      fontSize: '0.875rem', 
-                      fontWeight: 'bold',
-                      wordBreak: 'break-word',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      display: '-webkit-box',
-                      WebkitLineClamp: 1,
-                      mb: 1
+      {/* Email List */}
+      {results.emails && results.emails.length > 0 && (
+        <Grid item xs={12}>
+          <List disablePadding sx={{ bgcolor: 'background.paper', border: '1px solid rgba(0,0,0,0.08)', borderRadius: '4px' }}>
+            {results.emails.map((email, index) => {
+              const tileKey = makeTileKey('email', email.id);
+              const isSelected = !!selectedTiles[tileKey];
+              if (deletedEmails.has(email.id)) {
+                return (
+                  <ListItem key={`email-${email.id}-deleted`} sx={{ p: 2, justifyContent: 'center', alignItems: 'center', opacity: 0.5 }}>
+                    <Typography>🙌 Email deleted</Typography>
+                  </ListItem>
+                );
+              }
+              return (
+                <ListItem
+                  key={`email-${email.id}`}
+                  button
+                  selected={isSelected}
+                  onClick={() => handleTileSelect('email', email.id)}
+                  divider={index < results.emails.length - 1}
+                  sx={{
+                    padding: '10px 12px',
+                    '&.Mui-selected': {
+                      backgroundColor: 'action.selected',
+                    },
+                    '&.Mui-selected:hover': {
+                      backgroundColor: 'action.selected',
+                    },
+                    '&:hover': {
+                       backgroundColor: !isSelected ? 'action.hover' : undefined,
+                    },
+                  }}
+                >
+                  <Checkbox
+                    checked={isSelected}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleTileSelect('email', email.id);
                     }}
-                  >
-                    {email.subject?.length > 50 ? `${email.subject.substring(0, 50)}...` : email.subject || 'No Subject'}
-                  </Typography>
-                  
+                    edge="start"
+                    sx={{ mr: 1, p: 0.5 }}
+                    size="small"
+                  />
+                  <Box sx={{ display: 'flex', alignItems: 'center', width: '180px', mr: 2, flexShrink: 0 }}>
+                    <Typography 
+                      variant="body2" 
+                      noWrap
+                      sx={{ 
+                        fontWeight: 500,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {email.from_email?.name || email.from_email?.email || 'Unknown Sender'}
+                    </Typography>
+                  </Box>
+                  <ListItemText
+                    primary={
+                      <Typography 
+                        variant="body2" 
+                        noWrap
+                        sx={{
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {email.subject?.length > 100 ? `${email.subject.substring(0, 100)}...` : email.subject || 'No Subject'}
+                      </Typography>
+                    }
+                    sx={{ flexGrow: 1, mr: 2, my: 0 }}
+                  />
                   <Typography 
-                    variant="body2" 
+                    variant="caption" 
                     sx={{ 
-                      fontSize: '0.75rem',
-                      color: 'text.secondary',
-                      mb: 0.5
-                    }}
-                  >
-                    From: {email.from_email?.name || email.from_email?.email || 'Unknown Sender'}
-                  </Typography>
-                  
-                  <Typography 
-                    variant="body2" 
-                    sx={{ 
-                      fontSize: '0.75rem',
-                      color: 'text.secondary'
+                      color: 'text.secondary', 
+                      whiteSpace: 'nowrap',
+                      ml: 'auto',
+                      minWidth: '90px',
+                      textAlign: 'right'
                     }}
                   >
                     {formatEventDateTime(email.date)}
                   </Typography>
-                </Box>
-                <IconButton 
-                  size="small"
-                  onClick={(e) => handleMenuClick(e, email)}
-                  sx={{ ml: 1 }}
-                >
-                  <MoreVertIcon />
-                </IconButton>
-              </Box>
-            </Card>
-          </Grid>
-        );
-      })}
+                </ListItem>
+              );
+            })}
+          </List>
+        </Grid>
+      )}
 
       {/* Calendar Event Tiles */}
       {results.calendar_events && results.calendar_events.map((event, index) => {
