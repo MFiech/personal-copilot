@@ -19,8 +19,8 @@ import time
 import requests
 from models.conversation import Conversation
 from models.insight import Insight
-from utils.mongo_client import get_db
-from config.mongo_config import init_collections
+from utils.mongo_client import get_db, get_collection
+from config.mongo_config import init_collections, CONVERSATIONS_COLLECTION
 from models.thread import Thread
 
 app = Flask(__name__)
@@ -188,90 +188,81 @@ def chat():
         data = request.get_json()
         query = data.get('query')
         thread_id = data.get('thread_id')
-        
         print(f"\n=== New Chat Request ===")
         print(f"Query: {query}")
         print(f"Thread ID: {thread_id}")
-        
         if not query:
             return jsonify({"error": "No query provided"}), 400
-            
         # Create or update thread
         if not thread_id:
-            # New thread - create with first message as title
             thread = Thread(title=query[:50] + "..." if len(query) > 50 else query)
             thread.save()
             thread_id = thread.thread_id
         else:
-            # Existing thread - update its updated_at timestamp
             thread = Thread.get_by_id(thread_id)
             if not thread:
-                # Thread doesn't exist, create it
                 thread = Thread(thread_id=thread_id, title=query[:50] + "..." if len(query) > 50 else query)
                 thread.save()
-        
         # Get thread history
         thread_history = []
         if thread_id:
             messages = Conversation.get_by_thread_id(thread_id)
             for msg in messages:
-                if 'role' in msg:  # New schema
+                if 'role' in msg:
                     thread_history.append({"role": msg['role'], "content": msg['content']})
-                else:  # Old schema
+                else:
                     thread_history.append({"role": "user", "content": msg['query']})
                     thread_history.append({"role": "assistant", "content": msg['response']})
-        
         print(f"Thread history length: {len(thread_history)}")
-        
-        # First, check for VeyraX data
         veyra_results = None
         veyra_context = None
+        veyra_pagination = {}
         if veyrax_service:
             try:
                 print("\n=== Processing VeyraX Query ===")
                 print(f"Using VeyraX service: {type(veyrax_service).__name__}")
                 veyrax_data = veyrax_service.process_query(query, thread_history)
-                print(f"[DEBUG] Raw veyrax_data from service: {json.dumps(veyrax_data, indent=2)}")
-                
+                print(f"[DEBUG] Raw veyrax_data from service: {json.dumps(veyrax_data, indent=2)[:1000]}")
                 if veyrax_data:
                     source_type = veyrax_data.get("source_type", "")
                     print(f"VeyraX source type: {source_type}")
-                    
                     if source_type in ["mail", "gmail"]:
-                        messages = veyrax_data.get("data", {}).get("messages", [])
+                        data = veyrax_data.get("data", {})
+                        messages = data.get("messages", [])
                         print(f"VeyraX messages found: {len(messages) if messages else 0}")
                         if messages:
                             veyra_results = {"emails": messages}
                             veyra_context = veyrax_data
-                            print(f"VeyraX results prepared: {veyra_results}")
+                            # Extract pagination info
+                            veyra_pagination = {
+                                "veyra_original_query_params": data.get("original_query_params"),
+                                "veyra_current_offset": data.get("offset_used"),
+                                "veyra_limit_per_page": data.get("limit_used"),
+                                "veyra_total_emails_available": data.get("total_available"),
+                                "veyra_has_more": (data.get("offset_used", 0) + data.get("limit_used", 10)) < data.get("total_available", 0)
+                            }
+                            print(f"[DEBUG] VeyraX pagination info: {veyra_pagination}")
                     elif source_type == "google-calendar":
                         events = veyrax_data.get("data", {}).get("events", [])
                         print(f"VeyraX calendar events found: {len(events) if events else 0}")
                         if events:
                             veyra_results = {"calendar_events": events}
                             veyra_context = veyrax_data
-                            print(f"VeyraX results prepared: {veyra_results}")
-                
-                print(f"[DEBUG] veyra_results after processing veyrax_data: {json.dumps(veyra_results, indent=2)}")
+                print(f"[DEBUG] veyra_results after processing veyrax_data: {json.dumps(veyra_results, indent=2)[:1000]}")
             except Exception as e:
                 print(f"Error processing VeyraX data: {str(e)}")
-                print(f"Error type: {type(e)}")
                 import traceback
                 print(f"Traceback: {traceback.format_exc()}")
         else:
             print("VeyraX service not initialized")
-        
         # Get relevant documents using the retriever
         try:
-            result = qa_chain.invoke({"query": query})  # Using invoke instead of __call__
+            result = qa_chain.invoke({"query": query})
             retrieved_docs = result["source_documents"]
         except Exception as e:
             print(f"Error in QA chain: {str(e)}")
             retrieved_docs = []
-        
-        # Build prompt with context and get response from LLM
         prompt, insight_id = build_prompt(query, retrieved_docs, thread_history, veyra_context)
-        
         try:
             response = llm.invoke(prompt)
             response_text = response.content.strip()
@@ -280,7 +271,6 @@ def chat():
                 error_message = "The AI service is currently experiencing high load. Please try again in a few moments."
                 return jsonify({"error": error_message}), 503
             raise e
-        
         # Step 1: Save the user's message
         print(f"\n=== Saving User Message ===")
         user_message = Conversation(
@@ -290,50 +280,55 @@ def chat():
         )
         user_message.save()
         print(f"User message saved. message_id: {user_message.message_id}, role: {user_message.role}, content: {user_message.content[:100]}...")
-
-        # Step 2: Save the assistant's message (with Veyra results)
+        # Step 2: Save the assistant's message (with Veyra results and pagination)
         print(f"\n=== Saving Assistant Message ===")
         assistant_message = Conversation(
             thread_id=thread_id,
             role='assistant',
             content=response_text,
-            insight_id=insight_id, # insight_id is associated with the assistant's generation
-            veyra_results=veyra_results
+            insight_id=insight_id,
+            veyra_results=veyra_results,
+            veyra_original_query_params=veyra_pagination.get("veyra_original_query_params"),
+            veyra_current_offset=veyra_pagination.get("veyra_current_offset"),
+            veyra_limit_per_page=veyra_pagination.get("veyra_limit_per_page"),
+            veyra_total_emails_available=veyra_pagination.get("veyra_total_emails_available"),
+            veyra_has_more=veyra_pagination.get("veyra_has_more")
         )
-        
-        # Log attributes for the assistant message before saving
         assistant_message_attributes_for_saving = {
             "thread_id": assistant_message.thread_id,
-            "message_id": assistant_message.message_id, # Will be None before save, set by save()
+            "message_id": assistant_message.message_id,
             "role": assistant_message.role,
             "content_for_db": assistant_message.content,
             "insight_id": assistant_message.insight_id,
             "veyra_results": assistant_message.veyra_results,
+            "veyra_original_query_params": assistant_message.veyra_original_query_params,
+            "veyra_current_offset": assistant_message.veyra_current_offset,
+            "veyra_limit_per_page": assistant_message.veyra_limit_per_page,
+            "veyra_total_emails_available": assistant_message.veyra_total_emails_available,
+            "veyra_has_more": assistant_message.veyra_has_more,
             "timestamp": assistant_message.timestamp
         }
         print(f"[DEBUG] Assistant Conversation object attributes/related data BEFORE save: {json.dumps(assistant_message_attributes_for_saving, indent=2, default=str)}")
-        
         assistant_message.save()
-        print(f"Assistant message saved. message_id: {assistant_message.message_id}, role: {assistant_message.role}, content: {assistant_message.content[:100]}..., veyra_results: {json.dumps(assistant_message.veyra_results, indent=2)}")
-        
+        print(f"Assistant message saved. message_id: {assistant_message.message_id}, role: {assistant_message.role}, content: {assistant_message.content[:100]}..., veyra_results: {json.dumps(assistant_message.veyra_results, indent=2)[:1000]}")
         # The response_data to the client should reflect the assistant's turn
         response_data = {
-            "response": response_text, # Assistant's textual response
+            "response": response_text,
             "thread_id": thread_id,
-            "message_id": assistant_message.message_id, # ID of the saved assistant message
-            "veyra_results": veyra_results # Results associated with assistant's response
+            "message_id": assistant_message.message_id,
+            "veyra_results": veyra_results
         }
+        # Add pagination info to response if present
+        if veyra_pagination:
+            response_data.update(veyra_pagination)
         print(f"\n=== Sending Response ===")
-        print(f"Response data: {response_data}")
+        print(f"Response data: {json.dumps(response_data, indent=2)[:1000]}")
         return jsonify(response_data)
-        
     except Exception as e:
         print(f"\n=== Error in chat endpoint ===")
         print(f"Error: {str(e)}")
-        print(f"Error type: {type(e)}")
         import traceback
         print(f"Traceback: {traceback.format_exc()}")
-        
         error_message = "The AI service is currently experiencing high load. Please try again in a few moments."
         if "overloaded_error" in str(e):
             return jsonify({"error": error_message}), 503
@@ -369,34 +364,82 @@ def rename_thread(thread_id):
 
 @app.route('/chat/<thread_id>', methods=['GET'])
 def get_thread(thread_id):
+    print(f"\n=== Get Thread Request ===")
+    print(f"Fetching thread with ID: {thread_id}")
     try:
-        messages = Conversation.get_by_thread_id(thread_id)
-        formatted_messages = []
-        for msg in messages:
-            if 'role' in msg:  # New schema
-                formatted_message = {
-                    "role": msg['role'],
-                    "content": msg['content'],
-                    "message_id": msg['message_id']  # Add message_id to the response
-                }
-                if msg['role'] == 'assistant' and 'veyra_results' in msg:
-                    formatted_message['veyra_results'] = msg['veyra_results']
-            else:  # Old schema
-                # Convert old format to new format
-                formatted_messages.append({
-                    "role": "user",
-                    "content": msg['query']
-                })
-                formatted_messages.append({
-                    "role": "assistant",
-                    "content": msg['response'],
-                    "veyra_results": msg.get('veyra_results')
-                })
-                continue
-            formatted_messages.append(formatted_message)
-        return jsonify({"messages": formatted_messages})
+        thread_doc = Thread.get_by_id(thread_id)
+        if not thread_doc:
+            print(f"[ERROR] Thread not found: {thread_id}")
+            return jsonify({"error": "Thread not found"}), 404
+
+        # Correctly fetch the MongoDB collection
+        conversations_collection = get_collection(CONVERSATIONS_COLLECTION)
+        raw_message_docs = list(conversations_collection.find({'thread_id': thread_id}).sort('timestamp', 1))
+        
+        processed_messages_for_response = []
+        for msg_doc in raw_message_docs: # msg_doc is a raw document from MongoDB
+            
+            message_data_for_response = {
+                "role": msg_doc.get("role"),
+                "content": msg_doc.get("content"),
+                "query": msg_doc.get("query") if not msg_doc.get("role") else None, # For backward compatibility
+                "response": msg_doc.get("response") if not msg_doc.get("role") else None, # For backward compatibility
+                "veyra_results": msg_doc.get("veyra_results"),
+                "message_id": msg_doc.get("message_id"),
+                "timestamp": msg_doc.get("timestamp") 
+            }
+
+            # --- Start Veyra Results & Pagination Logic for Assistant Messages ---
+            if msg_doc.get('role') == 'assistant' and msg_doc.get('veyra_results'):
+                message_data_for_response['veyra_results'] = msg_doc.get('veyra_results')
+                
+                original_params = msg_doc.get('veyra_original_query_params')
+                current_offset = msg_doc.get('veyra_current_offset')
+                limit_per_page = msg_doc.get('veyra_limit_per_page')
+                total_available = msg_doc.get('veyra_total_emails_available')
+                has_more = msg_doc.get('veyra_has_more')
+
+                if original_params is not None:
+                    message_data_for_response['veyra_original_query_params'] = original_params
+                if current_offset is not None:
+                    message_data_for_response['veyra_current_offset'] = current_offset
+                if limit_per_page is not None:
+                    message_data_for_response['veyra_limit_per_page'] = limit_per_page
+                if total_available is not None:
+                    message_data_for_response['veyra_total_emails_available'] = total_available
+
+                if has_more is None and current_offset is not None and limit_per_page is not None and total_available is not None:
+                    has_more = (current_offset + limit_per_page) < total_available
+                    print(f"[DEBUG /get_thread] Calculated veyra_has_more for message {msg_doc.get('message_id')}: {has_more}")
+                elif has_more is not None:
+                    print(f"[DEBUG /get_thread] Using stored veyra_has_more for message {msg_doc.get('message_id')}: {has_more}")
+                
+                if has_more is not None:
+                    message_data_for_response['veyra_has_more'] = has_more
+            # --- End Veyra Results & Pagination Logic ---
+            
+            processed_messages_for_response.append(message_data_for_response)
+
+        print(f"Found and processed {len(processed_messages_for_response)} messages for thread {thread_id}")
+        
+        response_data = {
+            "thread_id": thread_doc.get("thread_id"),
+            "title": thread_doc.get("title"),
+            "messages": processed_messages_for_response,
+            "created_at": datetime.fromtimestamp(thread_doc.get("created_at")).isoformat() if isinstance(thread_doc.get("created_at"), (int, float)) else (
+                            thread_doc.get("created_at").isoformat() if hasattr(thread_doc.get("created_at"), "isoformat") else None
+                        ), # Handle both timestamp and existing datetime obj
+            "updated_at": datetime.fromtimestamp(thread_doc.get("updated_at")).isoformat() if isinstance(thread_doc.get("updated_at"), (int, float)) else (
+                            thread_doc.get("updated_at").isoformat() if hasattr(thread_doc.get("updated_at"), "isoformat") else None
+                        )  # Handle both timestamp and existing datetime obj
+        }
+        print(f"Returning thread data: {json.dumps(response_data, default=str)[:500]}...")
+        return jsonify(response_data), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"[ERROR] Error fetching thread {thread_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
 @app.route('/save_insight', methods=['POST'])
 def save_insight():
@@ -894,6 +937,98 @@ def delete_thread(thread_id):
             return jsonify({"error": "Thread not found"}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route('/load_more_emails', methods=['POST', 'OPTIONS'])
+def load_more_emails():
+    if request.method == 'OPTIONS':
+        return '', 200
+    try:
+        data = request.get_json()
+        thread_id = data.get('thread_id')
+        assistant_message_id = data.get('assistant_message_id')
+        print(f"\n=== Load More Emails Request ===")
+        print(f"Thread ID: {thread_id}, Assistant Message ID: {assistant_message_id}")
+        if not thread_id or not assistant_message_id:
+            print("[ERROR] Missing thread_id or assistant_message_id")
+            return jsonify({"error": "Missing thread_id or assistant_message_id"}), 400
+        # Fetch the specific assistant message
+        assistant_message_doc = Conversation.find_one({
+            'thread_id': thread_id, 
+            'message_id': assistant_message_id,
+            'role': 'assistant'
+        })
+        if not assistant_message_doc:
+            print(f"[ERROR] Assistant message not found for ID: {assistant_message_id} in thread: {thread_id}")
+            return jsonify({"error": "Assistant message not found"}), 404
+        print(f"[DEBUG] Found assistant message: {assistant_message_doc.get('_id')}")
+        # Retrieve stored pagination parameters
+        original_params = assistant_message_doc.get('veyra_original_query_params')
+        current_offset = assistant_message_doc.get('veyra_current_offset')
+        limit_per_page = assistant_message_doc.get('veyra_limit_per_page')
+        total_emails_available = assistant_message_doc.get('veyra_total_emails_available')
+        print(f"[DEBUG] Stored pagination: offset={current_offset}, limit={limit_per_page}, total={total_emails_available}, original_params={original_params}")
+        if original_params is None or current_offset is None or limit_per_page is None or total_emails_available is None:
+            print("[ERROR] Missing one or more pagination parameters in the stored message.")
+            return jsonify({"new_emails": [], "has_more": False, "message": "Pagination parameters missing in stored message."}), 400
+        next_offset_to_fetch = current_offset + limit_per_page
+        if next_offset_to_fetch >= total_emails_available:
+            print("[INFO] No more emails to load.")
+            return jsonify({"new_emails": [], "has_more": False, "message": "No more emails to load."}), 200
+        if not veyrax_service:
+            print("[ERROR] VeyraX service not initialized for /load_more_emails")
+            return jsonify({"error": "VeyraX service not available"}), 500
+        # Prepare parameters for VeyraX call
+        fetch_params = {
+            **original_params, # search_query, folder, etc.
+            "limit": limit_per_page,
+            "offset": next_offset_to_fetch
+        }
+        print(f"[DEBUG] Calling VeyraX with: {fetch_params}")
+        veyrax_response = veyrax_service.post_request("/mail/get_messages", fetch_params)
+        print(f"[DEBUG] VeyraX response for /load_more_emails: {json.dumps(veyrax_response)[:500]}")
+        if "error" in veyrax_response:
+            print(f"[ERROR] VeyraX error: {veyrax_response.get('error')}")
+            return jsonify({"error": f"VeyraX error: {veyrax_response.get('error')}"}), 500
+        new_data = veyrax_response.get("data", {})
+        new_emails = new_data.get("messages", [])
+        new_offset_used = new_data.get("offset", next_offset_to_fetch) # VeyraX returns the offset it used
+        new_limit_used = new_data.get("limit", limit_per_page)
+        new_total_available = new_data.get("total", total_emails_available) # VeyraX may update total
+        print(f"[DEBUG] VeyraX returned: {len(new_emails)} emails, new_offset={new_offset_used}, new_total={new_total_available}")
+        # Update the Conversation document in MongoDB
+        update_operations = {
+            '$push': {'veyra_results.emails': {'$each': new_emails}},
+            '$set': {
+                'veyra_current_offset': new_offset_used,
+                'veyra_total_emails_available': new_total_available # Update if VeyraX provides a new total
+            }
+        }
+        update_result = Conversation.update_one(
+            {'message_id': assistant_message_id, 'thread_id': thread_id},
+            update_operations
+        )
+        print(f"[DEBUG] MongoDB update result: matched={update_result.matched_count}, modified={update_result.modified_count}")
+        if update_result.modified_count == 0 and update_result.matched_count > 0:
+            print("[WARNING] MongoDB document matched but was not modified. This might happen if $push had an empty list or $set values were identical.")
+        elif update_result.matched_count == 0:
+            print("[ERROR] Failed to find the assistant message in DB for update after VeyraX call.")
+            # This case should ideally not happen if the initial find_one was successful.
+            # Consider how to handle this discrepancy. For now, proceed with returning emails to client.
+        has_more_after_this_load = (new_offset_used + new_limit_used) < new_total_available
+        response_payload = {
+            "new_emails": new_emails,
+            "current_offset": new_offset_used,
+            "limit_per_page": new_limit_used,
+            "total_emails_available": new_total_available,
+            "has_more": has_more_after_this_load
+        }
+        print(f"[DEBUG] Response for /load_more_emails: {json.dumps(response_payload)[:500]}")
+        return jsonify(response_payload)
+    except Exception as e:
+        print(f"[ERROR] Unexpected error in /load_more_emails: {str(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
+        return jsonify({"error": "An unexpected error occurred"}), 500
 
 if __name__ == '__main__':
     app.run(port=5001, debug=True)

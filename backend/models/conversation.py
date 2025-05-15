@@ -5,7 +5,9 @@ import time
 import uuid
 
 class Conversation:
-    def __init__(self, thread_id=None, role=None, content=None, insight_id=None, metadata=None, veyra_results=None, query=None, response=None):
+    def __init__(self, thread_id=None, role=None, content=None, insight_id=None, metadata=None, veyra_results=None, query=None, response=None,
+                 veyra_original_query_params=None, veyra_current_offset=None, veyra_limit_per_page=None, veyra_total_emails_available=None,
+                 veyra_has_more=None):
         self.thread_id = thread_id
         self.role = role
         self.content = content
@@ -21,6 +23,11 @@ class Conversation:
         self.insight_id = insight_id
         self.metadata = metadata
         self.veyra_results = veyra_results
+        self.veyra_original_query_params = veyra_original_query_params
+        self.veyra_current_offset = veyra_current_offset
+        self.veyra_limit_per_page = veyra_limit_per_page
+        self.veyra_total_emails_available = veyra_total_emails_available
+        self.veyra_has_more = veyra_has_more
         self.timestamp = int(time.time())
         self.message_id = None  # Will be set after save
         self.collection = get_collection(CONVERSATIONS_COLLECTION)
@@ -53,6 +60,18 @@ class Conversation:
         if self.veyra_results:
             message['veyra_results'] = self.veyra_results
             
+        # Add pagination state if present
+        if self.veyra_original_query_params is not None:
+            message['veyra_original_query_params'] = self.veyra_original_query_params
+        if self.veyra_current_offset is not None:
+            message['veyra_current_offset'] = self.veyra_current_offset
+        if self.veyra_limit_per_page is not None:
+            message['veyra_limit_per_page'] = self.veyra_limit_per_page
+        if self.veyra_total_emails_available is not None:
+            message['veyra_total_emails_available'] = self.veyra_total_emails_available
+        if self.veyra_has_more is not None:
+            message['veyra_has_more'] = self.veyra_has_more
+        
         # Insert document and return result
         return self.collection.insert_one(message)
 

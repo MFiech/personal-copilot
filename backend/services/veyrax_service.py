@@ -888,10 +888,8 @@ class VeyraXService:
         
         # Check if query is about emails
         if is_email_query:
-            # Check if user is asking for unread emails
             unread_requested = any(keyword in query_lower for keyword in 
                                ['unread', 'new email', 'new message', 'haven\'t read', 'not read'])
-            
             # Prepare request parameters
             params = {
                 "limit": 10,
@@ -899,14 +897,9 @@ class VeyraXService:
                 "offset": 0,
                 "mark_as_read": False
             }
-            
-            # Add search query for unread if requested
             if unread_requested:
-                params["search_query"] = "is:unread"  # Gmail search syntax for unread messages
-            
-            # Extract search terms for more specific searches
+                params["search_query"] = "is:unread"
             search_terms = []
-            
             # Check for sender keywords
             if "from" in query_lower or "sender" in query_lower:
                 # Try to extract an email address or name after "from" or "sender"
@@ -946,31 +939,35 @@ class VeyraXService:
             # Combine search terms if any were identified
             if search_terms:
                 params["search_query"] = " ".join(search_terms)
-                
-            print(f"Email search parameters: {params}")
-            
-            # Make the API request
+            print(f"[VeyraXService] Email search parameters: {params}")
             response = self.post_request("/mail/get_messages", params)
-            
-            print(f"Email search response: {response}")
-            
+            print(f"[VeyraXService] Email search response: {json.dumps(response)[:500]}")
             if "error" in response:
                 return {
                     "source_type": "mail",
                     "content": f"I couldn't retrieve your emails: {response.get('error', 'Unknown error')}",
                     "data": {"messages": []}
                 }
-            
-            # Format the emails for display
-            messages = response.get("data", {}).get("messages", [])
+            data = response.get("data", {})
+            messages = data.get("messages", [])
+            limit_used = data.get("limit", params["limit"])
+            offset_used = data.get("offset", params["offset"])
+            total_available = data.get("total", len(messages))
+            original_query_params = {
+                k: v for k, v in params.items() if k in ["search_query", "folder", "from_date", "to_date", "mark_as_read"]
+            }
+            print(f"[VeyraXService] Pagination info: limit={limit_used}, offset={offset_used}, total={total_available}, original_query_params={original_query_params}")
             formatted_emails, email_ids = self.summarize_emails(messages)
-            
             return {
                 "source_type": "mail",
                 "content": formatted_emails,
                 "data": {
                     "messages": messages,
-                    "filter_applied": params.get("search_query") is not None
+                    "filter_applied": params.get("search_query") is not None,
+                    "limit_used": limit_used,
+                    "offset_used": offset_used,
+                    "total_available": total_available,
+                    "original_query_params": original_query_params
                 }
             }
             

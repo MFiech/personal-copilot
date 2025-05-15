@@ -248,12 +248,35 @@ function App() {
       }
       
       // Update to include veyra_results in the message state
-      setMessages((prev) => [...prev, { 
+      // AND the pagination data if available
+      const assistantMessageData = { 
         role: 'assistant', 
         content: data.response,
-        veyra_results: data.veyra_results,  // Add veyra_results to the message
-        message_id: data.message_id  // Add message_id to the message
-      }]);
+        veyra_results: data.veyra_results, 
+        message_id: data.message_id 
+      };
+
+      // Add pagination fields from the top level of the response to the message object
+      // so VeyraResults can access them.
+      if (data.veyra_original_query_params !== undefined) {
+        assistantMessageData.veyra_original_query_params = data.veyra_original_query_params;
+      }
+      if (data.veyra_current_offset !== undefined) {
+        assistantMessageData.veyra_current_offset = data.veyra_current_offset;
+      }
+      if (data.veyra_limit_per_page !== undefined) {
+        assistantMessageData.veyra_limit_per_page = data.veyra_limit_per_page;
+      }
+      if (data.veyra_total_emails_available !== undefined) {
+        assistantMessageData.veyra_total_emails_available = data.veyra_total_emails_available;
+      }
+      if (data.veyra_has_more !== undefined) {
+        assistantMessageData.veyra_has_more = data.veyra_has_more;
+      }
+
+      console.log("[App.js handleSubmit] Assistant message data prepared:", assistantMessageData);
+
+      setMessages(prevMessages => [...prevMessages, assistantMessageData]);
       fetchThreads();
     } catch (error) {
       setMessages((prev) => [...prev, { role: 'assistant', content: `Error: ${error.message}` }]);
@@ -361,19 +384,19 @@ function App() {
   };
 
   // Render message content with proper formatting
-  const renderMessage = (content, veyraResults, message_id, onNewMessage) => {
-    console.log('renderMessage called with:', { content, veyraResults, message_id });
+  const renderMessage = (message, onNewMessage) => {
+    console.log('renderMessage called with full message:', message );
     return (
       <Box sx={{ mb: 0 }}>
         <Typography variant="body1" component="div" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-          {content}
+          {message.content}
         </Typography>
-        {veyraResults && (
+        {(message.veyra_results || message.veyra_current_offset !== undefined) && ( // Check if there's Veyra data or pagination info
           <Box sx={{ mt: 1, bgcolor: 'transparent', borderRadius: 1 }}>
             <VeyraResults 
-              results={veyraResults} 
-              currentThreadId={threadId}
-              message_id={message_id}
+              results={message} // Pass the whole message object as results
+              currentThreadId={threadId} // threadId is available in App.js scope
+              message_id={message.message_id} // assistant's message_id
               onNewMessageReceived={onNewMessage}
             />
           </Box>
@@ -651,9 +674,7 @@ function App() {
                   {...(message.role === 'assistant' && message.message_id && { 'data-message-id': message.message_id })}
                 >
                   {renderMessage(
-                    message.content, 
-                    message.metadata?.veyra_results || message.veyra_results,
-                    message.message_id,
+                    message, 
                     handleNewAssistantMessage
                   )}
                 </Paper>
