@@ -2,6 +2,7 @@ import React from 'react';
 
 interface SelectionControlPanelProps {
   selectedCount: number;
+  onSelectAll: () => void;
   onDeselectAll: () => void;
   onSummarize: () => void;
   onDelete: () => void;
@@ -9,6 +10,7 @@ interface SelectionControlPanelProps {
 
 const SelectionControlPanel: React.FC<SelectionControlPanelProps> = ({
   selectedCount,
+  onSelectAll,
   onDeselectAll,
   onSummarize,
   onDelete,
@@ -30,6 +32,9 @@ const SelectionControlPanel: React.FC<SelectionControlPanelProps> = ({
       }}
     >
       <span>{selectedCount} selected</span>
+      <button onClick={onSelectAll} style={{ marginLeft: '10px', padding: '5px 10px' }}>
+        Select All
+      </button>
       <button onClick={onDeselectAll} style={{ marginLeft: '10px', padding: '5px 10px' }}>
         Deselect All
       </button>

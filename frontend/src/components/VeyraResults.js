@@ -20,6 +20,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import NotesIcon from '@mui/icons-material/Notes';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import DoneAllIcon from '@mui/icons-material/DoneAll';
 import CircularProgress from '@mui/material/CircularProgress';
 import './VeyraResults.css';
 
@@ -323,12 +324,38 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
   const handleTileSelect = (itemType, itemId) => {
     const key = makeTileKey(itemType, itemId);
     setSelectedTiles(prev => {
-      const newSelected = { ...prev, [key]: !prev[key] };
+      const newSelected = { ...prev };
+      // Toggle selection
+      if (newSelected[key]) {
+        delete newSelected[key];
+      } else {
+        newSelected[key] = true;
+      }
       console.log('[VeyraResults] Tile selection changed. Key:', key, 'New selectedTiles:', newSelected);
       return newSelected;
     });
   };
   
+  const handleSelectAllTiles = () => {
+    const newSelected = { ...selectedTiles };
+    // Select all displayed emails
+    (displayedEmails || []).forEach(email => {
+      if (email && email.id) { // Ensure email and email.id exist
+        const key = makeTileKey('email', email.id);
+        newSelected[key] = true;
+      }
+    });
+    // Select all displayed calendar events
+    (results?.calendar_events || []).forEach(event => {
+      if (event && event.id) { // Ensure event and event.id exist
+        const key = makeTileKey('event', event.id);
+        newSelected[key] = true;
+      }
+    });
+    setSelectedTiles(newSelected);
+    console.log('[VeyraResults] All visible tiles selected:', newSelected);
+  };
+
   const getSelectedCount = () => {
     return Object.values(selectedTiles).filter(isSelected => isSelected).length;
   };
@@ -549,6 +576,15 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
               {selectedEmailItems.length} email(s) selected
             </Typography>
             <Box>
+              <IconButton 
+                onClick={handleSelectAllTiles}
+                size="small"
+                title="Select All Visible"
+                sx={{ mr: 0.5 }}
+                disabled={isBulkDeleting || (displayedEmails.length === 0 && (!results?.calendar_events || results.calendar_events.length === 0) )}
+              >
+                <DoneAllIcon />
+              </IconButton>
               <IconButton 
                 onClick={() => setSelectedTiles({})} 
                 size="small"
