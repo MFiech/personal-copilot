@@ -10,7 +10,9 @@
   max-width: 100%;
 }
 
-.veyra-tile:hover {
+.veyra-tile:hover,
+.email-tile:hover,
+.calendar-tile:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
   border-color: #1976d2;

@@ -29,7 +29,7 @@ const VeyraTile = ({ type, data }) => {
   };
 
   return (
-    <div className="veyra-tile">
+    <div className={`veyra-tile ${type}-tile`}>
       {type === 'email' ? renderEmailContent() : renderCalendarContent()}
     </div>
   );
