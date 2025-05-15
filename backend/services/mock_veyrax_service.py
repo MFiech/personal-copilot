@@ -244,6 +244,121 @@ class MockVeyraXService:
             
         return "\n".join(summary)
     
+    def get_email_message(self, message_id, mark_as_read=False):
+        """
+        Mock implementation of getting a specific email message.
+        
+        Args:
+            message_id (str): ID of the message to retrieve
+            mark_as_read (bool): Whether to mark the message as read
+            
+        Returns:
+            dict: Mock email message data
+        """
+        # Generate a mock email message with some HTML and text content
+        message = {
+            "id": message_id,
+            "subject": "Mock Email Subject",
+            "from": {
+                "email": "sender@example.com",
+                "name": "Mock Sender"
+            },
+            "to": [
+                {
+                    "email": "recipient@example.com",
+                    "name": "Mock Recipient"
+                }
+            ],
+            "date": datetime.now().isoformat(),
+            "textBody": "This is a mock email message with plain text content. It contains information that might be important for testing purposes.",
+            "htmlBody": """
+                <html>
+                    <head>
+                        <style>
+                            body { font-family: Arial, sans-serif; margin: 20px; }
+                            .header { background-color: #f0f0f0; padding: 10px; }
+                            .content { padding: 20px; }
+                            .footer { font-size: 12px; color: gray; padding: 10px; }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="header">
+                            <h2>Mock Email Subject</h2>
+                        </div>
+                        <div class="content">
+                            <p>This is a mock email message with <strong>HTML content</strong>.</p>
+                            <p>It contains information that might be important for testing purposes.</p>
+                            <ul>
+                                <li>Item one</li>
+                                <li>Item two</li>
+                                <li>Item three</li>
+                            </ul>
+                            <p>Best regards,<br>Mock Sender</p>
+                        </div>
+                        <div class="footer">
+                            This is an automatically generated mock email for testing.
+                        </div>
+                    </body>
+                </html>
+            """
+        }
+        
+        return {
+            "data": {
+                "message": message
+            }
+        }
+    
+    def get_email_details(self, email_id):
+        """
+        Get the full details of an email, including HTML content.
+        
+        Args:
+            email_id (str): ID of the email to retrieve
+            
+        Returns:
+            str: HTML content of the email, or plain text if HTML is not available
+        """
+        try:
+            # Get the full email message from our mock implementation
+            response = self.get_email_message(email_id)
+            
+            if "error" in response:
+                print(f"Error retrieving mock email details: {response['error']}")
+                return None
+            
+            # Extract email content - prefer HTML content if available
+            if "data" in response and "message" in response["data"]:
+                message = response["data"]["message"]
+                
+                # Try to get HTML content first
+                html_content = message.get("htmlBody", "")
+                if html_content:
+                    return html_content
+                
+                # Fall back to plain text
+                text_content = message.get("textBody", "")
+                if text_content:
+                    return text_content
+                
+                # If neither is available, try to construct a basic representation
+                subject = message.get("subject", "No Subject")
+                sender = message.get("from", {}).get("email", "Unknown Sender")
+                sender_name = message.get("from", {}).get("name", sender)
+                date = message.get("date", "Unknown Date")
+                
+                # Create a basic representation
+                basic_content = f"From: {sender_name} <{sender}>\nDate: {date}\nSubject: {subject}\n\n"
+                basic_content += "This email doesn't contain any text content."
+                
+                return basic_content
+                
+            return "Email content not available"
+            
+        except Exception as e:
+            print(f"Error in get_email_details mock: {str(e)}")
+            return None
+    
     def summarize_calendar_events(self, events):
         """Format calendar events for easy reading."""
         if not events or "error" in events:

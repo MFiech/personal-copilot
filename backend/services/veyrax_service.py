@@ -183,6 +183,62 @@ class VeyraXService:
         
         return self.post_request("/mail/get_message", params)
     
+    def get_email_details(self, email_id):
+        """
+        Get the full details of an email, including HTML content.
+        
+        Args:
+            email_id (str): ID of the email to retrieve
+            
+        Returns:
+            str: HTML content of the email, or plain text if HTML is not available
+        """
+        try:
+            # Log the ID being used
+            print(f"Attempting to get details for email_id: {email_id}")
+
+            # Get the full email message
+            response = self.get_email_message(email_id)
+
+            # Log the raw response from get_email_message
+            print(f"Raw response from get_email_message for ID {email_id}: {response}")
+
+            if "error" in response:
+                print(f"Error retrieving email details for ID {email_id}: {response['error']}")
+                return None
+            
+            # Extract email content - prefer HTML content if available
+            if "data" in response and "message" in response["data"]:
+                message = response["data"]["message"]
+                
+                # Try to get HTML content first
+                html_content = message.get("htmlBody", "")
+                if html_content:
+                    return html_content
+                
+                # Fall back to plain text
+                text_content = message.get("textBody", "")
+                if text_content:
+                    return text_content
+                
+                # If neither is available, try to construct a basic representation
+                subject = message.get("subject", "No Subject")
+                sender = message.get("from", {}).get("email", "Unknown Sender")
+                sender_name = message.get("from", {}).get("name", sender)
+                date = message.get("date", "Unknown Date")
+                
+                # Create a basic representation
+                basic_content = f"From: {sender_name} <{sender}>\nDate: {date}\nSubject: {subject}\n\n"
+                basic_content += "This email doesn't contain any text content."
+                
+                return basic_content
+                
+            return "Email content not available"
+            
+        except Exception as e:
+            print(f"Error in get_email_details: {str(e)}")
+            return None
+    
     def send_email(self, to, subject, body_text=None, body_html=None, cc=None, bcc=None):
         """
         Send an email.
@@ -545,8 +601,15 @@ class VeyraXService:
             tuple: (formatted_summary, email_ids_dict) where email_ids_dict maps display numbers to message IDs
         """
         try:
-            if not emails or "error" in emails:
-                error_msg = emails.get("error", "Unknown error") if isinstance(emails, dict) else "Unknown error"
+            print(f"Summarizing emails: {type(emails)} - {len(emails) if isinstance(emails, list) else '(not a list)'}")
+            
+            if not emails:
+                print("No emails to summarize")
+                return "No emails found.", {}
+                
+            if isinstance(emails, dict) and "error" in emails:
+                error_msg = emails.get("error", "Unknown error")
+                print(f"Error in emails data: {error_msg}")
                 if "not available" in error_msg:
                     return f"I couldn't access your Gmail account. {error_msg}", {}
                 elif "Authentication error" in error_msg:
@@ -554,10 +617,18 @@ class VeyraXService:
                 else:
                     return f"I couldn't retrieve your emails: {error_msg}", {}
             
+            # Handle different response formats
             if isinstance(emails, dict) and "messages" in emails:
+                print("Found messages directly in dict")
                 emails = emails.get("messages", [])
             elif isinstance(emails, dict) and "data" in emails and "messages" in emails.get("data", {}):
+                print("Found messages in data.messages")
                 emails = emails.get("data", {}).get("messages", [])
+            
+            # Debug output
+            print(f"Processing {len(emails)} email messages")
+            if emails and len(emails) > 0:
+                print(f"First email structure: {json.dumps(emails[0], default=str)}")
             
             # Store message IDs with their display numbers
             email_ids_dict = {}
@@ -568,24 +639,64 @@ class VeyraXService:
                 message_id = email.get("id")
                 if message_id:
                     email_ids_dict[str(i)] = message_id
-                
-                # Get sender information
-                sender = email.get("from_email", {}).get("email", "Unknown Sender")
-                sender_name = email.get("from_email", {}).get("name", "")
-                if sender_name:
-                    sender = sender_name
                     
+                # Get sender information - try different field names that might be used
+                sender_email = None
+                sender_name = None
+                
+                # Try the from_email structure
+                if "from_email" in email:
+                    sender_email = email.get("from_email", {}).get("email", "Unknown Sender")
+                    sender_name = email.get("from_email", {}).get("name", "")
+                # Try the from structure
+                elif "from" in email:
+                    if isinstance(email["from"], dict):
+                        sender_email = email["from"].get("email", "Unknown Sender")
+                        sender_name = email["from"].get("name", "")
+                    elif isinstance(email["from"], str):
+                        sender_email = email["from"]
+                # Try the sender structure
+                elif "sender" in email:
+                    if isinstance(email["sender"], dict):
+                        sender_email = email["sender"].get("email", "Unknown Sender")
+                        sender_name = email["sender"].get("name", "")
+                    elif isinstance(email["sender"], str):
+                        sender_email = email["sender"]
+                
+                # Use name if available, otherwise use email
+                sender = sender_name if sender_name else (sender_email or "Unknown Sender")
+                
+                # Get subject and date with fallbacks
                 subject = email.get("subject", "No Subject")
-                date_str = email.get("date", "Unknown Date")
+                date_str = email.get("date", email.get("timestamp", "Unknown Date"))
                 
                 # Format the date into a readable timestamp
+                formatted_date = date_str
                 try:
-                    # Parse the RFC 2822 date format
-                    date_obj = datetime.strptime(date_str, "%a, %d %b %Y %H:%M:%S %Z")
-                    # Format it in a consistent, readable way
-                    formatted_date = date_obj.strftime("%B %d, %Y at %I:%M %p")
-                except (ValueError, TypeError):
-                    # If date parsing fails, use the original string
+                    # Try different date formats
+                    date_formats = [
+                        "%a, %d %b %Y %H:%M:%S %z",  # RFC 2822 format with timezone
+                        "%a, %d %b %Y %H:%M:%S %Z",  # RFC 2822 format with named timezone
+                        "%Y-%m-%dT%H:%M:%S%z",       # ISO 8601 format
+                        "%Y-%m-%dT%H:%M:%S.%f%z",    # ISO 8601 with microseconds
+                        "%Y-%m-%d %H:%M:%S"          # Simple format
+                    ]
+                    
+                    parsed_date = None
+                    for fmt in date_formats:
+                        try:
+                            parsed_date = datetime.strptime(date_str, fmt)
+                            break
+                        except (ValueError, TypeError):
+                            continue
+                    
+                    if parsed_date:
+                        formatted_date = parsed_date.strftime("%B %d, %Y at %I:%M %p")
+                    else:
+                        # If we couldn't parse with any format, use as is
+                        formatted_date = date_str
+                except Exception as date_error:
+                    print(f"Error parsing date: {date_error}")
                     formatted_date = date_str
                 
                 # Format the email entry in the requested format
@@ -594,9 +705,13 @@ class VeyraXService:
             if not summary:
                 return "No emails found.", {}
             
-            return "\n".join(summary), email_ids_dict
+            result = "\n".join(summary)
+            print(f"Email summary: {result}")
+            return result, email_ids_dict
         except Exception as e:
             print(f"Error summarizing emails: {e}")
+            import traceback
+            print(f"Summarize emails traceback: {traceback.format_exc()}")
             # Return a safe fallback message
             return "I was able to access your emails, but encountered an error formatting them. Please try a more specific query.", {}
     
@@ -731,17 +846,51 @@ class VeyraXService:
         Returns:
             dict: Context data from VeyraX services
         """
+        # Handle None query
+        if query is None:
+            print("Received None query in process_query, returning None")
+            return None
+
         query_lower = query.lower()
         
-        # Email-related keywords
-        email_keywords = ["email", "mail", "gmail", "inbox", "message", "received", "sent"]
-        calendar_keywords = ["calendar", "event", "meeting", "schedule", "appointment"]
+        # Enhanced email-related keywords with variations
+        email_keywords = [
+            "email", "e-mail", "mail", "gmail", "inbox", "message", "received", 
+            "sent", "sender", "from", "attachment", "subject", "read", "unread",
+            "check mail", "check email", "check my mail", "check my email", 
+            "any new", "any emails", "show me emails", "show me mail", 
+            "recent emails", "recent mail"
+        ]
+        
+        calendar_keywords = [
+            "calendar", "event", "meeting", "schedule", "appointment", 
+            "call", "zoom", "conference", "webinar", "session", "reminder",
+            "upcoming", "agenda", "planned", "scheduled"
+        ]
+        
+        # Improved email detection logic
+        is_email_query = (
+            any(keyword in query_lower for keyword in email_keywords) or
+            any(f" {keyword} " in f" {query_lower} " for keyword in ["mail", "inbox", "sent"]) or
+            "email" in query_lower or "e-mail" in query_lower
+        )
+        
+        # Improved calendar detection logic
+        is_calendar_query = (
+            any(keyword in query_lower for keyword in calendar_keywords) or
+            "schedule" in query_lower or "meeting" in query_lower
+        )
+        
+        # Debug logging
+        print(f"Query: '{query_lower}'")
+        print(f"Is email query: {is_email_query}")
+        print(f"Is calendar query: {is_calendar_query}")
         
         # Check if query is about emails
-        if any(keyword in query_lower for keyword in email_keywords):
+        if is_email_query:
             # Check if user is asking for unread emails
             unread_requested = any(keyword in query_lower for keyword in 
-                                 ['unread', 'new email', 'new message', 'haven\'t read'])
+                               ['unread', 'new email', 'new message', 'haven\'t read', 'not read'])
             
             # Prepare request parameters
             params = {
@@ -755,30 +904,78 @@ class VeyraXService:
             if unread_requested:
                 params["search_query"] = "is:unread"  # Gmail search syntax for unread messages
             
+            # Extract search terms for more specific searches
+            search_terms = []
+            
+            # Check for sender keywords
+            if "from" in query_lower or "sender" in query_lower:
+                # Try to extract an email address or name after "from" or "sender"
+                for keyword in ["from", "sender"]:
+                    if keyword in query_lower:
+                        parts = query_lower.split(keyword, 1)[1].strip()
+                        if parts:
+                            # Take the first word after "from" or "sender" as a potential sender
+                            potential_sender = parts.split()[0]
+                            if "@" in potential_sender:  # Looks like an email
+                                search_terms.append(f"from:{potential_sender}")
+                            else:
+                                # Try to get a name (might be multiple words)
+                                name_parts = []
+                                for word in parts.split():
+                                    if word in ["about", "containing", "with", "regarding", "on", "for", "in"]:
+                                        break
+                                    name_parts.append(word)
+                                if name_parts:
+                                    search_terms.append(f"from:{' '.join(name_parts)}")
+            
+            # Check for subject keywords
+            if "subject" in query_lower or "about" in query_lower or "regarding" in query_lower:
+                for keyword in ["subject", "about", "regarding"]:
+                    if keyword in query_lower:
+                        parts = query_lower.split(keyword, 1)[1].strip()
+                        if parts:
+                            # Extract the subject terms
+                            subject_parts = []
+                            for word in parts.split():
+                                if word in ["from", "sent", "by", "on", "for", "in"]:
+                                    break
+                                subject_parts.append(word)
+                            if subject_parts:
+                                search_terms.append(f"subject:{' '.join(subject_parts)}")
+            
+            # Combine search terms if any were identified
+            if search_terms:
+                params["search_query"] = " ".join(search_terms)
+                
+            print(f"Email search parameters: {params}")
+            
             # Make the API request
             response = self.post_request("/mail/get_messages", params)
+            
+            print(f"Email search response: {response}")
             
             if "error" in response:
                 return {
                     "source_type": "mail",
-                    "content": f"I couldn't retrieve your emails: {response['error']}",
+                    "content": f"I couldn't retrieve your emails: {response.get('error', 'Unknown error')}",
                     "data": {"messages": []}
                 }
             
             # Format the emails for display
-            formatted_emails, email_ids = self.summarize_emails(response.get("data", {}).get("messages", []))
+            messages = response.get("data", {}).get("messages", [])
+            formatted_emails, email_ids = self.summarize_emails(messages)
             
             return {
                 "source_type": "mail",
                 "content": formatted_emails,
                 "data": {
-                    "messages": response.get("data", {}).get("messages", []),
-                    "filter_applied": unread_requested
+                    "messages": messages,
+                    "filter_applied": params.get("search_query") is not None
                 }
             }
             
         # Check if query is about calendar
-        elif any(keyword in query_lower for keyword in calendar_keywords):
+        elif is_calendar_query:
             # Default to upcoming events in the next 7 days
             days = 7
             
