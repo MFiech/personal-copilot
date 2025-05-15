@@ -11,12 +11,13 @@ import {
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import './VeyraResults.css';
 
-const VeyraResults = ({ results, currentThreadId, message_id }) => {
+const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceived }) => {
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedItem, setSelectedItem] = useState(null);
   const [deletedEmails, setDeletedEmails] = useState(new Set());
   const [deletedEvents, setDeletedEvents] = useState(new Set());
   const [clickedElement, setClickedElement] = useState(null);
+  const [summarizing, setSummarizing] = useState(false);
 
   // New state for hover and selection within VeyraResults
   const [hoveredTileKey, setHoveredTileKey] = useState(null);
@@ -77,7 +78,6 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
   const handleMenuClick = (event, item) => {
     setAnchorEl(event.currentTarget);
     setSelectedItem(item);
-    // Save the nearest Card element that has a data attribute
     const cardElement = event.currentTarget.closest('[data-email-id], [data-event-id]');
     setClickedElement(cardElement);
   };
@@ -89,7 +89,80 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
   };
 
   const handleAction = async (action, item) => {
-    if (action === 'delete') {
+    if (action === 'summarize') {
+      const currentEmailId = item.id;
+
+      if (!currentEmailId || !currentThreadId) {
+        console.error('Missing required IDs for summarization (email_id or thread_id):', { email_id: currentEmailId, thread_id: currentThreadId });
+        alert('Cannot summarize: Missing email ID or thread ID.');
+        handleMenuClose();
+        return;
+      }
+
+      // Get message_id from the clicked tile's dataset
+      const messageIdFromTile = clickedElement?.dataset?.messageId;
+      console.log('handleAction - summarize - messageId from tile dataset:', messageIdFromTile);
+
+      if (!messageIdFromTile) {
+        console.error("Could not retrieve message_id from the clicked tile's data-message-id attribute.");
+        alert('Cannot summarize: Could not find context message ID on the email tile.');
+        handleMenuClose();
+        return;
+      }
+
+      setSummarizing(currentEmailId);
+      
+      try {
+        // Log both message_id values for comparison
+        console.log('[VeyraResults] Summarize Action - ID from Prop:', message_id);
+        console.log('[VeyraResults] Summarize Action - ID from Tile Dataset:', messageIdFromTile);
+
+        const payload = {
+          action: 'summarize_email',
+          email_id: currentEmailId,
+          thread_id: currentThreadId,
+          message_id: messageIdFromTile // Use the ID retrieved from the tile
+        };
+        
+        console.log('Sending summarize request to /chat with payload:', payload);
+        
+        const response = await fetch('http://localhost:5001/chat', { 
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload)
+        });
+        
+        const data = await response.json();
+        console.log('Summarize response from /chat:', data);
+        
+        if (!response.ok) {
+           console.error('Summarization request failed:', data.error || response.statusText);
+           // Optionally, show an error to the user via alert or notification
+           // alert(`Failed to start summarization: ${data.error || response.statusText}`);
+        } else {
+           console.log('Summarization request sent successfully. Received data:', data);
+
+           // Call the callback function passed from App.js with the new message data
+           if (onNewMessageReceived && data.response && data.message_id) {
+             onNewMessageReceived(data); // Pass the whole response data object
+           } else {
+             console.warn("onNewMessageReceived callback missing or summary data incomplete, UI might not update without refresh.");
+             // Optionally, fallback to reload if callback isn't available
+             // window.location.reload(); 
+           }
+        }
+
+      } catch (error) {
+        console.error('Error sending summarization request:', error);
+        // Optionally show error to user
+        // alert(`Error requesting summarization: ${error.message}`);
+      } finally {
+        setSummarizing(false); // Reset loading state regardless of item ID
+        handleMenuClose();
+      }
+    } else if (action === 'delete') {
       // Check if this is a calendar event or an email
       if (item.start) { // This is a calendar event
         try {
@@ -310,6 +383,7 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
             </Grid>
           );
         }
+        
         const emailId = email.id || `email-fallback-${index}`;
         const tileKey = makeTileKey('email', emailId);
         const isChecked = !!selectedTiles[tileKey];
@@ -328,9 +402,13 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
                 position: 'relative', // For checkbox positioning
                 outline: isChecked ? '2px solid #1976d2' : 'none', // Selected outline
               }}
+
               data-email-id={emailId}
               onMouseEnter={() => handleTileMouseEnter(tileKey)}
               onMouseLeave={handleTileMouseLeave}
+
+              data-email-id={email.id}
+              data-message-id={message_id}
             >
               {isCheckboxVisible && (
                 <div className="absolute bottom-0 right-0 w-8 h-8 bg-white bg-opacity-80 rounded-tl-md z-[9998]" style={{zIndex: 9998}}></div>
@@ -384,7 +462,8 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
                     variant="body2" 
                     sx={{ 
                       fontSize: '0.75rem',
-                      color: 'text.secondary'
+                      color: 'text.secondary',
+                      mb: 0.5
                     }}
                   >
                     {formatEventDateTime(email.date)}
@@ -398,6 +477,12 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
                   <MoreVertIcon />
                 </IconButton>
               </Box>
+              {/* Loading indicator for summarization */}
+              {summarizing === email.id && (
+                <Box mt={1} textAlign="center">
+                  <Typography variant="caption" color="textSecondary">Summarizing...</Typography>
+                </Box>
+              )}
             </Card>
           </Grid>
         );
@@ -448,9 +533,14 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
                 position: 'relative', // For checkbox positioning
                 outline: isChecked ? '2px solid #1976d2' : 'none', // Selected outline
               }}
+
               data-event-id={eventId}
               onMouseEnter={() => handleTileMouseEnter(tileKey)}
               onMouseLeave={handleTileMouseLeave}
+
+              data-event-id={event.id}
+              data-message-id={message_id}
+
             >
               {isCheckboxVisible && (
                 <div className="absolute bottom-0 right-0 w-8 h-8 bg-white bg-opacity-80 rounded-tl-md z-[9998]" style={{zIndex: 9998}}></div>
@@ -536,38 +626,25 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
         open={Boolean(anchorEl)}
         onClose={handleMenuClose}
       >
-        {selectedItem && selectedItem.start ? (
-          // Calendar event options
+        {selectedItem && !selectedItem.start && (
           <>
-            <MenuItem onClick={() => handleAction('display', selectedItem)}>
-              Display
+            <MenuItem onClick={() => handleAction('summarize', selectedItem)}>
+              Summarize
             </MenuItem>
-            <MenuItem onClick={() => handleAction('modify', selectedItem)}>
-              Modify the event
+            <MenuItem onClick={() => handleAction('delete', selectedItem)}>
+              Delete
             </MenuItem>
+          </>
+        )}
+        {selectedItem && selectedItem.start && (
+          <>
             {selectedItem.htmlLink && (
               <MenuItem onClick={() => handleAction('open', selectedItem)}>
                 Open in Calendar
               </MenuItem>
             )}
             <MenuItem onClick={() => handleAction('delete', selectedItem)}>
-              Delete Event
-            </MenuItem>
-          </>
-        ) : (
-          // Email options
-          <>
-            <MenuItem onClick={() => handleAction('summarize', selectedItem)}>
-              Summarize
-            </MenuItem>
-            <MenuItem onClick={() => handleAction('display', selectedItem)}>
-              Display
-            </MenuItem>
-            <MenuItem onClick={() => handleAction('view_gmail', selectedItem)}>
-              View in GMail
-            </MenuItem>
-            <MenuItem onClick={() => handleAction('delete', selectedItem)}>
-              Delete Email
+              Delete
             </MenuItem>
           </>
         )}
