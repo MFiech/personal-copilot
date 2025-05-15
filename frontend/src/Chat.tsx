@@ -102,6 +102,25 @@ export const Chat: React.FC = () => {
     setActiveSelectionMessageId(null);
   };
 
+  const handleSelectAll = () => {
+    if (activeSelectionMessageId) {
+      const newSelectedTiles = { ...selectedTiles };
+      const activeMessage = messages.find(msg => msg.id === activeSelectionMessageId);
+      if (activeMessage) {
+        activeMessage.parts.forEach(part => {
+          if (part.type === 'tile' && part.tileData) {
+            // Ensure a unique enough ID if tileData.id is not present
+            const tileId = part.tileData.id || `fallback-id-${part.tileData.type}-${Math.random().toString(36).substring(7)}`;
+            const key = `${activeSelectionMessageId}-${tileId}`;
+            newSelectedTiles[key] = true;
+          }
+        });
+        setSelectedTiles(newSelectedTiles);
+      }
+    }
+    // If no activeSelectionMessageId, "Select All" doesn't have a clear context, so we do nothing.
+  };
+
   const handleSubmit = async (event?: React.FormEvent<HTMLFormElement>, messageContent?: string) => {
     if (event) event.preventDefault();
     const currentInput = messageContent || input;
@@ -300,6 +319,7 @@ export const Chat: React.FC = () => {
       {Object.keys(selectedTiles).length > 0 && (
         <SelectionControlPanel
           selectedCount={Object.keys(selectedTiles).length}
+          onSelectAll={handleSelectAll}
           onDeselectAll={handleDeselectAll}
           onSummarize={() => console.log('Summarize clicked. Selected:', selectedTiles)}
           onDelete={() => console.log('Delete clicked. Selected:', selectedTiles)}
