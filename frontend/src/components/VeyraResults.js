@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Card, 
   Typography, 
@@ -32,7 +32,59 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
   const [selectedTiles, setSelectedTiles] = useState({});
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
-  console.log('[VeyraResults] Props received:', { results, currentThreadId, message_id });
+  // States for email pagination
+  const [displayedEmails, setDisplayedEmails] = useState([]);
+  const [currentEmailOffset, setCurrentEmailOffset] = useState(0);
+  const [limitPerPage, setLimitPerPage] = useState(0); // Will be set from initial results
+  const [totalEmailsAvailable, setTotalEmailsAvailable] = useState(0);
+  const [canLoadMoreEmails, setCanLoadMoreEmails] = useState(false);
+  const [isLoadingMoreEmails, setIsLoadingMoreEmails] = useState(false);
+
+  useEffect(() => {
+    if (results) {
+        setDisplayedEmails(results.veyra_results?.emails || []);
+        const initialOffset = results.veyra_current_offset || 0;
+        const initialLimit = results.veyra_limit_per_page || 10; // Default to 10
+        const initialTotal = results.veyra_total_emails_available || 0;
+
+        setCurrentEmailOffset(initialOffset);
+        setLimitPerPage(initialLimit);
+        setTotalEmailsAvailable(initialTotal);
+
+        // Prioritize veyra_has_more from props if available
+        let canCurrentlyLoadMore;
+        if (typeof results.veyra_has_more === 'boolean') {
+            canCurrentlyLoadMore = results.veyra_has_more;
+            console.log('[VeyraResults useEffect] Using veyra_has_more from props:', canCurrentlyLoadMore);
+        } else {
+            // Fallback to calculation if veyra_has_more is not explicitly provided
+            canCurrentlyLoadMore = (initialOffset + initialLimit) < initialTotal;
+            console.log('[VeyraResults useEffect] Calculated canLoadMoreEmails:', canCurrentlyLoadMore, 
+                        {offset: initialOffset, limit: initialLimit, total: initialTotal});
+        }
+        setCanLoadMoreEmails(canCurrentlyLoadMore);
+
+        console.log('[VeyraResults useEffect] Initial pagination state set:', {
+            offset: initialOffset,
+            limit: initialLimit,
+            total: initialTotal,
+            hasMoreSource: typeof results.veyra_has_more === 'boolean' ? 'prop' : 'calculated',
+            canLoadMore: canCurrentlyLoadMore,
+            displayedEmailsCount: results.veyra_results?.emails?.length || 0,
+            resultsProp: results // Log the whole results prop for inspection
+        });
+    } else {
+        // Reset state if results are not available (e.g., message has no Veyra content)
+        setDisplayedEmails([]);
+        setCurrentEmailOffset(0);
+        setLimitPerPage(10); // Default limit
+        setTotalEmailsAvailable(0);
+        setCanLoadMoreEmails(false);
+        console.log('[VeyraResults useEffect] No results, resetting pagination state.');
+    }
+}, [results]); // Dependency array includes 'results' which contains all pagination fields
+
+  console.log('[VeyraResults] Props received (full assistant message object):', { results, currentThreadId, message_id });
   console.log('[VeyraResults] Current selectedTiles:', selectedTiles);
 
   const formatEventDateTime = (dateTime) => {
@@ -256,7 +308,7 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
     }
   };
 
-  if (!results || (!results.emails?.length && !results.calendar_events?.length)) {
+  if (!results || (!results.veyra_results?.emails?.length && !results.calendar_events?.length)) {
     console.log('[VeyraResults] No results to display');
     return null;
   }
@@ -389,8 +441,9 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
 
   // Helper to get selected email items
   const getSelectedEmailItems = () => {
-    if (!results.emails) return [];
-    return results.emails.filter(email => {
+    // displayedEmails is now the source of truth for what's rendered
+    if (!displayedEmails) return [];
+    return displayedEmails.filter(email => {
       const key = makeTileKey('email', email.id);
       return !!selectedTiles[key];
     });
@@ -418,6 +471,46 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
   };
 
   const selectedEmailItems = getSelectedEmailItems();
+
+  const handleLoadMoreEmails = async () => {
+    if (!canLoadMoreEmails || isLoadingMoreEmails) return;
+
+    setIsLoadingMoreEmails(true);
+    console.log(`[VeyraResults] Loading more emails for message_id: ${message_id}, thread_id: ${currentThreadId}`);
+    try {
+        const response = await fetch('http://localhost:5001/load_more_emails', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                thread_id: currentThreadId,
+                assistant_message_id: message_id 
+            }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response' }));
+            console.error('[VeyraResults] Error loading more emails:', response.status, errorData);
+            throw new Error(`HTTP error! status: ${response.status} - ${errorData.error || 'Unknown error'}`);
+        }
+        const data = await response.json();
+        console.log('[VeyraResults] Received more emails:', data);
+
+        if (data.new_emails && data.new_emails.length > 0) {
+            setDisplayedEmails(prevEmails => [...prevEmails, ...data.new_emails]);
+        }
+        setCurrentEmailOffset(data.current_offset);
+        setLimitPerPage(data.limit_per_page); 
+        setTotalEmailsAvailable(data.total_emails_available);
+        setCanLoadMoreEmails(data.has_more);
+
+    } catch (error) {
+        console.error("[VeyraResults] Catch block error loading more emails:", error);
+        setCanLoadMoreEmails(false); // Stop trying if there was an error
+        alert(`Error loading more emails: ${error.message}`);
+    } finally {
+        setIsLoadingMoreEmails(false);
+    }
+  };
 
   return (
     <Grid container spacing={2} sx={{ bgcolor: 'rgba(0, 0, 0, 0.02)', p: 1 }}>
@@ -506,10 +599,10 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
       )}
 
       {/* Email List */}
-      {results.emails && results.emails.length > 0 && (
+      {displayedEmails && displayedEmails.length > 0 && (
         <Grid item xs={12}>
           <List disablePadding sx={{ bgcolor: 'background.paper', border: '1px solid rgba(0,0,0,0.08)', borderRadius: '4px' }}>
-            {results.emails.map((email, index) => {
+            {displayedEmails.map((email, index) => {
               const tileKey = makeTileKey('email', email.id);
               const isSelected = !!selectedTiles[tileKey];
               if (deletedEmails.has(email.id)) {
@@ -525,7 +618,7 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
                   button
                   selected={isSelected}
                   onClick={() => handleTileSelect('email', email.id)}
-                  divider={index < results.emails.length - 1}
+                  divider={index < displayedEmails.length - 1}
                   sx={{
                     padding: '10px 12px',
                     '&.Mui-selected': {
@@ -593,11 +686,22 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
               );
             })}
           </List>
+          {canLoadMoreEmails && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2, mb: 1 }}>
+              <Button 
+                variant="outlined"
+                onClick={handleLoadMoreEmails} 
+                disabled={isLoadingMoreEmails}
+              >
+                {isLoadingMoreEmails ? <CircularProgress size={24} /> : 'Load More Emails'}
+              </Button>
+            </Box>
+          )}
         </Grid>
       )}
 
       {/* Calendar Event Tiles */}
-      {results.calendar_events && results.calendar_events.map((event, index) => {
+      {results.calendar_events && Array.isArray(results.calendar_events) && results.calendar_events.length > 0 && results.calendar_events.map((event, index) => {
         const tileKey = makeTileKey('event', event.id);
         const isSelected = !!selectedTiles[tileKey];
 
