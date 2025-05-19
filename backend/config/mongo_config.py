@@ -3,8 +3,10 @@ from dotenv import load_dotenv
 from .mongo_schema import (
     CONVERSATIONS_SCHEMA,
     INSIGHTS_SCHEMA,
+    EMAILS_SCHEMA,
     CONVERSATIONS_INDEXES,
-    INSIGHTS_INDEXES
+    INSIGHTS_INDEXES,
+    EMAILS_INDEXES
 )
 
 # Load environment variables
@@ -18,6 +20,7 @@ MONGO_DB_NAME = os.getenv('MONGO_DB_NAME', 'pm_copilot')
 # Collection names
 CONVERSATIONS_COLLECTION = 'conversations'
 INSIGHTS_COLLECTION = 'insights'
+EMAILS_COLLECTION = 'emails'
 
 # MongoDB connection options
 MONGO_OPTIONS = {
@@ -46,12 +49,24 @@ def init_collections(db):
         )
         print(f"Created collection: {INSIGHTS_COLLECTION}")
     
+    # Initialize emails collection
+    if EMAILS_COLLECTION not in db.list_collection_names():
+        db.create_collection(
+            EMAILS_COLLECTION,
+            **EMAILS_SCHEMA
+        )
+        print(f"Created collection: {EMAILS_COLLECTION}")
+    
     # Create indexes
     conversations = db[CONVERSATIONS_COLLECTION]
     insights = db[INSIGHTS_COLLECTION]
+    emails = db[EMAILS_COLLECTION]
     
     for index_config in CONVERSATIONS_INDEXES:
         conversations.create_index(**index_config)
     
     for index_config in INSIGHTS_INDEXES:
-        insights.create_index(**index_config) 
+        insights.create_index(**index_config)
+        
+    for index_config in EMAILS_INDEXES:
+        emails.create_index(**index_config) 

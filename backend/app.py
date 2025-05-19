@@ -24,6 +24,7 @@ from utils.mongo_client import get_db, get_collection
 from config.mongo_config import init_collections, CONVERSATIONS_COLLECTION
 from models.thread import Thread
 from prompts import email_summarization_prompt
+from models.email import Email
 
 app = Flask(__name__)
 CORS(app, resources={
@@ -255,7 +256,47 @@ def chat():
                             for message in messages:
                                 if "body" in message:
                                     del message["body"]
-                            
+                            # --- Save emails to the new emails collection ---
+                            for message in messages:
+                                # Process to_emails to ensure each recipient has both email and name
+                                to_emails = []
+                                for recipient in message.get("to", []):
+                                    if isinstance(recipient, dict):
+                                        email = recipient.get("email", "")
+                                        name = recipient.get("name")
+                                        if name is None:
+                                            # If name is None, use the email username as the name
+                                            name = email.split("@")[0].replace(".", " ").replace("_", " ").title()
+                                        to_emails.append({"email": email, "name": name})
+                                    elif isinstance(recipient, str):
+                                        # If it's just an email string, create a proper recipient object
+                                        email = recipient
+                                        name = email.split("@")[0].replace(".", " ").replace("_", " ").title()
+                                        to_emails.append({"email": email, "name": name})
+
+                                email = Email(
+                                    email_id=message.get("id"),
+                                    thread_id=thread_id,
+                                    subject=message.get("subject"),
+                                    from_email=message.get("from_email"),
+                                    to_emails=to_emails,  # Use the processed to_emails
+                                    date=message.get("date"),
+                                    content={
+                                        "html": message.get("body", {}).get("html", "") if message.get("body") else "",
+                                        "text": message.get("body", {}).get("text", "") if message.get("body") else ""
+                                    },
+                                    metadata={
+                                        "source": "VEYRA",
+                                        "folder": message.get("folder"),
+                                        "is_read": message.get("is_read", False),
+                                        "size": message.get("size"),
+                                        "attachments": message.get("attachments", []),
+                                        "cc": message.get("cc", []),
+                                        "bcc": message.get("bcc", []),
+                                        "reply_to": message.get("reply_to")
+                                    }
+                                )
+                                email.save()
                             veyra_results = {"emails": messages}
                             veyra_context = veyrax_data
                             # Extract pagination info

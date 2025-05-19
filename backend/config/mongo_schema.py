@@ -278,6 +278,144 @@ INSIGHTS_SCHEMA = {
     }
 }
 
+# Schema for emails collection
+EMAILS_SCHEMA = {
+    "validator": {
+        "$jsonSchema": {
+            "bsonType": "object",
+            "required": ["email_id", "thread_id", "subject", "from_email", "date", "content"],
+            "properties": {
+                "email_id": {
+                    "bsonType": "string",
+                    "description": "Unique identifier for the email"
+                },
+                "thread_id": {
+                    "bsonType": "string",
+                    "description": "Reference to the conversation thread this email belongs to"
+                },
+                "subject": {
+                    "bsonType": "string",
+                    "description": "Email subject"
+                },
+                "from_email": {
+                    "bsonType": "object",
+                    "description": "Email sender information",
+                    "required": ["email", "name"],
+                    "properties": {
+                        "email": {
+                            "bsonType": "string",
+                            "description": "Sender's email address"
+                        },
+                        "name": {
+                            "bsonType": "string",
+                            "description": "Sender's name"
+                        }
+                    }
+                },
+                "to_emails": {
+                    "bsonType": "array",
+                    "items": {
+                        "bsonType": "object",
+                        "properties": {
+                            "email": {
+                                "bsonType": "string",
+                                "description": "Recipient's email address"
+                            },
+                            "name": {
+                                "bsonType": "string",
+                                "description": "Recipient's name"
+                            }
+                        }
+                    },
+                    "description": "List of email recipients"
+                },
+                "date": {
+                    "bsonType": "string",
+                    "description": "Email date in ISO format"
+                },
+                "content": {
+                    "bsonType": "object",
+                    "required": ["html", "text"],
+                    "properties": {
+                        "html": {
+                            "bsonType": "string",
+                            "description": "HTML content of the email"
+                        },
+                        "text": {
+                            "bsonType": "string",
+                            "description": "Plain text content of the email"
+                        }
+                    },
+                    "description": "Email content in both HTML and plain text formats"
+                },
+                "metadata": {
+                    "bsonType": "object",
+                    "description": "Additional metadata about the email",
+                    "properties": {
+                        "source": {
+                            "bsonType": "string",
+                            "enum": ["POSTMARK", "CMS", "VEYRA"],
+                            "description": "Source system of the email"
+                        },
+                        "template_name": {
+                            "bsonType": "string",
+                            "description": "Template name or ID if applicable"
+                        },
+                        "tags": {
+                            "bsonType": "array",
+                            "items": {
+                                "bsonType": "string"
+                            },
+                            "description": "Tags associated with the email"
+                        },
+                        "summary": {
+                            "bsonType": "string",
+                            "description": "AI-generated summary of the email content"
+                        }
+                    }
+                },
+                "created_at": {
+                    "bsonType": "int",
+                    "description": "Unix timestamp when the email was first stored"
+                },
+                "updated_at": {
+                    "bsonType": "int",
+                    "description": "Unix timestamp when the email was last updated"
+                }
+            }
+        }
+    }
+}
+
+# Index configurations for emails collection
+EMAILS_INDEXES = [
+    {
+        "keys": [("email_id", 1)],
+        "name": "email_id_idx",
+        "unique": True
+    },
+    {
+        "keys": [("thread_id", 1)],
+        "name": "thread_id_idx"
+    },
+    {
+        "keys": [("date", -1)],
+        "name": "date_idx"
+    },
+    {
+        "keys": [("from_email.email", 1)],
+        "name": "from_email_idx"
+    },
+    {
+        "keys": [("metadata.tags", 1)],
+        "name": "tags_idx"
+    },
+    {
+        "keys": [("created_at", -1)],
+        "name": "created_at_idx"
+    }
+]
+
 # Index configurations
 CONVERSATIONS_INDEXES = [
     {
