@@ -7,6 +7,7 @@ from datetime import datetime
 from langchain_pinecone import PineconeVectorStore
 from langchain_openai import OpenAIEmbeddings
 from langchain_anthropic import ChatAnthropic
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.chains import RetrievalQA
 from langchain.memory import ConversationBufferMemory
 from pinecone import Pinecone
@@ -22,6 +23,7 @@ from models.insight import Insight
 from utils.mongo_client import get_db, get_collection
 from config.mongo_config import init_collections, CONVERSATIONS_COLLECTION
 from models.thread import Thread
+from prompts import email_summarization_prompt
 
 app = Flask(__name__)
 CORS(app, resources={
@@ -38,9 +40,12 @@ pinecone_api_key = os.getenv("PINECONE_API_TOKEN")
 openai_api_key = os.getenv("OPENAI_API_KEY")
 anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 veyrax_api_key = os.getenv("VEYRAX_API_KEY")
+google_api_key = os.getenv("GOOGLE_API_KEY")
 
 if not all([pinecone_api_key, openai_api_key, anthropic_api_key]):
-    raise ValueError("One or more required API keys are missing from .env")
+    # Keep google_api_key optional for now, only required if summarization is used with Gemini
+    print("Warning: One or more required API keys (Pinecone, OpenAI, Anthropic) are missing from .env")
+    # raise ValueError("One or more required API keys are missing from .env") # Soften this for now
 
 # Initialize MongoDB
 db = get_db()
@@ -90,8 +95,23 @@ vectorstore = PineconeVectorStore(
     pinecone_api_key=pinecone_api_key
 )
 
-# Initialize the LLM
-llm = ChatAnthropic(model="claude-3-7-sonnet-20250219", anthropic_api_key=anthropic_api_key)
+# Initialize the LLM (Claude for general chat)
+llm = ChatAnthropic(model="claude-3-7-sonnet-latest", anthropic_api_key=anthropic_api_key)
+
+# Initialize Gemini Pro LLM for Summarization
+gemini_llm = None
+if google_api_key:
+    try:
+        gemini_llm = ChatGoogleGenerativeAI(
+            model="gemini-2.0-flash-lite",
+            google_api_key=google_api_key,
+            convert_system_message_to_human=True
+        )
+        print("Gemini (gemini-2.0-flash-lite) LLM for summarization initialized successfully.")
+    except Exception as e:
+        print(f"Warning: Failed to initialize Gemini LLM: {e}. Summarization might fall back or fail.")
+else:
+    print("Warning: GOOGLE_API_KEY not found. Summarization will use the default LLM (Claude) or fail if it's unavailable.")
 
 # Initialize conversation memory
 memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
@@ -231,6 +251,11 @@ def chat():
                         messages = data.get("messages", [])
                         print(f"VeyraX messages found: {len(messages) if messages else 0}")
                         if messages:
+                            # Ensure no body field in emails before saving
+                            for message in messages:
+                                if "body" in message:
+                                    del message["body"]
+                            
                             veyra_results = {"emails": messages}
                             veyra_context = veyrax_data
                             # Extract pagination info
@@ -1029,6 +1054,111 @@ def load_more_emails():
         import traceback
         print(f"Traceback: {traceback.format_exc()}")
         return jsonify({"error": "An unexpected error occurred"}), 500
+
+# New endpoint for summarizing a single email
+@app.route('/summarize_single_email', methods=['POST', 'OPTIONS'])
+def summarize_single_email():
+    if request.method == 'OPTIONS':
+        return '', 200
+
+    data = request.get_json()
+    email_id = data.get('email_id')
+    thread_id = data.get('thread_id')
+    assistant_message_id = data.get('assistant_message_id')
+
+    if not email_id or not thread_id:
+        return jsonify({"success": False, "error": "Missing email_id or thread_id"}), 400
+
+    # 1. Fetch the full email body from VeyraX
+    email_content_full = veyrax_service.get_email_details(email_id)
+
+    if not email_content_full:
+        return jsonify({
+            "success": False, 
+            "error": "Could not retrieve email content. The email might be no longer available or accessible."
+        }), 404
+
+    # Truncate email content to manage token limits
+    MAX_CONTENT_CHARS_FOR_SUMMARY = 15000 
+    email_content_truncated = email_content_full
+    if isinstance(email_content_full, str) and len(email_content_full) > MAX_CONTENT_CHARS_FOR_SUMMARY:
+        email_content_truncated = email_content_full[:MAX_CONTENT_CHARS_FOR_SUMMARY]
+        print(f"[INFO] Email content for summarization was truncated from {len(email_content_full)} to {len(email_content_truncated)} characters.")
+
+    # 2. Save the full body to MongoDB for this email
+    if assistant_message_id:
+        conversation = Conversation.find_one({
+            'thread_id': thread_id,
+            'message_id': assistant_message_id
+        })
+
+        if conversation and 'veyra_results' in conversation:
+            emails = conversation.get('veyra_results', {}).get('emails', [])
+            for email in emails:
+                if email.get('id') == email_id:
+                    email['body'] = {
+                        'html': email_content_full,
+                        'text': email_content_full
+                    }
+                    break
+            # Update MongoDB
+            update_result = Conversation.update_one(
+                {'_id': conversation['_id']},
+                {'$set': {'veyra_results.emails': emails}}
+            )
+            print(f"[INFO] Updated MongoDB with email content for email_id: {email_id}")
+
+    # 3. Generate summary using LLM
+    prompt = email_summarization_prompt(email_content_truncated)
+    
+    current_llm_for_summary = llm # Default to Claude
+    if gemini_llm:
+        current_llm_for_summary = gemini_llm
+        print("[INFO] Using Gemini Pro for summarization.")
+    else:
+        print("[INFO] Gemini Pro not available, using default LLM (Claude) for summarization.")
+
+    try:
+        response = current_llm_for_summary.invoke(prompt)
+        summary = response.content.strip()
+        print(f"[INFO] Generated summary for email_id: {email_id} using {type(current_llm_for_summary).__name__}")
+    except Exception as e:
+        error_message = str(e)
+        if "rate_limit_error" in error_message.lower() or "429" in error_message:
+             print(f"[ERROR] Rate limit error during summarization with {type(current_llm_for_summary).__name__}: {error_message}")
+             return jsonify({
+                "success": False,
+                "error": f"Summarization service is busy (rate limit). Please try again in a moment."
+            }), 429
+        else:
+            print(f"[ERROR] Error generating summary with {type(current_llm_for_summary).__name__}: {error_message}")
+            import traceback
+            print(traceback.format_exc())
+            return jsonify({
+                "success": False,
+                "error": "Failed to generate summary. Please try again."
+            }), 500
+
+    # 4. Create a new conversation entry for the summary
+    summary_message = Conversation(
+        thread_id=thread_id,
+        role='assistant',
+        content=summary,
+        veyra_results={'email_summary': {'email_id': email_id}}
+    )
+    summary_message.save()
+    print(f"[INFO] Created new conversation entry for summary with message_id: {summary_message.message_id}")
+
+    # 5. Return the response in the same format as the chat endpoint
+    response_data = {
+        "success": True,
+        "response": summary,
+        "thread_id": thread_id,
+        "message_id": summary_message.message_id,
+        "veyra_results": {'email_summary': {'email_id': email_id}}
+    }
+
+    return jsonify(response_data), 200
 
 if __name__ == '__main__':
     app.run(port=5001, debug=True)

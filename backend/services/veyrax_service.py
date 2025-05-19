@@ -167,21 +167,49 @@ class VeyraXService:
     
     def get_email_message(self, message_id, mark_as_read=False):
         """
-        Get a specific email message.
+        Get a specific email message by its ID.
         
         Args:
-            message_id (str): ID of the message to retrieve
-            mark_as_read (bool): Whether to mark the message as read
+            message_id (str): ID of the email to retrieve
+            mark_as_read (bool): Whether to mark the email as read
             
         Returns:
-            dict: Email message data or error message
+            dict: Email message data
         """
-        params = {
-            "message_id": message_id,
-            "mark_as_read": mark_as_read
-        }
-        
-        return self.post_request("/mail/get_message", params)
+        try:
+            print(f"[VeyraXService] Getting email message for ID: {message_id}")
+            
+            # Prepare the request payload
+            payload = {
+                "message_id": message_id,
+                "mark_as_read": mark_as_read
+            }
+            
+            # Make the API call
+            print(f"Calling VeyraX API: {VEYRAX_API_URL}/mail/get_message")
+            print(f"Payload: {json.dumps(payload)}")
+            
+            response = requests.post(
+                f"{VEYRAX_API_URL}/mail/get_message",
+                json=payload,
+                headers=self.headers
+            )
+            
+            # Log the full response for debugging
+            print(f"Response status: {response.status_code}")
+            print(f"Full response: {json.dumps(response.json(), indent=2)}")
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                print(f"[VeyraXService] Error response from VeyraX API: {response.text}")
+                return {"error": f"Failed to get email message: {response.text}"}
+            
+        except Exception as e:
+            print(f"[VeyraXService] Error in get_email_message: {str(e)}")
+            import traceback
+            print(f"[VeyraXService] Traceback: {traceback.format_exc()}")
+            return {"error": str(e)}
     
     def get_email_details(self, email_id):
         """
@@ -195,48 +223,59 @@ class VeyraXService:
         """
         try:
             # Log the ID being used
-            print(f"Attempting to get details for email_id: {email_id}")
+            print(f"[VeyraXService] Attempting to get details for email_id: {email_id}")
 
             # Get the full email message
             response = self.get_email_message(email_id)
 
-            # Log the raw response from get_email_message
-            print(f"Raw response from get_email_message for ID {email_id}: {response}")
+            # Log the raw response structure
+            print(f"[VeyraXService] Response structure for email {email_id}:")
+            print(f"[VeyraXService] Response keys: {list(response.keys() if isinstance(response, dict) else [])}")
+            if isinstance(response, dict) and "data" in response:
+                print(f"[VeyraXService] Data keys: {list(response['data'].keys() if isinstance(response['data'], dict) else [])}")
+                if isinstance(response['data'], dict) and "message" in response['data']:
+                    print(f"[VeyraXService] Message keys: {list(response['data']['message'].keys() if isinstance(response['data']['message'], dict) else [])}")
 
             if "error" in response:
-                print(f"Error retrieving email details for ID {email_id}: {response['error']}")
+                print(f"[VeyraXService] Error retrieving email details for ID {email_id}: {response['error']}")
                 return None
             
             # Extract email content - prefer HTML content if available
-            if "data" in response and "message" in response["data"]:
-                message = response["data"]["message"]
+            if "data" in response and "body" in response["data"]:
+                body = response["data"]["body"]
                 
                 # Try to get HTML content first
-                html_content = message.get("htmlBody", "")
+                html_content = body.get("html", "")
                 if html_content:
+                    print(f"[VeyraXService] Found HTML content for email {email_id}")
                     return html_content
                 
                 # Fall back to plain text
-                text_content = message.get("textBody", "")
+                text_content = body.get("text", "")
                 if text_content:
+                    print(f"[VeyraXService] Found plain text content for email {email_id}")
                     return text_content
                 
                 # If neither is available, try to construct a basic representation
-                subject = message.get("subject", "No Subject")
-                sender = message.get("from", {}).get("email", "Unknown Sender")
-                sender_name = message.get("from", {}).get("name", sender)
-                date = message.get("date", "Unknown Date")
+                subject = response["data"].get("subject", "No Subject")
+                sender = response["data"].get("from_email", {}).get("email", "Unknown Sender")
+                sender_name = response["data"].get("from_email", {}).get("name", sender)
+                date = response["data"].get("date", "Unknown Date")
                 
                 # Create a basic representation
                 basic_content = f"From: {sender_name} <{sender}>\nDate: {date}\nSubject: {subject}\n\n"
                 basic_content += "This email doesn't contain any text content."
                 
+                print(f"[VeyraXService] Created basic representation for email {email_id} due to missing content")
                 return basic_content
                 
-            return "Email content not available"
+            print(f"[VeyraXService] Email content not available for {email_id}. Response structure was invalid.")
+            return None
             
         except Exception as e:
-            print(f"Error in get_email_details: {str(e)}")
+            print(f"[VeyraXService] Error in get_email_details for {email_id}: {str(e)}")
+            import traceback
+            print(f"[VeyraXService] Traceback: {traceback.format_exc()}")
             return None
     
     def send_email(self, to, subject, body_text=None, body_html=None, cc=None, bcc=None):
@@ -958,11 +997,17 @@ class VeyraXService:
             }
             print(f"[VeyraXService] Pagination info: limit={limit_used}, offset={offset_used}, total={total_available}, original_query_params={original_query_params}")
             formatted_emails, email_ids = self.summarize_emails(messages)
+            
+            # Remove body field from each email
+            for message in messages:
+                if "body" in message:
+                    del message["body"]
+            
             return {
                 "source_type": "mail",
                 "content": formatted_emails,
                 "data": {
-                    "messages": messages,
+                    "messages": messages,  # Now contains emails without body
                     "filter_applied": params.get("search_query") is not None,
                     "limit_used": limit_used,
                     "offset_used": offset_used,

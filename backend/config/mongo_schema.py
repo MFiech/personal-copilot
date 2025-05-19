@@ -45,17 +45,13 @@ CONVERSATIONS_SCHEMA = {
                                         "bsonType": "string",
                                         "description": "Email ID from VeyraX"
                                     },
-                                    "message_id": {
-                                        "bsonType": "string",
-                                        "description": "Email message ID"
-                                    },
                                     "subject": {
                                         "bsonType": "string",
                                         "description": "Email subject"
                                     },
-                                    "sender": {
-                                        "bsonType": "string",
-                                        "description": "Email sender"
+                                    "from_email": {
+                                        "bsonType": "object",
+                                        "description": "Email sender information"
                                     },
                                     "date": {
                                         "bsonType": "string",
