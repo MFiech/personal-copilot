@@ -24,7 +24,7 @@ import DoneAllIcon from '@mui/icons-material/DoneAll';
 import CircularProgress from '@mui/material/CircularProgress';
 import './VeyraResults.css';
 
-const VeyraResults = ({ results, currentThreadId, message_id }) => {
+const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceived }) => {
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedItem, setSelectedItem] = useState(null);
   const [deletedEmails, setDeletedEmails] = useState(new Set());
@@ -32,6 +32,7 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
   const [clickedElement, setClickedElement] = useState(null);
   const [selectedTiles, setSelectedTiles] = useState({});
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [isSummarizingEmail, setIsSummarizingEmail] = useState(false);
 
   // States for email pagination
   const [displayedEmails, setDisplayedEmails] = useState([]);
@@ -477,23 +478,56 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
   };
 
   // Email action handler
-  const handleEmailAction = (actionType, selectedEmails) => {
-    if (!selectedEmails || selectedEmails.length === 0) {
-      alert("No email selected for this action.");
-      return;
-    }
-    const firstSelectedEmail = selectedEmails[0];
-    if (actionType === 'summarize') {
-      alert(`Summarize action for: ${firstSelectedEmail.subject}`);
-    } else if (actionType === 'display') {
-      alert(`Display action for: ${firstSelectedEmail.subject}`);
-    } else if (actionType === 'view_gmail') {
-      const webLink = firstSelectedEmail.webLink || firstSelectedEmail.alternateLink;
-      if (webLink) {
-        window.open(webLink, '_blank');
-      } else {
-        alert("No direct link available for this email.");
-      }
+  const handleEmailAction = async (action, email) => {
+    console.log(`[INFO] Handling email action: ${action} for email:`, email);
+    
+    if (action === 'summarize') {
+        try {
+            // Show loading state
+            setIsSummarizingEmail(true);
+            
+            // Call summarize endpoint
+            const response = await fetch('http://localhost:5001/summarize_single_email', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    email_id: email.id,
+                    thread_id: currentThreadId,
+                    assistant_message_id: message_id
+                }),
+            });
+
+            const data = await response.json();
+            
+            if (!response.ok) {
+                console.error('[ERROR] Failed to summarize email:', data.error);
+                return;
+            }
+
+            console.log('[INFO] Received summary:', data.response);
+
+            // The summary is already saved in the database with the correct role
+            // Just trigger a refresh of the conversation to show the new message
+            if (typeof onNewMessageReceived === 'function') {
+                onNewMessageReceived(data);
+            }
+            
+        } catch (error) {
+            console.error('[ERROR] Error summarizing email:', error);
+        } finally {
+            setIsSummarizingEmail(false);
+        }
+    } else if (action === 'display') {
+        alert(`Display action for: ${email.subject}`);
+    } else if (action === 'view_gmail') {
+        const webLink = email.webLink || email.alternateLink;
+        if (webLink) {
+            window.open(webLink, '_blank');
+        } else {
+            alert("No direct link available for this email.");
+        }
     }
   };
 
@@ -596,16 +630,16 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
               <IconButton
                 title="Summarize selected email(s)"
                 size="small"
-                onClick={() => handleEmailAction('summarize', selectedEmailItems)}
-                disabled={selectedEmailItems.length === 0 || isBulkDeleting}
+                onClick={(e) => handleEmailAction('summarize', selectedEmailItems[0])}
+                disabled={selectedEmailItems.length === 0 || isBulkDeleting || isSummarizingEmail}
                 sx={{ mr: 0.5 }}
               >
-                <NotesIcon />
+                {isSummarizingEmail ? <CircularProgress size={20} /> : <NotesIcon />}
               </IconButton>
               <IconButton
                 title="Display selected email"
                 size="small"
-                onClick={() => handleEmailAction('display', selectedEmailItems)}
+                onClick={(e) => handleEmailAction('display', selectedEmailItems[0])}
                 disabled={selectedEmailItems.length !== 1 || isBulkDeleting}
                 sx={{ mr: 0.5 }}
               >
@@ -614,7 +648,7 @@ const VeyraResults = ({ results, currentThreadId, message_id }) => {
               <IconButton
                 title="View selected email in GMail"
                 size="small"
-                onClick={() => handleEmailAction('view_gmail', selectedEmailItems)}
+                onClick={(e) => handleEmailAction('view_gmail', selectedEmailItems[0])}
                 disabled={selectedEmailItems.length !== 1 || isBulkDeleting}
                 sx={{ mr: 0.5 }}
               >
