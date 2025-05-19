@@ -486,38 +486,46 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
             // Show loading state
             setIsSummarizingEmail(true);
             
-            // Call summarize endpoint
-            const response = await fetch('http://localhost:5001/summarize_single_email', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    email_id: email.id,
-                    thread_id: currentThreadId,
-                    assistant_message_id: message_id
-                }),
-            });
-
-            const data = await response.json();
+            // Get all selected emails
+            const emailsToSummarize = getSelectedEmailItems();
             
-            if (!response.ok) {
-                console.error('[ERROR] Failed to summarize email:', data.error);
-                return;
-            }
+            // Process each email sequentially
+            for (const emailToSummarize of emailsToSummarize) {
+                // Call summarize endpoint for each email
+                const response = await fetch('http://localhost:5001/summarize_single_email', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email_id: emailToSummarize.id,
+                        thread_id: currentThreadId,
+                        assistant_message_id: message_id
+                    }),
+                });
 
-            console.log('[INFO] Received summary:', data.response);
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    console.error('[ERROR] Failed to summarize email:', data.error);
+                    continue; // Continue with next email even if one fails
+                }
 
-            // The summary is already saved in the database with the correct role
-            // Just trigger a refresh of the conversation to show the new message
-            if (typeof onNewMessageReceived === 'function') {
-                onNewMessageReceived(data);
+                console.log('[INFO] Received summary:', data.response);
+
+                // The summary is already saved in the database with the correct role
+                // Just trigger a refresh of the conversation to show the new message
+                if (typeof onNewMessageReceived === 'function') {
+                    onNewMessageReceived(data);
+                }
             }
             
         } catch (error) {
-            console.error('[ERROR] Error summarizing email:', error);
+            console.error('[ERROR] Error summarizing emails:', error);
         } finally {
             setIsSummarizingEmail(false);
+            // Clear selection after processing all emails
+            setSelectedTiles({});
         }
     } else if (action === 'display') {
         alert(`Display action for: ${email.subject}`);
