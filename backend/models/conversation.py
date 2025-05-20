@@ -4,6 +4,8 @@ from config.mongo_config import CONVERSATIONS_COLLECTION
 import time
 import uuid
 
+EMAILS_COLLECTION = 'emails'
+
 class Conversation:
     def __init__(self, thread_id=None, role=None, content=None, insight_id=None, metadata=None, veyra_results=None, query=None, response=None,
                  veyra_original_query_params=None, veyra_current_offset=None, veyra_limit_per_page=None, veyra_total_emails_available=None,
@@ -34,33 +36,36 @@ class Conversation:
 
     def save(self):
         """Save conversation to MongoDB with validation"""
-        # Generate unique message ID
         self.message_id = str(uuid.uuid4())
-        
-        # Ensure content is a string, not None, for validation
         if self.content is None:
             print(f"Warning: Conversation content was None for role '{self.role}'. Setting to empty string.")
             self.content = ""
-        
-        # Create message document
         message = {
             'message_id': self.message_id,
             'thread_id': self.thread_id,
             'role': self.role,
             'content': self.content,
             'timestamp': self.timestamp,
-            'metadata': self.metadata or {}  # Ensure metadata is an object, not null
+            'metadata': self.metadata or {}
         }
-        
-        # Add insight_id if present
         if self.insight_id:
             message['insight_id'] = self.insight_id
-            
-        # Add veyra_results if present
+        # If veyra_results is present, ensure emails is a list of IDs
         if self.veyra_results:
-            message['veyra_results'] = self.veyra_results
-            
-        # Add pagination state if present
+            veyra_results = self.veyra_results.copy()
+            if 'emails' in veyra_results and veyra_results['emails']:
+                email_ids = []
+                emails_collection = get_collection(EMAILS_COLLECTION)
+                for email in veyra_results['emails']:
+                    if isinstance(email, dict) and 'id' in email:
+                        # Insert email into emails collection if not present
+                        if not emails_collection.find_one({'id': email['id']}):
+                            emails_collection.insert_one(email)
+                        email_ids.append(email['id'])
+                    elif isinstance(email, str):
+                        email_ids.append(email)
+                veyra_results['emails'] = email_ids
+            message['veyra_results'] = veyra_results
         if self.veyra_original_query_params is not None:
             message['veyra_original_query_params'] = self.veyra_original_query_params
         if self.veyra_current_offset is not None:
@@ -71,8 +76,6 @@ class Conversation:
             message['veyra_total_emails_available'] = self.veyra_total_emails_available
         if self.veyra_has_more is not None:
             message['veyra_has_more'] = self.veyra_has_more
-        
-        # Insert document and return result
         return self.collection.insert_one(message)
 
     @classmethod
@@ -80,8 +83,7 @@ class Conversation:
         """Get all messages in a thread"""
         collection = get_collection(CONVERSATIONS_COLLECTION)
         messages = list(collection.find({'thread_id': thread_id}).sort('timestamp', 1))
-        
-        # Format messages for frontend
+        emails_collection = get_collection(EMAILS_COLLECTION)
         formatted_messages = []
         for msg in messages:
             formatted_message = {
@@ -91,9 +93,14 @@ class Conversation:
                 'timestamp': msg['timestamp']
             }
             if msg['role'] == 'assistant' and 'veyra_results' in msg:
-                formatted_message['veyra_results'] = msg['veyra_results']
+                veyra_results = msg['veyra_results']
+                if veyra_results and 'emails' in veyra_results:
+                    email_ids = veyra_results['emails']
+                    emails = list(emails_collection.find({'id': {'$in': email_ids}})) if email_ids else []
+                    veyra_results = veyra_results.copy()
+                    veyra_results['emails'] = emails
+                formatted_message['veyra_results'] = veyra_results
             formatted_messages.append(formatted_message)
-        
         return formatted_messages
 
     @classmethod
