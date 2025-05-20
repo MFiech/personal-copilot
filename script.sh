@@ -1,1 +1,0 @@
-GITHUB_PERSONAL_ACCESS_TOKEN=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 npx -y @modelcontextprotocol/server-github

@@ -1,0 +1,18 @@
+# How do we start working on a new feature?
+    1. If you're on other feature branch, stage the changes and checkout to main.
+    2. Pull the newest version of main.
+    3. Create a new feature branch with descriptive branch name.
+    4. Start working on the feature.
+    5. Until requested, do not commit the changes automatically.
+
+# How do we push local changes to the remote repository?
+    1. Always make sure that you're on a correct feature branch with the changes.
+    2. Stage all modified files.
+    3. Write a description commit title and description. Make sure the title/description is about all changes on the branch, not only recent changes.
+    4. Push the branch to the remote repository.
+        myenvmfiech@Michas-MacBook-Pro-2 PM Co-Pilot % git remote -v
+        main    git@github.com:MFiech/pm-copilot.git (fetch)
+        main    git@github.com:MFiech/pm-copilot.git (push)
+    5. Checkout back to main.
+    6. In the remote repository, if there are no conflicts, merge the new branch to main.
+    7. After the remote merge, pull the latest main version to the local main.

@@ -18,6 +18,7 @@ MONGO_DB_NAME = os.getenv('MONGO_DB_NAME', 'pm_copilot')
 # Collection names
 CONVERSATIONS_COLLECTION = 'conversations'
 INSIGHTS_COLLECTION = 'insights'
+EMAILS_COLLECTION = 'emails'
 
 # MongoDB connection options
 MONGO_OPTIONS = {

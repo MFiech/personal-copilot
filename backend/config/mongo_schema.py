@@ -39,26 +39,10 @@ CONVERSATIONS_SCHEMA = {
                         "emails": {
                             "bsonType": "array",
                             "items": {
-                                "bsonType": "object",
-                                "properties": {
-                                    "id": {
-                                        "bsonType": "string",
-                                        "description": "Email ID from VeyraX"
-                                    },
-                                    "subject": {
-                                        "bsonType": "string",
-                                        "description": "Email subject"
-                                    },
-                                    "from_email": {
-                                        "bsonType": "object",
-                                        "description": "Email sender information"
-                                    },
-                                    "date": {
-                                        "bsonType": "string",
-                                        "description": "Email date"
-                                    }
-                                }
-                            }
+                                "bsonType": "string",
+                                "description": "Email ID from emails collection"
+                            },
+                            "description": "Array of email IDs referenced from emails collection"
                         },
                         "calendar_events": {
                             "bsonType": "array",
