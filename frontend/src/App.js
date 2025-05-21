@@ -149,43 +149,86 @@ function App() {
       const response = await fetch(`http://localhost:5001/chat/${threadId}`);
       const data = await response.json();
       
-      // Convert messages to the new format with timestamps
-      const formattedMessages = data.messages.map(msg => {
-        if ('role' in msg) {
-          return {
-            role: msg.role,
-            content: msg.content,
-            timestamp: msg.role === 'user' ? msg.query_timestamp : msg.response_timestamp,
-            veyra_results: msg.veyra_results,
-            message_id: msg.message_id  // Include message_id
-          };
-        } else {
-          // Handle old format messages
-          return [
-            {
-              role: 'user',
-              content: msg.query,
-              timestamp: msg.query_timestamp
-            },
-            {
-              role: 'assistant',
-              content: msg.response,
-              timestamp: msg.response_timestamp,
-              veyra_results: msg.veyra_results,
-              message_id: msg.message_id  // Include message_id
-            }
-          ];
-        }
-      }).flat();
+      // If data is an array, use it directly
+      if (Array.isArray(data)) {
+        const formattedMessages = data.map(msg => ({
+          role: msg.role,
+          content: msg.content || '',
+          timestamp: msg.timestamp || (msg.role === 'user' ? msg.query_timestamp : msg.response_timestamp),
+          veyra_results: msg.veyra_results || null,
+          message_id: msg.message_id,
+          // Add pagination fields if they exist
+          veyra_original_query_params: msg.veyra_original_query_params,
+          veyra_current_offset: msg.veyra_current_offset,
+          veyra_limit_per_page: msg.veyra_limit_per_page,
+          veyra_total_emails_available: msg.veyra_total_emails_available,
+          veyra_has_more: msg.veyra_has_more
+        }));
 
-      // Sort messages by timestamp
-      const sortedMessages = formattedMessages.sort((a, b) => a.timestamp - b.timestamp);
+        // Sort messages by timestamp in ascending order (oldest first)
+        const sortedMessages = formattedMessages.sort((a, b) => 
+          (a.timestamp || 0) - (b.timestamp || 0)
+        );
+        
+        setMessages(sortedMessages);
+      } else if (data && data.messages && Array.isArray(data.messages)) {
+        // Handle the case where messages are nested in a data object
+        const formattedMessages = data.messages
+          .filter(msg => msg !== null && msg !== undefined)
+          .map(msg => {
+            if ('role' in msg) {
+              return {
+                role: msg.role,
+                content: msg.content || '',
+                timestamp: msg.role === 'user' ? msg.query_timestamp : msg.response_timestamp,
+                veyra_results: msg.veyra_results || null,
+                message_id: msg.message_id,
+                veyra_original_query_params: msg.veyra_original_query_params,
+                veyra_current_offset: msg.veyra_current_offset,
+                veyra_limit_per_page: msg.veyra_limit_per_page,
+                veyra_total_emails_available: msg.veyra_total_emails_available,
+                veyra_has_more: msg.veyra_has_more
+              };
+            } else {
+              return [
+                {
+                  role: 'user',
+                  content: msg.query || '',
+                  timestamp: msg.query_timestamp
+                },
+                {
+                  role: 'assistant',
+                  content: msg.response || '',
+                  timestamp: msg.response_timestamp,
+                  veyra_results: msg.veyra_results || null,
+                  message_id: msg.message_id,
+                  veyra_original_query_params: msg.veyra_original_query_params,
+                  veyra_current_offset: msg.veyra_current_offset,
+                  veyra_limit_per_page: msg.veyra_limit_per_page,
+                  veyra_total_emails_available: msg.veyra_total_emails_available,
+                  veyra_has_more: msg.veyra_has_more
+                }
+              ];
+            }
+          })
+          .filter(Boolean)
+          .flat();
+
+        // Sort messages by timestamp in ascending order (oldest first)
+        const sortedMessages = formattedMessages.sort((a, b) => 
+          (a.timestamp || 0) - (b.timestamp || 0)
+        );
+        
+        setMessages(sortedMessages);
+      } else {
+        console.warn('Invalid thread data format:', data);
+        setMessages([]);
+      }
       
-      setMessages(sortedMessages);
       if (isMobile) setDrawerOpen(false);
     } catch (error) {
       console.error('Error loading thread:', error);
-      setMessages([...messages, { role: 'assistant', content: `Error: ${error.message}` }]);
+      setMessages([]);
     } finally {
       setIsLoading(false);
     }

@@ -39,10 +39,9 @@ CONVERSATIONS_SCHEMA = {
                         "emails": {
                             "bsonType": "array",
                             "items": {
-                                "bsonType": "string",
-                                "description": "Email ID from emails collection"
-                            },
-                            "description": "Array of email IDs referenced from emails collection"
+                                "bsonType": ["string", "object"],
+                                "description": "Array of email IDs or email objects"
+                            }
                         },
                         "calendar_events": {
                             "bsonType": "array",
@@ -267,7 +266,7 @@ EMAILS_SCHEMA = {
     "validator": {
         "$jsonSchema": {
             "bsonType": "object",
-            "required": ["email_id", "thread_id", "subject", "from_email", "date", "content"],
+            "required": ["email_id", "thread_id", "subject", "from_email", "to_emails", "date"],
             "properties": {
                 "email_id": {
                     "bsonType": "string",
@@ -283,123 +282,145 @@ EMAILS_SCHEMA = {
                 },
                 "from_email": {
                     "bsonType": "object",
-                    "description": "Email sender information",
-                    "required": ["email", "name"],
+                    "required": ["email"],
                     "properties": {
                         "email": {
                             "bsonType": "string",
                             "description": "Sender's email address"
                         },
                         "name": {
-                            "bsonType": "string",
+                            "bsonType": ["string", "null"],
                             "description": "Sender's name"
                         }
                     }
                 },
                 "to_emails": {
                     "bsonType": "array",
+                    "description": "List of email recipients",
                     "items": {
                         "bsonType": "object",
+                        "required": ["email"],
                         "properties": {
                             "email": {
                                 "bsonType": "string",
                                 "description": "Recipient's email address"
                             },
                             "name": {
-                                "bsonType": "string",
+                                "bsonType": ["string", "null"],
                                 "description": "Recipient's name"
                             }
                         }
-                    },
-                    "description": "List of email recipients"
+                    }
+                },
+                "cc": {
+                    "bsonType": "array",
+                    "description": "CC recipients",
+                    "items": {
+                        "bsonType": "object",
+                        "required": ["email"],
+                        "properties": {
+                            "email": {
+                                "bsonType": "string",
+                                "description": "CC recipient's email address"
+                            },
+                            "name": {
+                                "bsonType": ["string", "null"],
+                                "description": "CC recipient's name"
+                            }
+                        }
+                    }
+                },
+                "bcc": {
+                    "bsonType": "array",
+                    "description": "BCC recipients",
+                    "items": {
+                        "bsonType": "object",
+                        "required": ["email"],
+                        "properties": {
+                            "email": {
+                                "bsonType": "string",
+                                "description": "BCC recipient's email address"
+                            },
+                            "name": {
+                                "bsonType": ["string", "null"],
+                                "description": "BCC recipient's name"
+                            }
+                        }
+                    }
+                },
+                "reply_to": {
+                    "bsonType": ["object", "null"],
+                    "description": "Reply-to address",
+                    "properties": {
+                        "email": {
+                            "bsonType": "string",
+                            "description": "Reply-to email address"
+                        },
+                        "name": {
+                            "bsonType": ["string", "null"],
+                            "description": "Reply-to name"
+                        }
+                    }
                 },
                 "date": {
                     "bsonType": "string",
-                    "description": "Email date in ISO format"
+                    "description": "Email date"
                 },
                 "content": {
                     "bsonType": "object",
-                    "required": ["html", "text"],
+                    "description": "Email content",
                     "properties": {
                         "html": {
                             "bsonType": "string",
-                            "description": "HTML content of the email"
+                            "description": "HTML content"
                         },
                         "text": {
                             "bsonType": "string",
-                            "description": "Plain text content of the email"
+                            "description": "Plain text content"
                         }
-                    },
-                    "description": "Email content in both HTML and plain text formats"
+                    }
                 },
                 "metadata": {
                     "bsonType": "object",
-                    "description": "Additional metadata about the email",
+                    "description": "Additional metadata",
                     "properties": {
                         "source": {
                             "bsonType": "string",
-                            "enum": ["POSTMARK", "CMS", "VEYRA"],
-                            "description": "Source system of the email"
+                            "description": "Email source"
                         },
-                        "template_name": {
+                        "folder": {
                             "bsonType": "string",
-                            "description": "Template name or ID if applicable"
+                            "description": "Email folder"
                         },
-                        "tags": {
-                            "bsonType": "array",
-                            "items": {
-                                "bsonType": "string"
-                            },
-                            "description": "Tags associated with the email"
+                        "is_read": {
+                            "bsonType": "bool",
+                            "description": "Read status"
                         },
-                        "summary": {
-                            "bsonType": "string",
-                            "description": "AI-generated summary of the email content"
+                        "size": {
+                            "bsonType": ["int", "null"],
+                            "description": "Email size"
                         }
+                    }
+                },
+                "attachments": {
+                    "bsonType": "array",
+                    "description": "Email attachments",
+                    "items": {
+                        "bsonType": "object"
                     }
                 },
                 "created_at": {
                     "bsonType": "int",
-                    "description": "Unix timestamp when the email was first stored"
+                    "description": "Creation timestamp"
                 },
                 "updated_at": {
                     "bsonType": "int",
-                    "description": "Unix timestamp when the email was last updated"
+                    "description": "Last update timestamp"
                 }
             }
         }
     }
 }
-
-# Index configurations for emails collection
-EMAILS_INDEXES = [
-    {
-        "keys": [("email_id", 1)],
-        "name": "email_id_idx",
-        "unique": True
-    },
-    {
-        "keys": [("thread_id", 1)],
-        "name": "thread_id_idx"
-    },
-    {
-        "keys": [("date", -1)],
-        "name": "date_idx"
-    },
-    {
-        "keys": [("from_email.email", 1)],
-        "name": "from_email_idx"
-    },
-    {
-        "keys": [("metadata.tags", 1)],
-        "name": "tags_idx"
-    },
-    {
-        "keys": [("created_at", -1)],
-        "name": "created_at_idx"
-    }
-]
-
 # Index configurations
 CONVERSATIONS_INDEXES = [
     {
@@ -444,5 +465,30 @@ INSIGHTS_INDEXES = [
     {
         "keys": [("tags", 1)],
         "name": "tags_idx"
+    }
+]
+
+# Index configurations for emails collection
+EMAILS_INDEXES = [
+    {
+        "keys": [("email_id", 1)],
+        "name": "email_id_idx",
+        "unique": True
+    },
+    {
+        "keys": [("thread_id", 1)],
+        "name": "thread_id_idx"
+    },
+    {
+        "keys": [("date", -1)],
+        "name": "date_idx"
+    },
+    {
+        "keys": [("metadata.folder", 1)],
+        "name": "folder_idx"
+    },
+    {
+        "keys": [("metadata.is_read", 1)],
+        "name": "is_read_idx"
     }
 ] 
