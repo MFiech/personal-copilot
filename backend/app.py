@@ -24,6 +24,7 @@ from utils.mongo_client import get_db, get_collection
 from config.mongo_config import init_collections, CONVERSATIONS_COLLECTION, EMAILS_COLLECTION
 from models.thread import Thread
 from prompts import email_summarization_prompt
+from bson import ObjectId
 
 app = Flask(__name__)
 CORS(app, resources={
@@ -124,6 +125,15 @@ qa_chain = RetrievalQA.from_chain_type(
     return_source_documents=True
 )
 
+def convert_objectid_to_str(obj):
+    if isinstance(obj, ObjectId):
+        return str(obj)
+    elif isinstance(obj, dict):
+        return {k: convert_objectid_to_str(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_objectid_to_str(item) for item in obj]
+    return obj
+
 def build_prompt(query, retrieved_docs, thread_history=None, veyrax_context=None):
     prompt_parts = []
     insight_id = None
@@ -213,6 +223,10 @@ def chat():
         print(f"Thread ID: {thread_id}")
         if not query:
             return jsonify({"error": "No query provided"}), 400
+
+        # Get current timestamp for the entire conversation
+        current_timestamp = int(time.time())
+
         # Create or update thread
         if not thread_id:
             thread = Thread(title=query[:50] + "..." if len(query) > 50 else query)
@@ -223,6 +237,7 @@ def chat():
             if not thread:
                 thread = Thread(thread_id=thread_id, title=query[:50] + "..." if len(query) > 50 else query)
                 thread.save()
+
         # Get thread history
         thread_history = []
         if thread_id:
@@ -296,16 +311,19 @@ def chat():
                 error_message = "The AI service is currently experiencing high load. Please try again in a few moments."
                 return jsonify({"error": error_message}), 503
             raise e
-        # Step 1: Save the user's message
+
+        # Step 1: Save the user's message with current timestamp
         print(f"\n=== Saving User Message ===")
         user_message = Conversation(
             thread_id=thread_id,
             role='user',
-            content=query
+            content=query,
+            timestamp=current_timestamp  # Use current timestamp for user message
         )
         user_message.save()
         print(f"User message saved. message_id: {user_message.message_id}, role: {user_message.role}, content: {user_message.content[:100]}...")
-        # Step 2: Save the assistant's message (with Veyra results and pagination)
+
+        # Step 2: Save the assistant's message with a timestamp slightly after the user's message
         print(f"\n=== Saving Assistant Message ===")
         assistant_message = Conversation(
             thread_id=thread_id,
@@ -317,7 +335,8 @@ def chat():
             veyra_current_offset=veyra_pagination.get("veyra_current_offset"),
             veyra_limit_per_page=veyra_pagination.get("veyra_limit_per_page"),
             veyra_total_emails_available=veyra_pagination.get("veyra_total_emails_available"),
-            veyra_has_more=veyra_pagination.get("veyra_has_more")
+            veyra_has_more=veyra_pagination.get("veyra_has_more"),
+            timestamp=current_timestamp + 1  # Ensure assistant message is after user message
         )
         assistant_message_attributes_for_saving = {
             "thread_id": assistant_message.thread_id,
@@ -336,6 +355,7 @@ def chat():
         print(f"[DEBUG] Assistant Conversation object attributes/related data BEFORE save: {json.dumps(assistant_message_attributes_for_saving, indent=2, default=str)}")
         assistant_message.save()
         print(f"Assistant message saved. message_id: {assistant_message.message_id}, role: {assistant_message.role}, content: {assistant_message.content[:100]}..., veyra_results: {json.dumps(assistant_message.veyra_results, indent=2)[:1000]}")
+
         # The response_data to the client should reflect the assistant's turn
         response_data = {
             "response": response_text,
@@ -400,28 +420,37 @@ def get_thread(thread_id):
         raw_message_docs = list(conversations_collection.find({'thread_id': thread_id}).sort('timestamp', 1))
         emails_collection = get_collection(EMAILS_COLLECTION)
         processed_messages_for_response = []
+        
         for msg_doc in raw_message_docs:
+            # Convert the entire message document to handle any ObjectId fields
+            processed_msg_doc = convert_objectid_to_str(msg_doc)
+            
             message_data_for_response = {
-                "role": msg_doc.get("role"),
-                "content": msg_doc.get("content"),
-                "query": msg_doc.get("query") if not msg_doc.get("role") else None,
-                "response": msg_doc.get("response") if not msg_doc.get("role") else None,
-                "veyra_results": None,
-                "message_id": msg_doc.get("message_id"),
-                "timestamp": msg_doc.get("timestamp")
+                "role": processed_msg_doc.get("role"),
+                "content": processed_msg_doc.get("content"),
+                "query": processed_msg_doc.get("query") if not processed_msg_doc.get("role") else None,
+                "response": processed_msg_doc.get("response") if not processed_msg_doc.get("role") else None,
+                "message_id": processed_msg_doc.get("message_id"),
+                "timestamp": processed_msg_doc.get("timestamp") 
             }
-            if msg_doc.get('role') == 'assistant' and 'veyra_results' in msg_doc:
-                veyra_results = msg_doc['veyra_results']
+            
+            if processed_msg_doc.get('role') == 'assistant' and 'veyra_results' in processed_msg_doc:
+                veyra_results = processed_msg_doc['veyra_results']
                 if veyra_results and 'emails' in veyra_results:
                     email_ids = veyra_results['emails']
-                    emails = list(emails_collection.find({'id': {'$in': email_ids}})) if email_ids else []
+                    fetched_email_docs = list(emails_collection.find({'email_id': {'$in': email_ids}})) if email_ids else []
+                    # Convert all email documents to handle any ObjectId fields
+                    processed_emails = [convert_objectid_to_str(email_doc) for email_doc in fetched_email_docs]
                     veyra_results = veyra_results.copy()
-                    veyra_results['emails'] = emails
+                    veyra_results['emails'] = processed_emails
                 message_data_for_response['veyra_results'] = veyra_results
             processed_messages_for_response.append(message_data_for_response)
+            
         return jsonify(processed_messages_for_response)
     except Exception as e:
         print(f"[ERROR] Exception in get_thread: {str(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/save_insight', methods=['POST'])
@@ -915,9 +944,54 @@ def load_more_emails():
         new_email_ids = []
         for email in new_emails:
             if 'id' in email:
-                if not emails_collection.find_one({'id': email['id']}):
-                    emails_collection.insert_one(email)
-                new_email_ids.append(email['id'])
+                # Transform the email data to match the schema
+                from_email = email.get('from_email', {})
+                formatted_email = {
+                    'email_id': email['id'],  # Map 'id' to 'email_id'
+                    'thread_id': thread_id,  # Add thread_id from conversation
+                    'subject': email.get('subject', ''),
+                    'from_email': {
+                        'email': from_email.get('email', ''),
+                        'name': from_email.get('name') or from_email.get('email', '').split('@')[0].replace('.', ' ').title()
+                    },
+                    'date': email.get('date', ''),
+                    'content': {
+                        'html': email.get('body', {}).get('html', '') if 'body' in email else '',
+                        'text': email.get('body', {}).get('text', '') if 'body' in email else ''
+                    },
+                    'metadata': {
+                        'source': 'VEYRA',
+                        'folder': email.get('folder', 'INBOX'),
+                        'is_read': email.get('is_read', False),
+                        'size': email.get('size')
+                    },
+                    'attachments': email.get('attachments', []),
+                    'cc': email.get('cc', []),
+                    'bcc': email.get('bcc', []),
+                    'reply_to': email.get('reply_to'),
+                    'to_emails': [
+                        {
+                            'email': recipient.get('email', ''),
+                            'name': recipient.get('name') or recipient.get('email', '').split('@')[0].replace('.', ' ').title()
+                        }
+                        for recipient in (email.get('to', []) or [])
+                        if recipient and recipient.get('email')
+                    ],
+                    'created_at': int(time.time()),
+                    'updated_at': int(time.time())
+                }
+                try:
+                    # Use email_id as the unique identifier for upsert
+                    emails_collection.update_one(
+                        {'email_id': formatted_email['email_id']},
+                        {'$set': formatted_email},
+                        upsert=True
+                    )
+                    new_email_ids.append(email['id'])
+                except Exception as e:
+                    print(f"Error saving email {email['id']}: {str(e)}")
+                    print(f"Problematic email data: {json.dumps(formatted_email)}")
+                    raise
         # Update the Conversation document in MongoDB
         update_operations = {
             '$push': {'veyra_results.emails': {'$each': new_email_ids}},
@@ -933,7 +1007,7 @@ def load_more_emails():
         print(f"[DEBUG] MongoDB update result: matched={update_result.matched_count}, modified={update_result.modified_count}")
         has_more_after_this_load = (new_offset_used + new_limit_used) < new_total_available
         # Fetch full email objects for response
-        full_new_emails = list(emails_collection.find({'id': {'$in': new_email_ids}})) if new_email_ids else []
+        full_new_emails = list(emails_collection.find({'email_id': {'$in': new_email_ids}})) if new_email_ids else []
         response_payload = {
             "new_emails": full_new_emails,
             "current_offset": new_offset_used,
@@ -961,17 +1035,21 @@ def summarize_single_email():
         assistant_message_id = data.get('assistant_message_id')
         email_content_full = data.get('email_content_full')
         email_content_truncated = data.get('email_content_truncated')
+        
         if not email_id or not thread_id or not assistant_message_id:
             return jsonify({'error': 'Missing required parameters'}), 400
+            
         conversation = Conversation.find_one({
             'thread_id': thread_id,
             'message_id': assistant_message_id
         })
+        
         emails_collection = get_collection(EMAILS_COLLECTION)
         if conversation and 'veyra_results' in conversation:
-            email_doc = emails_collection.find_one({'id': email_id})
+            email_doc = emails_collection.find_one({'email_id': email_id})
             if email_doc:
-                emails_collection.update_one({'id': email_id}, {'$set': {'body': {'html': email_content_full, 'text': email_content_full}}})
+                emails_collection.update_one({'email_id': email_id}, {'$set': {'body': {'html': email_content_full, 'text': email_content_full}}})
+        
         # 3. Generate summary using LLM
         prompt = email_summarization_prompt(email_content_truncated)
         current_llm_for_summary = llm
@@ -980,6 +1058,7 @@ def summarize_single_email():
             print("[INFO] Using Gemini Pro for summarization.")
         else:
             print("[INFO] Gemini Pro not available, using default LLM (Claude) for summarization.")
+            
         try:
             response = current_llm_for_summary.invoke(prompt)
             summary = response.content.strip()
@@ -1000,6 +1079,7 @@ def summarize_single_email():
                     "success": False,
                     "error": "Failed to generate summary. Please try again."
                 }), 500
+                
         # 4. Create a new conversation entry for the summary
         summary_message = Conversation(
             thread_id=thread_id,
@@ -1009,6 +1089,7 @@ def summarize_single_email():
         )
         summary_message.save()
         print(f"[INFO] Created new conversation entry for summary with message_id: {summary_message.message_id}")
+        
         # 5. Return the response in the same format as the chat endpoint
         response_data = {
             "success": True,
@@ -1018,6 +1099,7 @@ def summarize_single_email():
             "veyra_results": {'email_summary': {'email_id': email_id}}
         }
         return jsonify(response_data), 200
+        
     except Exception as e:
         print(f"[ERROR] Exception in summarize_single_email: {str(e)}")
         return jsonify({'error': str(e)}), 500

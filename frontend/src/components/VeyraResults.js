@@ -44,22 +44,23 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
 
   useEffect(() => {
     if (results) {
-        setDisplayedEmails(results.veyra_results?.emails || []);
+        // Ensure we have a valid array of emails, even if empty
+        const emails = results.veyra_results?.emails || [];
+        setDisplayedEmails(emails);
+        
         const initialOffset = results.veyra_current_offset || 0;
-        const initialLimit = results.veyra_limit_per_page || 10; // Default to 10
+        const initialLimit = results.veyra_limit_per_page || 10;
         const initialTotal = results.veyra_total_emails_available || 0;
 
         setCurrentEmailOffset(initialOffset);
         setLimitPerPage(initialLimit);
         setTotalEmailsAvailable(initialTotal);
 
-        // Prioritize veyra_has_more from props if available
         let canCurrentlyLoadMore;
         if (typeof results.veyra_has_more === 'boolean') {
             canCurrentlyLoadMore = results.veyra_has_more;
             console.log('[VeyraResults useEffect] Using veyra_has_more from props:', canCurrentlyLoadMore);
         } else {
-            // Fallback to calculation if veyra_has_more is not explicitly provided
             canCurrentlyLoadMore = (initialOffset + initialLimit) < initialTotal;
             console.log('[VeyraResults useEffect] Calculated canLoadMoreEmails:', canCurrentlyLoadMore, 
                         {offset: initialOffset, limit: initialLimit, total: initialTotal});
@@ -72,19 +73,19 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
             total: initialTotal,
             hasMoreSource: typeof results.veyra_has_more === 'boolean' ? 'prop' : 'calculated',
             canLoadMore: canCurrentlyLoadMore,
-            displayedEmailsCount: results.veyra_results?.emails?.length || 0,
-            resultsProp: results // Log the whole results prop for inspection
+            displayedEmailsCount: emails.length,
+            resultsProp: results
         });
     } else {
-        // Reset state if results are not available (e.g., message has no Veyra content)
+        // Reset state if results are not available
         setDisplayedEmails([]);
         setCurrentEmailOffset(0);
-        setLimitPerPage(10); // Default limit
+        setLimitPerPage(10);
         setTotalEmailsAvailable(0);
         setCanLoadMoreEmails(false);
         console.log('[VeyraResults useEffect] No results, resetting pagination state.');
     }
-}, [results]); // Dependency array includes 'results' which contains all pagination fields
+}, [results]);
 
   console.log('[VeyraResults] Props received (full assistant message object):', { results, currentThreadId, message_id });
   console.log('[VeyraResults] Current selectedTiles:', selectedTiles);
@@ -341,8 +342,8 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
     const newSelected = { ...selectedTiles };
     // Select all displayed emails
     (displayedEmails || []).forEach(email => {
-      if (email && email.id) { // Ensure email and email.id exist
-        const key = makeTileKey('email', email.id);
+      if (email && email.email_id) { // Ensure email and email.email_id exist
+        const key = makeTileKey('email', email.email_id);
         newSelected[key] = true;
       }
     });
@@ -472,7 +473,7 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
     // displayedEmails is now the source of truth for what's rendered
     if (!displayedEmails) return [];
     return displayedEmails.filter(email => {
-      const key = makeTileKey('email', email.id);
+      const key = makeTileKey('email', email.email_id);
       return !!selectedTiles[key];
     });
   };
@@ -498,7 +499,7 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        email_id: emailToSummarize.id,
+                        email_id: emailToSummarize.email_id,
                         thread_id: currentThreadId,
                         assistant_message_id: message_id
                     }),
@@ -677,25 +678,27 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
       )}
 
       {/* Email List */}
-      {displayedEmails && displayedEmails.length > 0 && (
+      {Array.isArray(displayedEmails) && displayedEmails.length > 0 && (
         <Grid item xs={12}>
           <List disablePadding sx={{ bgcolor: 'background.paper', border: '1px solid rgba(0,0,0,0.08)', borderRadius: '4px' }}>
             {displayedEmails.map((email, index) => {
-              const tileKey = makeTileKey('email', email.id);
+              if (!email || !email.email_id) return null;
+              
+              const tileKey = makeTileKey('email', email.email_id);
               const isSelected = !!selectedTiles[tileKey];
-              if (deletedEmails.has(email.id)) {
+              if (deletedEmails.has(email.email_id)) {
                 return (
-                  <ListItem key={`email-${email.id}-deleted`} sx={{ p: 2, justifyContent: 'center', alignItems: 'center', opacity: 0.5 }}>
+                  <ListItem key={`email-${email.email_id}-deleted`} sx={{ p: 2, justifyContent: 'center', alignItems: 'center', opacity: 0.5 }}>
                     <Typography>🙌 Email deleted</Typography>
                   </ListItem>
                 );
               }
               return (
                 <ListItem
-                  key={`email-${email.id}`}
+                  key={`email-${email.email_id}`}
                   button
                   selected={isSelected}
-                  onClick={() => handleTileSelect('email', email.id)}
+                  onClick={() => handleTileSelect('email', email.email_id)}
                   divider={index < displayedEmails.length - 1}
                   sx={{
                     padding: '10px 12px',
@@ -714,7 +717,7 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
                     checked={isSelected}
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleTileSelect('email', email.id);
+                      handleTileSelect('email', email.email_id);
                     }}
                     edge="start"
                     sx={{ mr: 1, p: 0.5 }}
