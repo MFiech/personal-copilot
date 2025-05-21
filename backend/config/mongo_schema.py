@@ -274,7 +274,7 @@ EMAILS_SCHEMA = {
                 },
                 "thread_id": {
                     "bsonType": "string",
-                    "description": "Reference to the conversation thread"
+                    "description": "Reference to the conversation thread this email belongs to"
                 },
                 "subject": {
                     "bsonType": "string",
@@ -421,7 +421,6 @@ EMAILS_SCHEMA = {
         }
     }
 }
-
 # Index configurations
 CONVERSATIONS_INDEXES = [
     {
