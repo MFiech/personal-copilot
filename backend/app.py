@@ -267,10 +267,6 @@ def chat():
                         messages = data.get("messages", [])
                         print(f"VeyraX messages found: {len(messages) if messages else 0}")
                         if messages:
-                            # Ensure no body field in emails before saving
-                            for message in messages:
-                                if "body" in message:
-                                    del message["body"]
                             # --- Save emails to the new emails collection ---
                             for message in messages:
                                 # Process to_emails to ensure each recipient has both email and name
@@ -290,15 +286,15 @@ def chat():
                                         to_emails.append({"email": email, "name": name})
 
                                 email = Email(
-                                    email_id=message.get("id"),
+                                    email_id=message.get("id", "").strip(),  # Strip whitespace from email ID
                                     thread_id=thread_id,
                                     subject=message.get("subject"),
                                     from_email=message.get("from_email"),
                                     to_emails=to_emails,  # Use the processed to_emails
                                     date=message.get("date"),
                                     content={
-                                        "html": message.get("body", {}).get("html", "") if message.get("body") else "",
-                                        "text": message.get("body", {}).get("text", "") if message.get("body") else ""
+                                        "html": "",  # Initially empty, will be populated when content is fetched
+                                        "text": ""   # Initially empty, will be populated when content is fetched
                                     },
                                     metadata={
                                         "source": "VEYRA",
@@ -988,7 +984,7 @@ def load_more_emails():
                 # Transform the email data to match the schema
                 from_email = email.get('from_email', {})
                 formatted_email = {
-                    'email_id': email['id'],  # Map 'id' to 'email_id'
+                    'email_id': email['id'].strip() if email.get('id') else '',  # Strip whitespace from email ID
                     'thread_id': thread_id,  # Add thread_id from conversation
                     'subject': email.get('subject', ''),
                     'from_email': {
@@ -997,8 +993,8 @@ def load_more_emails():
                     },
                     'date': email.get('date', ''),
                     'content': {
-                        'html': email.get('body', {}).get('html', '') if 'body' in email else '',
-                        'text': email.get('body', {}).get('text', '') if 'body' in email else ''
+                        'html': "",  # Initially empty, will be populated when content is fetched
+                        'text': ""   # Initially empty, will be populated when content is fetched
                     },
                     'metadata': {
                         'source': 'VEYRA',
@@ -1077,6 +1073,9 @@ def summarize_single_email():
         email_content_full = data.get('email_content_full')
         email_content_truncated = data.get('email_content_truncated')
         
+        if email_id:
+            email_id = email_id.strip()
+
         if not email_id or not thread_id or not assistant_message_id:
             return jsonify({'error': 'Missing required parameters'}), 400
             
@@ -1085,11 +1084,8 @@ def summarize_single_email():
             'message_id': assistant_message_id
         })
         
-        emails_collection = get_collection(EMAILS_COLLECTION)
-        if conversation and 'veyra_results' in conversation:
-            email_doc = emails_collection.find_one({'email_id': email_id})
-            if email_doc:
-                emails_collection.update_one({'email_id': email_id}, {'$set': {'body': {'html': email_content_full, 'text': email_content_full}}})
+        # Note: Email content is now properly stored in the content field via get_email_content endpoint
+        # No need to update the email document here as it's already handled
         
         # 3. Generate summary using LLM
         prompt = email_summarization_prompt(email_content_truncated)
@@ -1143,6 +1139,101 @@ def summarize_single_email():
         
     except Exception as e:
         print(f"[ERROR] Exception in summarize_single_email: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+# New endpoint for getting email content
+@app.route('/get_email_content', methods=['POST', 'OPTIONS'])
+def get_email_content():
+    if request.method == 'OPTIONS':
+        return '', 200
+    try:
+        data = request.get_json()
+        email_id = data.get('email_id')
+        
+        if email_id:
+            email_id = email_id.strip()
+
+        if not email_id:
+            return jsonify({'error': 'Missing email_id parameter'}), 400
+            
+        # Check if email content already exists in database
+        emails_collection = get_collection(EMAILS_COLLECTION)
+        email_doc = emails_collection.find_one({'email_id': email_id})
+        
+        if email_doc and email_doc.get('content', {}).get('html', '').strip() and email_doc.get('content', {}).get('text', '').strip():
+            # Content already exists and is non-empty, return it
+            return jsonify({
+                'success': True,
+                'email_id': email_id,
+                'content': email_doc['content']
+            }), 200
+        
+        # Content doesn't exist, fetch it from VeyraX
+        if not veyrax_service:
+            return jsonify({'error': 'VeyraX service not available'}), 500
+            
+        # Get full email content from VeyraX
+        email_content = veyrax_service.get_email_details(email_id)
+        
+        if not email_content:
+            return jsonify({'error': 'Could not retrieve email content'}), 404
+        
+        # Process the content to extract HTML and convert to markdown
+        html_content = ""
+        text_content = ""
+        
+        # If it's HTML content, convert to markdown
+        if email_content.startswith('<'):
+            html_content = email_content
+            # Convert HTML to markdown using html2text
+            try:
+                import html2text
+                h = html2text.HTML2Text()
+                h.ignore_links = False
+                h.ignore_images = False
+                h.body_width = 0  # Don't wrap text
+                text_content = h.handle(html_content)
+            except ImportError:
+                # Fallback to simple HTML stripping if html2text is not available
+                import re
+                text_content = re.sub('<[^<]+?>', '', email_content)
+                text_content = re.sub(r'\s+', ' ', text_content).strip()
+        else:
+            text_content = email_content
+            # Create simple HTML wrapper for text content
+            html_content = f"<html><body><pre>{email_content}</pre></body></html>"
+        # Ensure text_content is always a string
+        if text_content is None:
+            text_content = ""
+        
+        # Update the email document in database with the content
+        update_result = emails_collection.update_one(
+            {'email_id': email_id},
+            {
+                '$set': {
+                    'content.html': html_content,
+                    'content.text': text_content,
+                    'updated_at': int(time.time())
+                }
+            }
+        )
+        
+        if update_result.modified_count == 0:
+            return jsonify({'error': 'Failed to update email in database'}), 500
+        
+        return jsonify({
+            'success': True,
+            'email_id': email_id,
+            'content': {
+                'html': html_content,
+                'text': text_content
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"[ERROR] Exception in get_email_content: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
