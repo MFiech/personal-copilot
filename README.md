@@ -13,9 +13,15 @@ PM Co-Pilot is an AI-powered assistant that:
 
 ## Setup
 
-### Requirements
+### System Requirements
 
-- Python 3.8+
+- **macOS**: Xcode Command Line Tools (for MongoDB installation)
+- **Python**: 3.11+ (recommended: 3.13)
+- **Node.js**: 18+ and npm
+- **MongoDB**: 7.0+ (will be installed via Homebrew)
+
+### API Keys Required
+
 - Pinecone account and API key
 - OpenAI API key
 - Anthropic API key
@@ -34,39 +40,72 @@ VEYRAX_API_KEY=your_veyrax_api_key  # Optional, for Gmail/Calendar
 
 ### Installation
 
-1. Install backend dependencies:
-   ```
-   cd backend
-   pip install -r requirements.txt
-   ```
+#### 1. Install System Dependencies
 
-2. Install frontend dependencies:
-   ```
-   cd frontend
-   npm install
-   ```
+**macOS:**
+```bash
+# Install Xcode Command Line Tools (if not already installed)
+xcode-select --install
+
+# Install MongoDB via Homebrew
+brew tap mongodb/brew
+brew install mongodb-community@7.0
+
+# Start MongoDB service
+brew services start mongodb/brew/mongodb-community@7.0
+```
+
+#### 2. Setup Python Virtual Environment
+
+```bash
+# Create virtual environment
+python3 -m venv myenv
+
+# Activate virtual environment
+source myenv/bin/activate
+```
+
+#### 3. Install Backend Dependencies
+
+```bash
+cd backend
+pip install -r requirements.txt
+```
+
+#### 4. Install Frontend Dependencies
+
+```bash
+cd frontend
+npm install
+```
 
 ## Running the Application
 
 ### Backend
 
-Start the Flask server:
+**Important**: Always activate the virtual environment before running the backend.
 
-```
+```bash
+# Activate virtual environment
+source myenv/bin/activate
+
+# Navigate to backend directory
 cd backend
-python app.py
+
+# Start the Flask server
+python3 app.py
 ```
 
 The server will run on `http://localhost:5001`.
 
 ### Frontend
 
-Start the frontend development server:
-
-```
+```bash
 cd frontend
 npm run dev
 ```
+
+The frontend will run on `http://localhost:3000`.
 
 ## Adding Data
 
@@ -115,5 +154,27 @@ For instructions on setting up Gmail and Google Calendar integration via VeyraX,
 ## Database Structure
 
 The application uses:
-- Pinecone vector database (index: "personal", namespace: "saved_insights")
-- SQLite database for conversation history
+- **Pinecone vector database** (index: "personal", namespace: "saved_insights")
+- **MongoDB** for conversation history and user data
+- **SQLite** (legacy, may be used for some features)
+
+## Troubleshooting
+
+### Common Issues
+
+1. **"ModuleNotFoundError: No module named 'flask'"**
+   - Make sure you've activated the virtual environment: `source myenv/bin/activate`
+   - Verify you're using the correct Python: `which python3` should point to `myenv/bin/python3`
+
+2. **MongoDB Connection Error**
+   - Ensure MongoDB is running: `brew services start mongodb/brew/mongodb-community@7.0`
+   - Test connection: `mongosh --eval "db.runCommand('ping')"`
+
+3. **Frontend Build Errors**
+   - Clear node_modules and reinstall: `rm -rf node_modules package-lock.json && npm install`
+
+### Development Notes
+
+- The backend uses Python 3.13 with a virtual environment to manage dependencies
+- All langchain-related packages are installed without version pinning to avoid conflicts
+- MongoDB is required for the application to function properly
