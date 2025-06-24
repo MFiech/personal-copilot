@@ -787,7 +787,7 @@ def bulk_delete_items():
                 deletion_successful_veyrax = False 
 
                 if item_type == 'email':
-                    item_exists_in_conversation_results = any(e.get('id') == item_id for e in current_emails_in_db)
+                    item_exists_in_conversation_results = any(e == item_id for e in current_emails_in_db)
                     if item_exists_in_conversation_results:
                         print(f"[/bulk_delete_items] Attempting VeyraX delete for email: {item_id}")
                         try:
@@ -865,7 +865,7 @@ def bulk_delete_items():
             mongo_update_operations = {}
             if email_ids_to_pull_from_db:
                 mongo_update_operations['$pull'] = {
-                    'veyra_results.emails': {'id': {'$in': email_ids_to_pull_from_db}}
+                    'veyra_results.emails': {'$in': email_ids_to_pull_from_db}
                 }
                 print(f"[/bulk_delete_items] Preparing to pull emails from DB: {email_ids_to_pull_from_db}")
             
@@ -889,6 +889,12 @@ def bulk_delete_items():
                         print(f"[/bulk_delete_items] MongoDB update successful. Modified count: {db_modified_count}")
                     else:
                         print(f"[/bulk_delete_items] MongoDB update executed, but no documents were modified. This might be okay if items were already removed or IDs didn't match perfectly for a $pull that expected them.")
+                    # Remove emails from the emails collection as well
+                    from config.mongo_config import EMAILS_COLLECTION
+                    from utils.mongo_client import get_collection
+                    emails_collection = get_collection(EMAILS_COLLECTION)
+                    delete_result = emails_collection.delete_many({'email_id': {'$in': email_ids_to_pull_from_db}})
+                    print(f"[/bulk_delete_items] Deleted {delete_result.deleted_count} emails from emails collection.")
                 except Exception as db_e:
                     db_error_msg = f"Database error during bulk update: {str(db_e)}"
                     print(f"[/bulk_delete_items] {db_error_msg}")
