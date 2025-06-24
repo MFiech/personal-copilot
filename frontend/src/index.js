@@ -4,15 +4,18 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
+import { SnackbarProvider } from './components/SnackbarProvider';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<App />} />
-        <Route path="/:threadId" element={<App />} />
-      </Routes>
+      <SnackbarProvider>
+        <Routes>
+          <Route path="/" element={<App />} />
+          <Route path="/:threadId" element={<App />} />
+        </Routes>
+      </SnackbarProvider>
     </BrowserRouter>
   </React.StrictMode>
 );

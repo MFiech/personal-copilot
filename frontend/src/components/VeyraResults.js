@@ -24,7 +24,7 @@ import DoneAllIcon from '@mui/icons-material/DoneAll';
 import CircularProgress from '@mui/material/CircularProgress';
 import './VeyraResults.css';
 
-const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceived }) => {
+const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceived, showSnackbar }) => {
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedItem, setSelectedItem] = useState(null);
   const [deletedEmails, setDeletedEmails] = useState(new Set());
@@ -147,7 +147,7 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
               thread_id: currentThreadId,
               message_id: message_id 
             });
-            alert('Could not find required IDs for deletion. Please try again.');
+            showSnackbar('Could not find required IDs for deletion. Please try again.', 'error');
             return;
           }
           
@@ -240,7 +240,7 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
           
           if (!currentEmailId || !message_id) {
             console.error('Missing required IDs:', { id: currentEmailId, message_id });
-            alert('Could not find email ID for deletion. Please try again.');
+            showSnackbar('Could not find email ID for deletion. Please try again.', 'error');
             return;
           }
           
@@ -387,7 +387,7 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
     }
 
     if (itemsToDelete.length === 0) {
-      alert("No items selected for deletion.");
+      showSnackbar('No items selected for deletion.', 'error');
       console.log('[VeyraResults] Bulk delete attempted with no items selected.');
       return;
     }
@@ -450,15 +450,15 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
 
         setSelectedTiles({}); // Clear selection
         console.log('[VeyraResults] Cleared selectedTiles after bulk delete.');
-        alert(`${successfulDeletes} item(s) processed for deletion. ${failedDeletes > 0 ? `${failedDeletes} item(s) failed.` : ''} Check console for details.`);
+        showSnackbar(`${successfulDeletes} item(s) processed for deletion. ${failedDeletes > 0 ? `${failedDeletes} item(s) failed.` : ''} Check console for details.`, failedDeletes > 0 ? 'error' : 'success');
       
       } else {
         console.error('[VeyraResults] Bulk delete API call failed or returned unexpected data:', data.error || data);
-        alert(`Bulk delete request failed: ${data.error || 'Server error. Check console.'}`);
+        showSnackbar(`Bulk delete request failed: ${data.error || 'Server error. Check console.'}`, 'error');
       }
     } catch (error) {
       console.error('[VeyraResults] Error during bulk delete fetch operation:', error);
-      alert(`Error during bulk delete: ${error.message}. Check console.`);
+      showSnackbar(`Error during bulk delete: ${error.message}. Check console.`, 'error');
     } finally {
       setIsBulkDeleting(false);
       console.log('[VeyraResults] Bulk delete operation finished.');
@@ -563,27 +563,27 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
             if (successCount > 0 && failedCount === 0) {
                 console.log(`[SUCCESS] Successfully summarized ${successCount} email(s)`);
             } else if (successCount > 0 && failedCount > 0) {
-                alert(`Summarization completed: ${successCount} successful, ${failedCount} failed.\n\nFailed emails: ${failedEmails.join(', ')}`);
+                showSnackbar(`Summarization completed: ${successCount} successful, ${failedCount} failed.\n\nFailed emails: ${failedEmails.join(', ')}`, failedCount > 0 ? 'error' : 'success');
             } else {
-                alert(`Failed to summarize any emails. All ${failedCount} emails failed to process.`);
+                showSnackbar('Failed to summarize any emails. All emails failed to process.', 'error');
             }
             
         } catch (error) {
             console.error('[ERROR] Error summarizing emails:', error);
-            alert('An unexpected error occurred while summarizing emails.');
+            showSnackbar('An unexpected error occurred while summarizing emails.', 'error');
         } finally {
             setIsSummarizingEmail(false);
             // Clear selection after processing all emails
             setSelectedTiles({});
         }
     } else if (action === 'display') {
-        alert(`Display action for: ${email.subject}`);
+        showSnackbar(`Display action for: ${email.subject}`, 'info');
     } else if (action === 'view_gmail') {
         const webLink = email.webLink || email.alternateLink;
         if (webLink) {
             window.open(webLink, '_blank');
         } else {
-            alert("No direct link available for this email.");
+            showSnackbar('No direct link available for this email.', 'error');
         }
     }
   };
@@ -624,7 +624,7 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
     } catch (error) {
         console.error("[VeyraResults] Catch block error loading more emails:", error);
         setCanLoadMoreEmails(false); // Stop trying if there was an error
-        alert(`Error loading more emails: ${error.message}`);
+        showSnackbar(`Error loading more emails: ${error.message}`, 'error');
     } finally {
         setIsLoadingMoreEmails(false);
     }
