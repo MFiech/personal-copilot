@@ -489,40 +489,88 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
             
             // Get all selected emails
             const emailsToSummarize = getSelectedEmailItems();
+            let successCount = 0;
+            let failedCount = 0;
+            const failedEmails = [];
             
             // Process each email sequentially
             for (const emailToSummarize of emailsToSummarize) {
-                // Call summarize endpoint for each email
-                const response = await fetch('http://localhost:5001/summarize_single_email', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        email_id: emailToSummarize.email_id,
-                        thread_id: currentThreadId,
-                        assistant_message_id: message_id
-                    }),
-                });
-
-                const data = await response.json();
+                console.log(`[INFO] Processing email for summarization: ${emailToSummarize.email_id}`);
                 
-                if (!response.ok) {
-                    console.error('[ERROR] Failed to summarize email:', data.error);
-                    continue; // Continue with next email even if one fails
-                }
+                try {
+                    // Step 1: Get email content (this will fetch and save to DB if not already there)
+                    const contentResponse = await fetch('http://localhost:5001/get_email_content', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            email_id: emailToSummarize.email_id
+                        }),
+                    });
 
-                console.log('[INFO] Received summary:', data.response);
+                    if (!contentResponse.ok) {
+                        const errorData = await contentResponse.json().catch(() => ({ error: 'Unknown error' }));
+                        console.error('[ERROR] Failed to get email content:', errorData.error);
+                        failedCount++;
+                        failedEmails.push(emailToSummarize.subject || 'Unknown email');
+                        continue; // Continue with next email even if one fails
+                    }
 
-                // The summary is already saved in the database with the correct role
-                // Just trigger a refresh of the conversation to show the new message
-                if (typeof onNewMessageReceived === 'function') {
-                    onNewMessageReceived(data);
+                    const contentData = await contentResponse.json();
+                    console.log('[INFO] Retrieved email content successfully');
+
+                    // Step 2: Now call the summarize endpoint with the content
+                    const summarizeResponse = await fetch('http://localhost:5001/summarize_single_email', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            email_id: emailToSummarize.email_id,
+                            thread_id: currentThreadId,
+                            assistant_message_id: message_id,
+                            email_content_full: contentData.content.html || contentData.content.text,
+                            email_content_truncated: contentData.content.text || contentData.content.html
+                        }),
+                    });
+
+                    const summarizeData = await summarizeResponse.json();
+                    
+                    if (!summarizeResponse.ok) {
+                        console.error('[ERROR] Failed to summarize email:', summarizeData.error);
+                        failedCount++;
+                        failedEmails.push(emailToSummarize.subject || 'Unknown email');
+                        continue; // Continue with next email even if one fails
+                    }
+
+                    console.log('[INFO] Received summary:', summarizeData.response);
+                    successCount++;
+
+                    // The summary is already saved in the database with the correct role
+                    // Just trigger a refresh of the conversation to show the new message
+                    if (typeof onNewMessageReceived === 'function') {
+                        onNewMessageReceived(summarizeData);
+                    }
+                } catch (emailError) {
+                    console.error(`[ERROR] Error processing email ${emailToSummarize.email_id}:`, emailError);
+                    failedCount++;
+                    failedEmails.push(emailToSummarize.subject || 'Unknown email');
                 }
+            }
+            
+            // Show summary to user
+            if (successCount > 0 && failedCount === 0) {
+                console.log(`[SUCCESS] Successfully summarized ${successCount} email(s)`);
+            } else if (successCount > 0 && failedCount > 0) {
+                alert(`Summarization completed: ${successCount} successful, ${failedCount} failed.\n\nFailed emails: ${failedEmails.join(', ')}`);
+            } else {
+                alert(`Failed to summarize any emails. All ${failedCount} emails failed to process.`);
             }
             
         } catch (error) {
             console.error('[ERROR] Error summarizing emails:', error);
+            alert('An unexpected error occurred while summarizing emails.');
         } finally {
             setIsSummarizingEmail(false);
             // Clear selection after processing all emails

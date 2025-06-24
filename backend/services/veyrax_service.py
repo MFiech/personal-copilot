@@ -200,7 +200,16 @@ class VeyraXService:
             print(f"Full response: {json.dumps(response.json(), indent=2)}")
             
             if response.status_code == 200:
-                return response.json()
+                response_json = response.json()
+                
+                # Normalize: if 'body' exists but 'content' does not, move 'body' to 'content'
+                if "data" in response_json and isinstance(response_json["data"], dict):
+                    data = response_json["data"]
+                    if "body" in data and "content" not in data:
+                        data["content"] = data["body"]
+                        del data["body"]
+                
+                return response_json
             else:
                 print(f"[VeyraXService] Error response from VeyraX API: {response.text}")
                 return {"error": f"Failed to get email message: {response.text}"}
@@ -225,8 +234,18 @@ class VeyraXService:
             # Log the ID being used
             print(f"[VeyraXService] Attempting to get details for email_id: {email_id}")
 
+            # Clean the email ID by stripping whitespace
+            clean_email_id = email_id.strip() if email_id else email_id
+            if clean_email_id != email_id:
+                print(f"[VeyraXService] Cleaned email ID from '{email_id}' to '{clean_email_id}'")
+
             # Get the full email message
-            response = self.get_email_message(email_id)
+            response = self.get_email_message(clean_email_id)
+
+            # Check if response is valid
+            if not response or not isinstance(response, dict):
+                print(f"[VeyraXService] get_email_message returned invalid response for {email_id}: {response}")
+                return None
 
             # Log the raw response structure
             print(f"[VeyraXService] Response structure for email {email_id}:")
@@ -236,22 +255,22 @@ class VeyraXService:
                 if isinstance(response['data'], dict) and "message" in response['data']:
                     print(f"[VeyraXService] Message keys: {list(response['data']['message'].keys() if isinstance(response['data']['message'], dict) else [])}")
 
-            if "error" in response:
+            if isinstance(response, dict) and "error" in response:
                 print(f"[VeyraXService] Error retrieving email details for ID {email_id}: {response['error']}")
                 return None
             
             # Extract email content - prefer HTML content if available
-            if "data" in response and "body" in response["data"]:
-                body = response["data"]["body"]
+            if "data" in response and "content" in response["data"]:
+                content = response["data"]["content"]
                 
                 # Try to get HTML content first
-                html_content = body.get("html", "")
+                html_content = content.get("html", "")
                 if html_content:
                     print(f"[VeyraXService] Found HTML content for email {email_id}")
                     return html_content
                 
                 # Fall back to plain text
-                text_content = body.get("text", "")
+                text_content = content.get("text", "")
                 if text_content:
                     print(f"[VeyraXService] Found plain text content for email {email_id}")
                     return text_content
@@ -997,11 +1016,6 @@ class VeyraXService:
             }
             print(f"[VeyraXService] Pagination info: limit={limit_used}, offset={offset_used}, total={total_available}, original_query_params={original_query_params}")
             formatted_emails, email_ids = self.summarize_emails(messages)
-            
-            # Remove body field from each email
-            for message in messages:
-                if "body" in message:
-                    del message["body"]
             
             return {
                 "source_type": "mail",

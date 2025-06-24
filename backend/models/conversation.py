@@ -66,7 +66,7 @@ class Conversation:
                         # Transform the email data to match the schema
                         from_email = email.get('from_email', {})
                         formatted_email = {
-                            'email_id': email['id'],  # Map 'id' to 'email_id'
+                            'email_id': email['id'].strip() if email.get('id') else '',  # Strip whitespace from email ID
                             'thread_id': self.thread_id,  # Add thread_id from conversation
                             'subject': email.get('subject', ''),
                             'from_email': {
@@ -75,8 +75,8 @@ class Conversation:
                             },
                             'date': email.get('date', ''),
                             'content': {
-                                'html': email.get('body', {}).get('html', '') if 'body' in email else '',
-                                'text': email.get('body', {}).get('text', '') if 'body' in email else ''
+                                'html': "",  # Initially empty, will be populated when content is fetched
+                                'text': ""   # Initially empty, will be populated when content is fetched
                             },
                             'metadata': {
                                 'source': 'VEYRA',
@@ -105,14 +105,20 @@ class Conversation:
                                 {'$set': formatted_email},
                                 upsert=True
                             )
-                            email_ids.append(email['id'])
+                            email_ids.append(formatted_email['email_id'])  # Use the stripped ID
                         except Exception as e:
                             print(f"Error saving email {email['id']}: {str(e)}")
                             print(f"Problematic email data: {json.dumps(formatted_email)}")
-                            raise
                     elif isinstance(email, str):
                         email_ids.append(email)
                 veyra_results['emails'] = email_ids
+
+            # Also handle stripping for email_id within an email_summary
+            if 'email_summary' in veyra_results and isinstance(veyra_results.get('email_summary'), dict):
+                summary_email_id = veyra_results['email_summary'].get('email_id')
+                if summary_email_id and isinstance(summary_email_id, str):
+                    veyra_results['email_summary']['email_id'] = summary_email_id.strip()
+
             message['veyra_results'] = veyra_results
         if self.veyra_original_query_params is not None:
             message['veyra_original_query_params'] = self.veyra_original_query_params
