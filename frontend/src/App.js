@@ -30,6 +30,7 @@ import DialogContentText from '@mui/material/DialogContentText';
 import DialogTitle from '@mui/material/DialogTitle';
 import VeyraResults from './components/VeyraResults';
 import './App.css';
+import { useSnackbar } from './components/SnackbarProvider';
 
 // Import new icons
 import SendIcon from '@mui/icons-material/Send';
@@ -95,6 +96,8 @@ function App() {
   const [editTitle, setEditTitle] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [threadToDelete, setThreadToDelete] = useState(null);
+
+  const { showSnackbar } = useSnackbar();
 
   // Fetch threads on initial mount
   useEffect(() => {
@@ -400,7 +403,7 @@ function App() {
       if (!response.ok) throw new Error('Failed to save insight');
       setSnackbarOpen(true);
     } catch (error) {
-      alert(`Error saving insight: ${error.message}`);
+      showSnackbar(`Error saving insight: ${error.message}`, 'error');
     }
   };
 
@@ -441,6 +444,7 @@ function App() {
               currentThreadId={threadId} // threadId is available in App.js scope
               message_id={message.message_id} // assistant's message_id
               onNewMessageReceived={onNewMessage}
+              showSnackbar={showSnackbar}
             />
           </Box>
         )}
@@ -469,7 +473,7 @@ function App() {
       setEditingThreadId(null);
     } catch (error) {
       console.error('Error renaming thread:', error);
-      alert(`Error renaming thread: ${error.message}`);
+      showSnackbar(`Error renaming thread: ${error.message}`, 'error');
     }
   };
 
