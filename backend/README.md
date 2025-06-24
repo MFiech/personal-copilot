@@ -2,6 +2,52 @@
 
 Backend for PM Co-Pilot application with VeyraX integration for Gmail and Google Calendar.
 
+## Prerequisites
+
+- **MongoDB**: 7.0+ (install via Homebrew: `brew install mongodb-community@7.0`)
+- **Python**: 3.11+ (recommended: 3.13)
+- **Virtual Environment**: Required for dependency management
+
+## Setup
+
+### 1. Install MongoDB
+
+```bash
+# Install MongoDB via Homebrew
+brew tap mongodb/brew
+brew install mongodb-community@7.0
+
+# Start MongoDB service
+brew services start mongodb/brew/mongodb-community@7.0
+
+# Verify MongoDB is running
+mongosh --eval "db.runCommand('ping')"
+```
+
+### 2. Setup Python Environment
+
+```bash
+# Create virtual environment (from project root)
+python3 -m venv myenv
+
+# Activate virtual environment
+source myenv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### 3. Configure Environment Variables
+
+Create a `.env` file in the `backend` directory:
+
+```
+PINECONE_API_TOKEN=your_pinecone_api_key
+OPENAI_API_KEY=your_openai_api_key
+ANTHROPIC_API_KEY=your_anthropic_api_key
+VEYRAX_API_KEY=your_veyrax_api_key  # Optional
+```
+
 ## VeyraX Integration
 
 The application uses VeyraX to access Gmail and Google Calendar data when the user requests it. The integration works by:
@@ -51,14 +97,29 @@ If you're developing without VeyraX access or encounter persistent issues:
 
 ## Running the Application
 
-1. Install dependencies:
-   ```
-   pip install -r requirements.txt
-   ```
+**Important**: Always activate the virtual environment before running the backend.
 
-2. Start the backend server:
-   ```
-   python app.py
-   ```
+```bash
+# Activate virtual environment
+source myenv/bin/activate
 
-3. The server will be available at http://localhost:5001 
+# Start the backend server
+python3 app.py
+```
+
+The server will be available at http://localhost:5001
+
+## Troubleshooting
+
+### Common Issues
+
+1. **"ModuleNotFoundError: No module named 'flask'"**
+   - Make sure you've activated the virtual environment: `source myenv/bin/activate`
+   - Verify you're using the correct Python: `which python3` should point to `myenv/bin/python3`
+
+2. **MongoDB Connection Error**
+   - Ensure MongoDB is running: `brew services start mongodb/brew/mongodb-community@7.0`
+   - Test connection: `mongosh --eval "db.runCommand('ping')"`
+
+3. **Dependency Conflicts**
+   - If you encounter langchain version conflicts, the requirements.txt uses unpinned versions to resolve this automatically 
