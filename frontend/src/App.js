@@ -432,6 +432,10 @@ function App() {
   // Render message content with proper formatting
   const renderMessage = (message, onNewMessage) => {
     console.log('renderMessage called with full message:', message );
+    console.log('renderMessage - veyra_results:', message.veyra_results);
+    console.log('renderMessage - veyra_current_offset:', message.veyra_current_offset);
+    console.log('renderMessage - condition check:', (message.veyra_results || message.veyra_current_offset !== undefined));
+    
     return (
       <Box sx={{ mb: 0 }}>
         <Typography variant="body1" component="div" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
