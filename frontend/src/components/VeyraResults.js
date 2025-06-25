@@ -87,7 +87,11 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
     }
 }, [results]);
 
-  console.log('[VeyraResults] Props received (full assistant message object):', { results, currentThreadId, message_id });
+  console.log('[VeyraResults] Props received:', { results, currentThreadId, message_id });
+  console.log('[VeyraResults] results.veyra_results:', results?.veyra_results);
+  console.log('[VeyraResults] results.veyra_results?.emails:', results?.veyra_results?.emails);
+  console.log('[VeyraResults] Array.isArray(results?.veyra_results?.emails):', Array.isArray(results?.veyra_results?.emails));
+  console.log('[VeyraResults] results.veyra_results?.emails?.length:', results?.veyra_results?.emails?.length);
   console.log('[VeyraResults] Current selectedTiles:', selectedTiles);
 
   const formatEventDateTime = (dateTime) => {
@@ -99,13 +103,29 @@ const VeyraResults = ({ results, currentThreadId, message_id, onNewMessageReceiv
         return 'Invalid date';
       }
       
-      return date.toLocaleString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: 'numeric',
-        hour12: true
-      });
+      const currentYear = new Date().getFullYear();
+      const emailYear = date.getFullYear();
+      
+      // If the email is from a different year, include the year
+      if (emailYear !== currentYear) {
+        return date.toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: 'numeric',
+          minute: 'numeric',
+          hour12: true
+        });
+      } else {
+        // Same year, don't include year
+        return date.toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: 'numeric',
+          hour12: true
+        });
+      }
     } catch (e) {
       console.error('Error formatting date:', e);
       return 'Invalid date';

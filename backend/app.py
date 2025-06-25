@@ -26,6 +26,7 @@ from models.thread import Thread
 from prompts import email_summarization_prompt
 from bson import ObjectId
 from models.email import Email
+from utils.date_parser import parse_email_date
 
 app = Flask(__name__)
 CORS(app, resources={
@@ -136,8 +137,15 @@ def convert_objectid_to_str(obj):
     return obj
 
 def build_prompt(query, retrieved_docs, thread_history=None, veyrax_context=None):
+    print("=== BUILD_PROMPT FUNCTION CALLED ===")
     prompt_parts = []
     insight_id = None
+
+    # Debug logging
+    print(f"[DEBUG] build_prompt called with:")
+    print(f"  - query: {query}")
+    print(f"  - veyrax_context: {json.dumps(veyrax_context, indent=2) if veyrax_context else 'None'}")
+    print(f"  - retrieved_docs count: {len(retrieved_docs) if retrieved_docs else 0}")
 
     # Add current date and time
     current_time = datetime.now()
@@ -188,8 +196,13 @@ For non-email and non-calendar queries, provide a helpful response based on the 
             if veyrax_context["source_type"] == "mail" or veyrax_context["source_type"] == "gmail":
                 messages = veyrax_context.get("data", {}).get("messages", [])
                 prompt_parts.append(f"Email data available: {len(messages)} messages found")
+                print(f"[DEBUG] Added to prompt: Email data available: {len(messages)} messages found")
+                print(f"[DEBUG] messages type: {type(messages)}")
+                print(f"[DEBUG] messages content: {json.dumps(messages, indent=2)[:500] if messages else 'None'}")
+                print(f"[DEBUG] messages truthy check: {bool(messages)}")
             elif veyrax_context["source_type"] == "google-calendar":
                 prompt_parts.append("Calendar data available")
+                print(f"[DEBUG] Added to prompt: Calendar data available")
         prompt_parts.append("\n")
 
     # Add retrieved context to the prompt
@@ -211,7 +224,10 @@ For non-email and non-calendar queries, provide a helpful response based on the 
     # Add the user query
     prompt_parts.append(f"\nUser Query: {query}\n\nResponse:")
     
-    return "\n\n".join(prompt_parts), insight_id
+    final_prompt = "\n\n".join(prompt_parts)
+    print(f"[DEBUG] Final prompt (first 1000 chars): {final_prompt[:1000]}")
+    
+    return final_prompt, insight_id
 
 @app.route('/chat', methods=['POST'])
 def chat():
@@ -266,6 +282,14 @@ def chat():
                         data = veyrax_data.get("data", {})
                         messages = data.get("messages", [])
                         print(f"VeyraX messages found: {len(messages) if messages else 0}")
+                        print(f"[DEBUG] messages type: {type(messages)}")
+                        print(f"[DEBUG] messages content: {json.dumps(messages, indent=2)[:500] if messages else 'None'}")
+                        print(f"[DEBUG] messages truthy check: {bool(messages)}")
+                        
+                        # Always set veyra_context when emails are found, regardless of messages array
+                        veyra_context = veyrax_data
+                        print(f"[DEBUG] veyra_context set to: {json.dumps(veyra_context, indent=2)[:500]}")
+                        
                         if messages:
                             # --- Save emails to the new emails collection ---
                             for message in messages:
@@ -288,37 +312,49 @@ def chat():
                                 email = Email(
                                     email_id=message.get("id", "").strip(),  # Strip whitespace from email ID
                                     thread_id=thread_id,
-                                    subject=message.get("subject"),
+                                    subject=message.get("subject", "")[:1000],  # Truncate subject if too long
                                     from_email=message.get("from_email"),
-                                    to_emails=to_emails,  # Use the processed to_emails
+                                    to_emails=to_emails[:50],  # Limit TO recipients
                                     date=message.get("date"),
                                     content={
-                                        "html": "",  # Initially empty, will be populated when content is fetched
-                                        "text": ""   # Initially empty, will be populated when content is fetched
+                                        "html": "",  # Empty until user requests summarization
+                                        "text": ""   # Empty until user requests summarization
                                     },
                                     metadata={
                                         "source": "VEYRA",
                                         "folder": message.get("folder"),
                                         "is_read": message.get("is_read", False),
                                         "size": message.get("size"),
-                                        "attachments": message.get("attachments", []),
-                                        "cc": message.get("cc", []),
-                                        "bcc": message.get("bcc", []),
+                                        "attachments": message.get("attachments", [])[:10],  # Limit attachments
+                                        "cc": message.get("cc", [])[:50],  # Limit CC recipients
+                                        "bcc": message.get("bcc", [])[:50],  # Limit BCC recipients
                                         "reply_to": message.get("reply_to")
                                     }
                                 )
-                                email.save()
+                                try:
+                                    email.save()
+                                except Exception as e:
+                                    if "document too large" in str(e).lower():
+                                        print(f"[WARNING] Email document too large, skipping: {message.get('id', 'unknown')}")
+                                        continue
+                                    else:
+                                        raise e
                             veyra_results = {"emails": messages}
-                            veyra_context = veyrax_data
-                            # Extract pagination info
-                            veyra_pagination = {
-                                "veyra_original_query_params": data.get("original_query_params"),
-                                "veyra_current_offset": data.get("offset_used"),
-                                "veyra_limit_per_page": data.get("limit_used"),
-                                "veyra_total_emails_available": data.get("total_available"),
-                                "veyra_has_more": (data.get("offset_used", 0) + data.get("limit_used", 10)) < data.get("total_available", 0)
-                            }
-                            print(f"[DEBUG] VeyraX pagination info: {veyra_pagination}")
+                            print(f"[DEBUG] Inside if messages block - veyra_results set to: {json.dumps(veyra_results, indent=2)[:500]}")
+                        else:
+                            # Even if no messages, set veyra_results to indicate emails were searched
+                            veyra_results = {"emails": []}
+                            print(f"[DEBUG] No messages found - veyra_results set to empty array")
+                        
+                        # Extract pagination info
+                        veyra_pagination = {
+                            "veyra_original_query_params": data.get("original_query_params"),
+                            "veyra_current_offset": data.get("offset_used"),
+                            "veyra_limit_per_page": data.get("limit_used"),
+                            "veyra_total_emails_available": data.get("total_available"),
+                            "veyra_has_more": (data.get("offset_used", 0) + data.get("limit_used", 10)) < data.get("total_available", 0)
+                        }
+                        print(f"[DEBUG] veyra_pagination: {json.dumps(veyra_pagination, indent=2)}")
                     elif source_type == "google-calendar":
                         events = veyrax_data.get("data", {}).get("events", [])
                         print(f"VeyraX calendar events found: {len(events) if events else 0}")
@@ -341,8 +377,14 @@ def chat():
             retrieved_docs = []
         prompt, insight_id = build_prompt(query, retrieved_docs, thread_history, veyra_context)
         try:
+            print(f"[DEBUG] Calling LLM with prompt...")
+            print(f"[DEBUG] veyra_context being passed to build_prompt: {json.dumps(veyra_context, indent=2) if veyra_context else 'None'}")
+            print(f"[DEBUG] veyra_results: {json.dumps(veyra_results, indent=2) if veyra_results else 'None'}")
+            print(f"[DEBUG] veyra_context source_type: {veyra_context.get('source_type') if veyra_context else 'None'}")
+            print(f"[DEBUG] veyra_context data messages: {len(veyra_context.get('data', {}).get('messages', [])) if veyra_context else 0}")
             response = llm.invoke(prompt)
             response_text = response.content.strip()
+            print(f"[DEBUG] LLM response: '{response_text}'")
         except Exception as e:
             if "overloaded_error" in str(e):
                 error_message = "The AI service is currently experiencing high load. Please try again in a few moments."
@@ -400,6 +442,35 @@ def chat():
             "message_id": assistant_message.message_id,
             "veyra_results": veyra_results
         }
+        
+        # If we have email results, fetch the full email objects for immediate display
+        if veyra_results and 'emails' in veyra_results and veyra_results['emails']:
+            emails_collection = get_collection(EMAILS_COLLECTION)
+            
+            # Extract email IDs from the message objects
+            email_ids = []
+            for email_obj in veyra_results['emails']:
+                if isinstance(email_obj, dict) and 'id' in email_obj:
+                    email_ids.append(email_obj['id'])
+                elif isinstance(email_obj, str):
+                    email_ids.append(email_obj)
+            
+            print(f"[DEBUG] Extracted email IDs: {email_ids}")
+            
+            fetched_email_docs = list(emails_collection.find({'email_id': {'$in': email_ids}})) if email_ids else []
+            
+            # Sort emails by date, newest first
+            fetched_email_docs.sort(key=lambda e: parse_email_date(e.get('date')), reverse=True)
+            
+            # Convert all email documents to handle any ObjectId fields
+            processed_emails = [convert_objectid_to_str(email_doc) for email_doc in fetched_email_docs]
+            
+            # Update the response with full email objects
+            response_data['veyra_results'] = {
+                'emails': processed_emails
+            }
+            print(f"[DEBUG] Added {len(processed_emails)} full email objects to response")
+        
         # Add pagination info to response if present
         if veyra_pagination:
             response_data.update(veyra_pagination)
@@ -471,16 +542,35 @@ def get_thread(thread_id):
                 "timestamp": processed_msg_doc.get("timestamp") 
             }
             
+            # Add pagination fields for assistant messages
+            if processed_msg_doc.get('role') == 'assistant':
+                if 'veyra_original_query_params' in processed_msg_doc:
+                    message_data_for_response['veyra_original_query_params'] = processed_msg_doc['veyra_original_query_params']
+                if 'veyra_current_offset' in processed_msg_doc:
+                    message_data_for_response['veyra_current_offset'] = processed_msg_doc['veyra_current_offset']
+                if 'veyra_limit_per_page' in processed_msg_doc:
+                    message_data_for_response['veyra_limit_per_page'] = processed_msg_doc['veyra_limit_per_page']
+                if 'veyra_total_emails_available' in processed_msg_doc:
+                    message_data_for_response['veyra_total_emails_available'] = processed_msg_doc['veyra_total_emails_available']
+                if 'veyra_has_more' in processed_msg_doc:
+                    message_data_for_response['veyra_has_more'] = processed_msg_doc['veyra_has_more']
+            
             if processed_msg_doc.get('role') == 'assistant' and 'veyra_results' in processed_msg_doc:
                 veyra_results = processed_msg_doc['veyra_results']
                 if veyra_results and 'emails' in veyra_results:
                     email_ids = veyra_results['emails']
                     fetched_email_docs = list(emails_collection.find({'email_id': {'$in': email_ids}})) if email_ids else []
+                    
+                    # Sort emails by date, newest first
+                    fetched_email_docs.sort(key=lambda e: parse_email_date(e.get('date')), reverse=True)
+
                     # Convert all email documents to handle any ObjectId fields
                     processed_emails = [convert_objectid_to_str(email_doc) for email_doc in fetched_email_docs]
-                    veyra_results = veyra_results.copy()
-                    veyra_results['emails'] = processed_emails
-                message_data_for_response['veyra_results'] = veyra_results
+                    
+                    # Create a copy to avoid modifying the original dict in a loop
+                    veyra_results_copy = veyra_results.copy()
+                    veyra_results_copy['emails'] = processed_emails
+                    message_data_for_response['veyra_results'] = veyra_results_copy
             processed_messages_for_response.append(message_data_for_response)
             
         return jsonify(processed_messages_for_response)
@@ -990,17 +1080,17 @@ def load_more_emails():
                 # Transform the email data to match the schema
                 from_email = email.get('from_email', {})
                 formatted_email = {
-                    'email_id': email['id'].strip() if email.get('id') else '',  # Strip whitespace from email ID
-                    'thread_id': thread_id,  # Add thread_id from conversation
-                    'subject': email.get('subject', ''),
+                    'email_id': email['id'].strip(),
+                    'thread_id': thread_id,
+                    'subject': email.get('subject', '')[:1000],  # Truncate subject if too long
                     'from_email': {
                         'email': from_email.get('email', ''),
                         'name': from_email.get('name') or from_email.get('email', '').split('@')[0].replace('.', ' ').title()
                     },
                     'date': email.get('date', ''),
                     'content': {
-                        'html': "",  # Initially empty, will be populated when content is fetched
-                        'text': ""   # Initially empty, will be populated when content is fetched
+                        'html': "",  # Empty until user requests summarization
+                        'text': ""   # Empty until user requests summarization
                     },
                     'metadata': {
                         'source': 'VEYRA',
@@ -1008,9 +1098,9 @@ def load_more_emails():
                         'is_read': email.get('is_read', False),
                         'size': email.get('size')
                     },
-                    'attachments': email.get('attachments', []),
-                    'cc': email.get('cc', []),
-                    'bcc': email.get('bcc', []),
+                    'attachments': email.get('attachments', [])[:10],  # Limit attachments
+                    'cc': email.get('cc', [])[:50],  # Limit CC recipients
+                    'bcc': email.get('bcc', [])[:50],  # Limit BCC recipients
                     'reply_to': email.get('reply_to'),
                     'to_emails': [
                         {
@@ -1019,10 +1109,11 @@ def load_more_emails():
                         }
                         for recipient in (email.get('to', []) or [])
                         if recipient and recipient.get('email')
-                    ],
+                    ][:50],  # Limit TO recipients
                     'created_at': int(time.time()),
                     'updated_at': int(time.time())
                 }
+                
                 try:
                     # Use email_id as the unique identifier for upsert
                     emails_collection.update_one(
@@ -1033,8 +1124,8 @@ def load_more_emails():
                     new_email_ids.append(email['id'])
                 except Exception as e:
                     print(f"Error saving email {email['id']}: {str(e)}")
-                    print(f"Problematic email data: {json.dumps(formatted_email)}")
-                    raise
+                    print(f"Problematic email data: {json.dumps(formatted_email)[:1000]}")
+                    raise e
         # Update the Conversation document in MongoDB
         update_operations = {
             '$push': {'veyra_results.emails': {'$each': new_email_ids}},
@@ -1051,8 +1142,13 @@ def load_more_emails():
         has_more_after_this_load = (new_offset_used + new_limit_used) < new_total_available
         # Fetch full email objects for response
         full_new_emails = list(emails_collection.find({'email_id': {'$in': new_email_ids}})) if new_email_ids else []
+
+        # Sort the newly fetched emails by date, newest first
+        full_new_emails.sort(key=lambda e: parse_email_date(e.get('date')), reverse=True)
+        print(f"[DEBUG] Sorted {len(full_new_emails)} new email(s) by date.")
+
         response_payload = {
-            "new_emails": full_new_emails,
+            "new_emails": [convert_objectid_to_str(e) for e in full_new_emails],
             "current_offset": new_offset_used,
             "limit_per_page": new_limit_used,
             "total_emails_available": new_total_available,

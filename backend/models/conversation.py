@@ -1,6 +1,9 @@
 from datetime import datetime
 from utils.mongo_client import get_collection, get_db
 from config.mongo_config import CONVERSATIONS_COLLECTION
+from models.email import Email
+from services.veyrax_service import VeyraXService
+from utils.date_parser import parse_email_date
 import time
 import uuid
 import json
