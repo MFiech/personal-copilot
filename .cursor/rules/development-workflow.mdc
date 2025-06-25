@@ -1,3 +1,8 @@
+---
+description: Everytime I ask to push new changes to the repository, obey the below rules.
+globs: 
+alwaysApply: false
+---
 # How do we start working on a new feature?
     1. If you're on other feature branch, stage the changes and checkout to main.
     2. Pull the newest version of main.
