@@ -1,11 +1,15 @@
 import React, { useState } from 'react';
 import ToolTile from './ToolTile';
 import SelectionControlPanel from './SelectionControlPanel';
+import TipsAndUpdatesOutlinedIcon from '@mui/icons-material/TipsAndUpdatesOutlined';
+import OpenInFullOutlinedIcon from '@mui/icons-material/OpenInFullOutlined';
+import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import './VeyraResults.css'; // Import the original styling
 
 const ToolResults = ({ results, threadId, messageId, onUpdate, ...paginationProps }) => {
   const [selectedEmails, setSelectedEmails] = useState([]);
   const [selectedEvents, setSelectedEvents] = useState([]);
+  const [hoveredEmailId, setHoveredEmailId] = useState(null);
 
   if (!results || (!results.emails && !results.calendar_events)) {
     console.log('[ToolResults] No results to display');
@@ -58,29 +62,144 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, ...paginationProp
     // TODO: Implement summarization functionality
   };
 
+  const handleMasterCheckboxChange = () => {
+    if (selectedEmails.length === emails.length) {
+      handleDeselectAllEmails();
+    } else {
+      handleSelectAllEmails();
+    }
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return '';
+    try {
+      const date = new Date(dateString);
+      const now = new Date();
+      const diffTime = Math.abs(now - date);
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      if (diffDays === 1) {
+        return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+      } else if (diffDays <= 7) {
+        return date.toLocaleDateString('en-US', { weekday: 'short' });
+      } else {
+        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      }
+    } catch (error) {
+      return dateString;
+    }
+  };
+
   const totalSelected = selectedEmails.length + selectedEvents.length;
 
   return (
     <>
-      <div className="veyra-results">
+      <div className="gmail-email-list">
         {emails && emails.length > 0 && (
-          <div className="veyra-section">
-            <h2>Emails ({emails.length})</h2>
-            <div className="veyra-grid">
-              {emails.map((email, index) => (
-                <ToolTile 
-                  key={email.email_id || email._id || index}
-                  type="email"
-                  data={email} 
-                  threadId={threadId}
-                  messageId={messageId}
-                  onDelete={handleEmailDeleted}
-                  isSelected={selectedEmails.includes(email.email_id || email._id)}
-                  onSelect={() => handleEmailSelection(email.email_id || email._id)}
-                  showCheckbox={true}
+          <div className="email-table">
+            {/* Action row - always visible with consistent height */}
+            <div className="email-action-row">
+              <div className="email-checkbox-cell">
+                <input
+                  type="checkbox"
+                  className="email-checkbox"
+                  checked={selectedEmails.length === emails.length && emails.length > 0}
+                  onChange={handleMasterCheckboxChange}
                 />
-              ))}
+              </div>
+              <div className="email-action-spacer"></div>
+              <div className="email-actions">
+                {selectedEmails.length > 0 && (
+                  <>
+                    <button onClick={handleSummarizeEmails} className="action-text-btn summarize-text-btn">
+                      SUMMARIZE
+                    </button>
+                    <button onClick={handleBulkDeleteEmails} className="action-text-btn delete-text-btn">
+                      DELETE
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
+            
+            {/* Email rows */}
+            {emails.map((email, index) => {
+              const emailId = email.email_id || email._id;
+              const isSelected = selectedEmails.includes(emailId);
+              const isHovered = hoveredEmailId === emailId;
+              const fromName = email.from_email?.name || email.from?.name || 'Unknown Sender';
+              const subject = email.subject || 'No Subject';
+              const date = formatDate(email.date);
+              
+              return (
+                <div 
+                  key={emailId || index}
+                  className={`email-row ${isSelected ? 'selected' : ''}`}
+                  onClick={() => handleEmailSelection(emailId)}
+                  onMouseEnter={() => setHoveredEmailId(emailId)}
+                  onMouseLeave={() => setHoveredEmailId(null)}
+                >
+                  <div className="email-checkbox-cell">
+                    <input
+                      type="checkbox"
+                      className="email-checkbox"
+                      checked={isSelected}
+                      onChange={() => handleEmailSelection(emailId)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+                  <div className="email-from" title={fromName}>
+                    {fromName}
+                  </div>
+                  <div className="email-subject" title={subject}>
+                    {subject}
+                  </div>
+                  <div className="email-date-actions">
+                    {isHovered ? (
+                      <div className="email-hover-icons">
+                        <button 
+                          className="hover-icon-btn summarize-hover-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            console.log('Summarize single email:', emailId);
+                            // TODO: Implement single email summarize
+                          }}
+                          title="Summarize"
+                        >
+                          <TipsAndUpdatesOutlinedIcon />
+                        </button>
+                        <button 
+                          className="hover-icon-btn open-hover-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            console.log('Open email:', emailId);
+                            // TODO: Implement email opening
+                          }}
+                          title="Open"
+                        >
+                          <OpenInFullOutlinedIcon />
+                        </button>
+                        <button 
+                          className="hover-icon-btn delete-hover-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            console.log('Delete single email:', emailId);
+                            // TODO: Implement single email delete
+                          }}
+                          title="Delete"
+                        >
+                          <DeleteOutlinedIcon />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="email-date">
+                        {date}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
         
@@ -111,19 +230,6 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, ...paginationProp
           </div>
         )}
       </div>
-
-      {totalSelected > 0 && (
-        <SelectionControlPanel
-          selectedCount={totalSelected}
-          onSelectAll={handleSelectAllEmails}
-          onDeselectAll={() => {
-            handleDeselectAllEmails();
-            setSelectedEvents([]);
-          }}
-          onSummarize={handleSummarizeEmails}
-          onDelete={handleBulkDeleteEmails}
-        />
-      )}
     </>
   );
 };

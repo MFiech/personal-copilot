@@ -24,6 +24,329 @@
   gap: 16px;
 }
 
+/* Gmail-style email list styles */
+.gmail-email-list {
+  background-color: transparent;
+  border-radius: 8px;
+  margin-top: 8px;
+  max-width: 100%;
+}
+
+.email-table {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background-color: #ffffff;
+  overflow: hidden;
+}
+
+.email-action-row {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #e0e0e0;
+  min-height: 48px;
+  height: 48px; /* Fixed height to prevent jumping */
+}
+
+.email-action-row .email-checkbox-cell {
+  width: 40px;
+  flex-shrink: 0;
+}
+
+.email-action-spacer {
+  flex: 1; /* Takes up all available space, pushing actions to the right */
+}
+
+.email-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0; /* Prevent shrinking */
+  justify-content: flex-end; /* Align actions to the right */
+}
+
+.action-btn {
+  background: #1976d2;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.action-btn:hover {
+  background: #1565c0;
+}
+
+.action-btn.delete-btn {
+  background: #d32f2f;
+}
+
+.action-btn.delete-btn:hover {
+  background: #c62828;
+}
+
+.action-btn.summarize-btn {
+  background: #388e3c;
+}
+
+.action-btn.summarize-btn:hover {
+  background: #2e7d32;
+}
+
+/* Text button styles for more compact action buttons */
+.action-text-btn {
+  background: none;
+  border: none;
+  color: #666;
+  font-size: 12px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+}
+
+.action-text-btn:hover {
+  background-color: #f0f0f0;
+  color: #333;
+}
+
+.action-text-btn.delete-text-btn:hover {
+  background-color: #ffebee;
+  color: #d32f2f;
+}
+
+.action-text-btn.summarize-text-btn:hover {
+  background-color: #e8f5e8;
+  color: #388e3c;
+}
+
+.email-row {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f0f0;
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+  min-height: 48px;
+}
+
+.email-row:hover {
+  background-color: #f8f9fa;
+}
+
+.email-row.selected {
+  background-color: #e3f2fd;
+}
+
+.email-row:last-child {
+  border-bottom: none;
+}
+
+.email-checkbox-cell {
+  width: 40px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.email-checkbox {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #1976d2;
+  border-radius: 3px;
+  cursor: pointer;
+  accent-color: #1976d2;
+}
+
+.email-from {
+  width: 200px;
+  flex-shrink: 0;
+  font-weight: 500;
+  font-size: 14px;
+  color: #333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 16px;
+}
+
+.email-subject {
+  flex: 1;
+  font-size: 14px;
+  color: #333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 16px;
+}
+
+.email-date-actions {
+  width: 80px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.email-date {
+  font-size: 13px;
+  color: #666;
+  text-align: right;
+  width: 100%;
+}
+
+.email-hover-icons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.hover-icon-btn {
+  background: none;
+  border: 1px solid #ccc;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  color: #666;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+}
+
+.hover-icon-btn svg {
+  font-size: 14px;
+  width: 14px;
+  height: 14px;
+}
+
+.hover-icon-btn:hover {
+  background-color: #f0f0f0;
+  border-color: #999;
+  color: #333;
+}
+
+.hover-icon-btn.summarize-hover-btn:hover {
+  background-color: #e8f5e8;
+  border-color: #388e3c;
+  color: #388e3c;
+}
+
+.hover-icon-btn.open-hover-btn:hover {
+  background-color: #e3f2fd;
+  border-color: #1976d2;
+  color: #1976d2;
+}
+
+.hover-icon-btn.delete-hover-btn:hover {
+  background-color: #ffebee;
+  border-color: #d32f2f;
+  color: #d32f2f;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .email-from {
+    width: 120px;
+  }
+  
+  .email-date-actions {
+    width: 60px;
+  }
+  
+  .email-date {
+    font-size: 12px;
+  }
+  
+  .hover-icon-btn {
+    width: 22px;
+    height: 22px;
+  }
+  
+  .hover-icon-btn svg {
+    font-size: 12px;
+    width: 12px;
+    height: 12px;
+  }
+  
+  .email-hover-icons {
+    gap: 6px;
+  }
+  
+  .email-row {
+    padding: 10px 12px;
+  }
+  
+  .email-action-row {
+    padding: 10px 12px;
+  }
+  
+  .action-btn {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+  
+  .action-text-btn {
+    padding: 3px 6px;
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 600px) {
+  .email-from {
+    width: 100px;
+  }
+  
+  .email-actions {
+    gap: 8px;
+  }
+  
+  .action-btn {
+    padding: 4px 6px;
+    font-size: 11px;
+  }
+  
+  .action-text-btn {
+    padding: 2px 4px;
+    font-size: 10px;
+  }
+  
+  .email-date-actions {
+    width: 50px;
+  }
+  
+  .hover-icon-btn {
+    width: 20px;
+    height: 20px;
+  }
+  
+  .hover-icon-btn svg {
+    font-size: 11px;
+    width: 11px;
+    height: 11px;
+  }
+  
+  .email-hover-icons {
+    gap: 4px;
+  }
+}
+
+/* Original responsive styles for backward compatibility */
 @media (max-width: 600px) {
   .veyra-results {
     grid-template-columns: 1fr;
@@ -38,17 +361,7 @@
   }
 }
 
-/* REMOVE ENTIRE .calendar-event-card block if its only purpose was hover/transition
-.calendar-event-card {
-  transition: all 0.2s ease-in-out;
-}
-
-.calendar-event-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1) !important;
-}
-*/
-
+/* Original calendar styles for backward compatibility */
 .event-time {
   display: flex;
   align-items: center;
