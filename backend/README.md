@@ -1,125 +1,49 @@
-# PM Co-Pilot Backend
+# Backend
 
-Backend for PM Co-Pilot application with VeyraX integration for Gmail and Google Calendar.
+Backend for PM Co-Pilot application with Composio integration for Gmail and Google Calendar.
 
-## Prerequisites
+## Features
 
-- **MongoDB**: 7.0+ (install via Homebrew: `brew install mongodb-community@7.0`)
-- **Python**: 3.11+ (recommended: 3.13)
-- **Virtual Environment**: Required for dependency management
+- Flask server to handle API requests
+- LangChain for LLM interactions (Anthropic Claude & Google Gemini)
+- Pinecone for vector storage and retrieval (RAG)
+- MongoDB for storing conversation history and insights
+- Composio for connecting to external tools like Gmail and Google Calendar
 
 ## Setup
 
-### 1. Install MongoDB
+1.  **Activate Virtual Environment**:
+    Make sure you have activated the Python virtual environment created in the root setup.
+    ```bash
+    source myenv/bin/activate
+    ```
 
-```bash
-# Install MongoDB via Homebrew
-brew tap mongodb/brew
-brew install mongodb-community@7.0
+2.  **Environment Variables**:
+    Create a `.env` file in this directory and add your API keys:
+    ```
+    PINECONE_API_TOKEN=your_pinecone_api_key
+    OPENAI_API_KEY=your_openai_api_key
+    ANTHROPIC_API_KEY=your_anthropic_api_key
+    GOOGLE_API_KEY=your_google_api_key # For Gemini summarization
+    ```
 
-# Start MongoDB service
-brew services start mongodb/brew/mongodb-community@7.0
+3.  **Run the Server**:
+    ```bash
+    python app.py
+    ```
+    The server will start on `http://localhost:5001`.
 
-# Verify MongoDB is running
-mongosh --eval "db.runCommand('ping')"
-```
+## Composio Integration
 
-### 2. Setup Python Environment
+The application uses Composio to access Gmail and Google Calendar data when the user requests it. The integration works by:
 
-```bash
-# Create virtual environment (from project root)
-python3 -m venv myenv
+1.  Initializing the `ComposioService`.
+2.  Using the service to process natural language queries related to emails or calendar events.
+3.  The service calls the appropriate Composio tools (e.g., `GMAIL_SEARCH_EMAILS`, `GOOGLECALENDAR_GET_EVENTS`).
+4.  The results are then formatted and passed to the LLM to generate a response.
 
-# Activate virtual environment
-source myenv/bin/activate
+To use the Composio integration, ensure you have connected your GMail and Google Calendar accounts in the Composio dashboard and have the server IDs correctly configured in `composio_service.py`.
 
-# Install dependencies
-pip install -r requirements.txt
-```
+## Mock Service
 
-### 3. Configure Environment Variables
-
-Create a `.env` file in the `backend` directory:
-
-```
-PINECONE_API_TOKEN=your_pinecone_api_key
-OPENAI_API_KEY=your_openai_api_key
-ANTHROPIC_API_KEY=your_anthropic_api_key
-VEYRAX_API_KEY=your_veyrax_api_key  # Optional
-```
-
-## VeyraX Integration
-
-The application uses VeyraX to access Gmail and Google Calendar data when the user requests it. The integration works by:
-
-1. Using LLM-based intent detection to identify when users ask for email or calendar data
-2. Requesting user confirmation before accessing their data
-3. Using VeyraX API to fetch the requested data
-4. Presenting the formatted data to the user
-
-### Setup
-
-To use the VeyraX integration:
-
-1. Get a VeyraX API key from your account
-2. Add it to the `.env` file as `VEYRAX_API_KEY=your-key-here`
-3. Connect your Gmail and Google Calendar accounts in the VeyraX dashboard
-4. Ensure `USE_MOCK_VEYRAX` is set to `False` in `app.py`
-
-### Troubleshooting
-
-If you encounter authentication errors:
-
-1. Run the test script to check your VeyraX connection:
-   ```
-   python scripts/test_veyrax_status.py
-   ```
-
-2. Common issues:
-   - **"Invalid authentication"**: Your Gmail or Calendar accounts are not properly connected in VeyraX
-   - **"404 Not Found"**: The endpoint or service doesn't exist or is unavailable in your VeyraX plan
-   - **"500 Server Error"**: VeyraX encountered an internal error when trying to access your data
-
-3. Resolution steps:
-   - Check that your VeyraX API key is correct
-   - Log in to VeyraX dashboard
-   - Go to Connections/Integrations section
-   - Connect or reconnect your Gmail and Google Calendar accounts
-   - Make sure you've granted the necessary permissions
-
-### Using Mock Mode
-
-If you're developing without VeyraX access or encounter persistent issues:
-
-1. Set `USE_MOCK_VEYRAX = True` in `app.py` to use mock data
-2. The mock service will generate realistic fake email and calendar data for testing
-3. This allows you to develop and test the application UI without real data access
-
-## Running the Application
-
-**Important**: Always activate the virtual environment before running the backend.
-
-```bash
-# Activate virtual environment
-source myenv/bin/activate
-
-# Start the backend server
-python3 app.py
-```
-
-The server will be available at http://localhost:5001
-
-## Troubleshooting
-
-### Common Issues
-
-1. **"ModuleNotFoundError: No module named 'flask'"**
-   - Make sure you've activated the virtual environment: `source myenv/bin/activate`
-   - Verify you're using the correct Python: `which python3` should point to `myenv/bin/python3`
-
-2. **MongoDB Connection Error**
-   - Ensure MongoDB is running: `brew services start mongodb/brew/mongodb-community@7.0`
-   - Test connection: `mongosh --eval "db.runCommand('ping')"`
-
-3. **Dependency Conflicts**
-   - If you encounter langchain version conflicts, the requirements.txt uses unpinned versions to resolve this automatically 
+For development without live tool access, you can adapt the `ComposioService` to return mock data. This can be done by modifying the methods in `composio_service.py` to return static JSON responses instead of making live API calls. 

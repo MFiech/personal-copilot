@@ -13,8 +13,7 @@ from langchain.memory import ConversationBufferMemory
 from pinecone import Pinecone
 import anthropic
 import uuid
-from services.veyrax_service import VeyraXService
-from services.mock_veyrax_service import MockVeyraXService
+from services.composio_service import ComposioService
 import re
 import time
 import requests
@@ -27,6 +26,7 @@ from prompts import email_summarization_prompt
 from bson import ObjectId
 from models.email import Email
 from utils.date_parser import parse_email_date
+from pydantic import SecretStr
 
 app = Flask(__name__)
 CORS(app, resources={
@@ -42,8 +42,8 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'))
 pinecone_api_key = os.getenv("PINECONE_API_TOKEN")
 openai_api_key = os.getenv("OPENAI_API_KEY")
 anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-veyrax_api_key = os.getenv("VEYRAX_API_KEY")
 google_api_key = os.getenv("GOOGLE_API_KEY")
+composio_api_key = os.getenv("COMPOSIO_API_KEY")
 
 if not all([pinecone_api_key, openai_api_key, anthropic_api_key]):
     # Keep google_api_key optional for now, only required if summarization is used with Gemini
@@ -54,40 +54,22 @@ if not all([pinecone_api_key, openai_api_key, anthropic_api_key]):
 db = get_db()
 init_collections(db)
 
-# Initialize VeyraX service (if API key is available)
-veyrax_service = None
-USE_MOCK_VEYRAX = False  # Keep using the real VeyraX service
-
-if USE_MOCK_VEYRAX:
-    veyrax_service = MockVeyraXService(api_key=veyrax_api_key)
-    print("Using mock VeyraX service")
-elif veyrax_api_key:
-    try:
-        veyrax_service = VeyraXService(api_key=veyrax_api_key)
-        # Test the connection
-        if veyrax_service.check_auth():
-            print("VeyraX service initialized and authenticated successfully")
-        else:
-            print("Warning: VeyraX service initialized but authentication failed")
-            USE_MOCK_VEYRAX = True
-            veyrax_service = MockVeyraXService(api_key=veyrax_api_key)
-            print("Falling back to mock service")
-    except Exception as e:
-        print(f"Warning: Failed to initialize VeyraX service: {e}")
-        print("Falling back to mock service")
-        USE_MOCK_VEYRAX = True
-        veyrax_service = MockVeyraXService(api_key=veyrax_api_key)
-else:
-    print("Warning: No VeyraX API key found. Using mock service.")
-    USE_MOCK_VEYRAX = True
-    veyrax_service = MockVeyraXService(api_key=None)
+# Initialize Composio service
+try:
+    if not composio_api_key:
+        raise ValueError("COMPOSIO_API_KEY not found in .env file. Please add it.")
+    tooling_service = ComposioService(api_key=composio_api_key)
+    print("Composio service initialized successfully")
+except Exception as e:
+    print(f"FATAL: Failed to initialize Composio service: {e}")
+    tooling_service = None
 
 pc = Pinecone(api_key=pinecone_api_key)
 index_name = "personal"  # Changed from "alohacamp" to "personal"
 index = pc.Index(index_name)
 
 # Initialize embeddings with text-embedding-3-large
-embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=openai_api_key)
+embeddings = OpenAIEmbeddings(model="text-embedding-3-large", api_key=SecretStr(openai_api_key) if openai_api_key else None)
 
 # Set up a single vectorstore with the saved_insights namespace
 vectorstore = PineconeVectorStore(
@@ -136,7 +118,7 @@ def convert_objectid_to_str(obj):
         return [convert_objectid_to_str(item) for item in obj]
     return obj
 
-def build_prompt(query, retrieved_docs, thread_history=None, veyrax_context=None):
+def build_prompt(query, retrieved_docs, thread_history=None, tool_context=None):
     print("=== BUILD_PROMPT FUNCTION CALLED ===")
     prompt_parts = []
     insight_id = None
@@ -144,7 +126,7 @@ def build_prompt(query, retrieved_docs, thread_history=None, veyrax_context=None
     # Debug logging
     print(f"[DEBUG] build_prompt called with:")
     print(f"  - query: {query}")
-    print(f"  - veyrax_context: {json.dumps(veyrax_context, indent=2) if veyrax_context else 'None'}")
+    # print(f"  - tool_context: {json.dumps(tool_context, indent=2) if tool_context else 'None'}")
     print(f"  - retrieved_docs count: {len(retrieved_docs) if retrieved_docs else 0}")
 
     # Add current date and time
@@ -189,18 +171,18 @@ When responding to calendar-related queries:
 
 For non-email and non-calendar queries, provide a helpful response based on the retrieved context when available. If no relevant context is found, provide a helpful response based on your knowledge.""")
     
-    # Add VeyraX context if provided
-    if veyrax_context:
+    # Add Tooling context if provided
+    if tool_context:
         prompt_parts.append("\nExternal Data Sources:")
-        if "source_type" in veyrax_context:
-            if veyrax_context["source_type"] == "mail" or veyrax_context["source_type"] == "gmail":
-                messages = veyrax_context.get("data", {}).get("messages", [])
+        if "source_type" in tool_context:
+            if tool_context["source_type"] == "mail" or tool_context["source_type"] == "gmail":
+                messages = tool_context.get("data", {}).get("messages", [])
                 prompt_parts.append(f"Email data available: {len(messages)} messages found")
                 print(f"[DEBUG] Added to prompt: Email data available: {len(messages)} messages found")
                 print(f"[DEBUG] messages type: {type(messages)}")
                 print(f"[DEBUG] messages content: {json.dumps(messages, indent=2)[:500] if messages else 'None'}")
                 print(f"[DEBUG] messages truthy check: {bool(messages)}")
-            elif veyrax_context["source_type"] == "google-calendar":
+            elif tool_context["source_type"] == "google-calendar":
                 prompt_parts.append("Calendar data available")
                 print(f"[DEBUG] Added to prompt: Calendar data available")
         prompt_parts.append("\n")
@@ -225,7 +207,7 @@ For non-email and non-calendar queries, provide a helpful response based on the 
     prompt_parts.append(f"\nUser Query: {query}\n\nResponse:")
     
     final_prompt = "\n\n".join(prompt_parts)
-    print(f"[DEBUG] Final prompt (first 1000 chars): {final_prompt[:1000]}")
+    # print(f"[DEBUG] Final prompt (first 1000 chars): {final_prompt[:1000]}")
     
     return final_prompt, insight_id
 
@@ -266,108 +248,191 @@ def chat():
                     thread_history.append({"role": "user", "content": msg['query']})
                     thread_history.append({"role": "assistant", "content": msg['response']})
         print(f"Thread history length: {len(thread_history)}")
-        veyra_results = None
-        veyra_context = None
-        veyra_pagination = {}
-        if veyrax_service:
-            try:
-                print("\n=== Processing VeyraX Query ===")
-                print(f"Using VeyraX service: {type(veyrax_service).__name__}")
-                veyrax_data = veyrax_service.process_query(query, thread_history)
-                print(f"[DEBUG] Raw veyrax_data from service: {json.dumps(veyrax_data, indent=2)[:1000]}")
-                if veyrax_data:
-                    source_type = veyrax_data.get("source_type", "")
-                    print(f"VeyraX source type: {source_type}")
-                    if source_type in ["mail", "gmail"]:
-                        data = veyrax_data.get("data", {})
-                        messages = data.get("messages", [])
-                        print(f"VeyraX messages found: {len(messages) if messages else 0}")
-                        print(f"[DEBUG] messages type: {type(messages)}")
-                        print(f"[DEBUG] messages content: {json.dumps(messages, indent=2)[:500] if messages else 'None'}")
-                        print(f"[DEBUG] messages truthy check: {bool(messages)}")
-                        
-                        # Always set veyra_context when emails are found, regardless of messages array
-                        veyra_context = veyrax_data
-                        print(f"[DEBUG] veyra_context set to: {json.dumps(veyra_context, indent=2)[:500]}")
-                        
-                        if messages:
-                            # --- Save emails to the new emails collection ---
-                            for message in messages:
-                                # Process to_emails to ensure each recipient has both email and name
-                                to_emails = []
-                                for recipient in message.get("to", []):
-                                    if isinstance(recipient, dict):
-                                        email = recipient.get("email", "")
-                                        name = recipient.get("name")
-                                        if name is None:
-                                            # If name is None, use the email username as the name
-                                            name = email.split("@")[0].replace(".", " ").replace("_", " ").title()
-                                        to_emails.append({"email": email, "name": name})
-                                    elif isinstance(recipient, str):
-                                        # If it's just an email string, create a proper recipient object
-                                        email = recipient
-                                        name = email.split("@")[0].replace(".", " ").replace("_", " ").title()
-                                        to_emails.append({"email": email, "name": name})
 
-                                email = Email(
-                                    email_id=message.get("id", "").strip(),  # Strip whitespace from email ID
+        # Initialize variables for tooling results
+        raw_tool_results = None
+        assistant_tool_results = None
+        raw_email_list = None
+
+        if tooling_service:
+            print(f"[DEBUG] Tooling service is available, starting processing...")
+            try:
+                print("\n=== Processing Tooling Query ===")
+                print(f"Using Tooling service: {type(tooling_service).__name__}")
+                print(f"[DEBUG] About to call tooling_service.process_query...")
+                raw_tool_results = tooling_service.process_query(query, thread_history)
+                print(f"[DEBUG] tooling_service.process_query completed successfully")
+                print(f"[DEBUG] Raw data from service assigned to raw_tool_results: {json.dumps(raw_tool_results, indent=2)[:1000]}")
+                print(f"[DEBUG] raw_tool_results type: {type(raw_tool_results)}")
+                print(f"[DEBUG] raw_tool_results keys: {list(raw_tool_results.keys()) if isinstance(raw_tool_results, dict) else 'N/A'}")
+                print(f"[DEBUG] raw_tool_results source_type: {raw_tool_results.get('source_type') if isinstance(raw_tool_results, dict) else 'N/A'}")
+                print(f"[DEBUG] raw_tool_results truthy check: {bool(raw_tool_results)}")
+                
+                tool_output = raw_tool_results.get('data', {}) if isinstance(raw_tool_results, dict) else {}
+
+                # Check if the results are emails and transform them into the structure our Conversation model expects.
+                if tool_output and tool_output.get("messages"):
+                    print(f"[DEBUG] Processing mail results from tool_output...")
+                    messages_data = tool_output.get("messages")
+                    print(f"[DEBUG] messages_data type: {type(messages_data)}")
+                    print(f"[DEBUG] messages_data keys: {list(messages_data.keys()) if isinstance(messages_data, dict) else 'N/A'}")
+                    print(f"[DEBUG] messages_data content: {json.dumps(messages_data, indent=2)[:500] if messages_data else 'None'}")
+                    
+                    if isinstance(messages_data, dict):
+                        raw_gmail_emails = messages_data.get("messages", [])
+                        print(f"[DEBUG] Extracted raw Gmail emails from nested dict: {len(raw_gmail_emails) if raw_gmail_emails else 0}")
+                    elif isinstance(messages_data, list):
+                        raw_gmail_emails = messages_data
+                        print(f"[DEBUG] messages_data is already a list: {len(raw_gmail_emails)}")
+                    else:
+                        print(f"[DEBUG] messages_data is neither dict nor list: {type(messages_data)}")
+                        raw_gmail_emails = []
+
+                    if raw_gmail_emails is not None and len(raw_gmail_emails) > 0:
+                        print(f"[DEBUG] Processing {len(raw_gmail_emails)} raw Gmail emails...")
+                        
+                        # Process each raw Gmail email and create Email model instances
+                        processed_emails = []
+                        email_ids_for_conversation = []
+                        
+                        for composio_email in raw_gmail_emails:
+                            try:
+                                # Extract data from Composio response format
+                                email_id = composio_email.get('messageId', str(uuid.uuid4()))
+                                
+                                # Extract available fields from Composio format
+                                message_text = composio_email.get('messageText', '')
+                                label_ids = composio_email.get('labelIds', [])
+                                attachment_list = composio_email.get('attachmentList', [])
+                                
+                                # Extract actual email metadata from Composio fields
+                                subject = composio_email.get('subject', f"Email {email_id[:8]}")
+                                sender_raw = composio_email.get('sender', '')
+                                to_raw = composio_email.get('to', '')
+                                date_timestamp = composio_email.get('messageTimestamp', '')
+                                
+                                # Parse sender information
+                                from_email = {'email': 'unknown@unknown.com', 'name': 'Unknown Sender'}
+                                if sender_raw:
+                                    # Parse format like '"Michał Fiech" <michal.fiech@gmail.com>' or just 'email@domain.com'
+                                    import re
+                                    email_match = re.search(r'<([^>]+)>', sender_raw)
+                                    name_match = re.search(r'"([^"]+)"', sender_raw)
+                                    
+                                    if email_match:
+                                        email_addr = email_match.group(1)
+                                        name = name_match.group(1) if name_match else email_addr.split('@')[0]
+                                        from_email = {'email': email_addr, 'name': name}
+                                    elif '@' in sender_raw:
+                                        # Just an email address
+                                        from_email = {'email': sender_raw.strip(), 'name': sender_raw.split('@')[0]}
+                                
+                                # Parse recipient information
+                                to_emails = [{'email': 'unknown@unknown.com', 'name': 'Unknown Recipient'}]
+                                if to_raw:
+                                    # Parse format like 'Przemyslaw Dyrda <p.dyrda@kropidlowscy.com>'
+                                    email_match = re.search(r'<([^>]+)>', to_raw)
+                                    name_match = re.search(r'^([^<]+)', to_raw)
+                                    
+                                    if email_match:
+                                        email_addr = email_match.group(1)
+                                        name = name_match.group(1).strip() if name_match else email_addr.split('@')[0]
+                                        to_emails = [{'email': email_addr, 'name': name}]
+                                    elif '@' in to_raw:
+                                        # Just an email address
+                                        to_emails = [{'email': to_raw.strip(), 'name': to_raw.split('@')[0]}]
+                                
+                                # Parse date from timestamp
+                                date_header = date_timestamp if date_timestamp else 'Unknown Date'
+                                
+                                # Get email content
+                                content = {
+                                    'text': message_text[:500] + '...' if len(message_text) > 500 else message_text,
+                                    'html': ''
+                                }
+                                
+                                # Create Email model instance
+                                email_doc = Email(
+                                    email_id=email_id,
                                     thread_id=thread_id,
-                                    subject=message.get("subject", "")[:1000],  # Truncate subject if too long
-                                    from_email=message.get("from_email"),
-                                    to_emails=to_emails[:50],  # Limit TO recipients
-                                    date=message.get("date"),
-                                    content={
-                                        "html": "",  # Empty until user requests summarization
-                                        "text": ""   # Empty until user requests summarization
-                                    },
+                                    subject=subject,
+                                    from_email=from_email,
+                                    to_emails=to_emails,
+                                    date=date_header,
+                                    content=content,
                                     metadata={
-                                        "source": "VEYRA",
-                                        "folder": message.get("folder"),
-                                        "is_read": message.get("is_read", False),
-                                        "size": message.get("size"),
-                                        "attachments": message.get("attachments", [])[:10],  # Limit attachments
-                                        "cc": message.get("cc", [])[:50],  # Limit CC recipients
-                                        "bcc": message.get("bcc", [])[:50],  # Limit BCC recipients
-                                        "reply_to": message.get("reply_to")
+                                        'source': 'COMPOSIO',
+                                        'label_ids': label_ids,
+                                        'attachment_count': len(attachment_list),
+                                        'thread_id': composio_email.get('threadId', ''),
+                                        'timestamp': date_timestamp
                                     }
                                 )
-                                try:
-                                    email.save()
-                                except Exception as e:
-                                    if "document too large" in str(e).lower():
-                                        print(f"[WARNING] Email document too large, skipping: {message.get('id', 'unknown')}")
-                                        continue
-                                    else:
-                                        raise e
-                            veyra_results = {"emails": messages}
-                            print(f"[DEBUG] Inside if messages block - veyra_results set to: {json.dumps(veyra_results, indent=2)[:500]}")
-                        else:
-                            # Even if no messages, set veyra_results to indicate emails were searched
-                            veyra_results = {"emails": []}
-                            print(f"[DEBUG] No messages found - veyra_results set to empty array")
+                                
+                                # Save to database
+                                email_doc.save()
+                                print(f"[DEBUG] Saved email to database: {email_id} - Subject: {subject[:50]}")
+                                
+                                # Create a dict representation for frontend/LLM use
+                                email_dict = {
+                                    'id': email_id,
+                                    'subject': subject,
+                                    'from_email': from_email,
+                                    'to_emails': to_emails,
+                                    'date': date_header,
+                                    'content': content,
+                                    'metadata': email_doc.metadata,
+                                    'message_text': message_text  # Include full text for LLM
+                                }
+                                
+                                processed_emails.append(email_dict)
+                                email_ids_for_conversation.append(email_id)
+                                
+                            except Exception as e:
+                                print(f"[DEBUG] Error processing Composio email {composio_email.get('messageId', 'unknown')}: {str(e)}")
+                                import traceback
+                                print(f"[DEBUG] Traceback: {traceback.format_exc()}")
+                                continue
                         
-                        # Extract pagination info
-                        veyra_pagination = {
-                            "veyra_original_query_params": data.get("original_query_params"),
-                            "veyra_current_offset": data.get("offset_used"),
-                            "veyra_limit_per_page": data.get("limit_used"),
-                            "veyra_total_emails_available": data.get("total_available"),
-                            "veyra_has_more": (data.get("offset_used", 0) + data.get("limit_used", 10)) < data.get("total_available", 0)
+                        # Set the variables for use in the rest of the function
+                        raw_email_list = processed_emails  # For frontend response
+                        assistant_tool_results = {
+                            "source_type": "mail",
+                            "emails": email_ids_for_conversation  # Only IDs for conversation storage
                         }
-                        print(f"[DEBUG] veyra_pagination: {json.dumps(veyra_pagination, indent=2)}")
-                    elif source_type == "google-calendar":
-                        events = veyrax_data.get("data", {}).get("events", [])
-                        print(f"VeyraX calendar events found: {len(events) if events else 0}")
-                        if events:
-                            veyra_results = {"calendar_events": events}
-                            veyra_context = veyrax_data
-                print(f"[DEBUG] veyra_results after processing veyrax_data: {json.dumps(veyra_results, indent=2)[:1000]}")
+                        print(f"[DEBUG] Processed {len(processed_emails)} emails. Created {len(email_ids_for_conversation)} email IDs for conversation.")
+                    else:
+                        print(f"[DEBUG] No emails extracted. raw_gmail_emails: {raw_gmail_emails}")
+                        raw_email_list = []
+                        assistant_tool_results = {
+                            "source_type": "mail",
+                            "emails": []
+                        }
+                else:
+                    print(f"[DEBUG] Not processing as mail results. source_type: {raw_tool_results.get('source_type') if isinstance(raw_tool_results, dict) else 'N/A'}")
+                    print(f"[DEBUG] raw_tool_results is: {raw_tool_results}")
+
             except Exception as e:
-                print(f"Error processing VeyraX data: {str(e)}")
+                print(f"Error processing Tooling data: {str(e)}")
                 import traceback
                 print(f"Traceback: {traceback.format_exc()}")
         else:
-            print("VeyraX service not initialized")
+            print("Tooling service not initialized")
+
+        # `tool_context` is used for prompt building. We need to provide processed email data to the LLM.
+        tool_context = None
+        if raw_tool_results and raw_tool_results.get('source_type') == 'mail' and raw_email_list:
+            tool_context = {
+                'source_type': 'mail',
+                'data': {
+                    'messages': raw_email_list  # Use processed emails for LLM context
+                }
+            }
+        elif raw_tool_results and raw_tool_results.get('source_type') != 'mail':
+            # For non-email tool results, use the original structure
+            tool_context_data = raw_tool_results.get('data', {}) if isinstance(raw_tool_results, dict) else {}
+            tool_context = tool_context_data if tool_context_data else None
+        
         # Get relevant documents using the retriever
         try:
             result = qa_chain.invoke({"query": query})
@@ -375,15 +440,14 @@ def chat():
         except Exception as e:
             print(f"Error in QA chain: {str(e)}")
             retrieved_docs = []
-        prompt, insight_id = build_prompt(query, retrieved_docs, thread_history, veyra_context)
+        
+        prompt, insight_id = build_prompt(query, retrieved_docs, thread_history, tool_context)
+        
         try:
             print(f"[DEBUG] Calling LLM with prompt...")
-            print(f"[DEBUG] veyra_context being passed to build_prompt: {json.dumps(veyra_context, indent=2) if veyra_context else 'None'}")
-            print(f"[DEBUG] veyra_results: {json.dumps(veyra_results, indent=2) if veyra_results else 'None'}")
-            print(f"[DEBUG] veyra_context source_type: {veyra_context.get('source_type') if veyra_context else 'None'}")
-            print(f"[DEBUG] veyra_context data messages: {len(veyra_context.get('data', {}).get('messages', [])) if veyra_context else 0}")
             response = llm.invoke(prompt)
-            response_text = response.content.strip()
+            response_text = response.content[0] if isinstance(response.content, list) else response.content
+            response_text = response_text.strip() if isinstance(response_text, str) else str(response_text)
             print(f"[DEBUG] LLM response: '{response_text}'")
         except Exception as e:
             if "overloaded_error" in str(e):
@@ -391,89 +455,72 @@ def chat():
                 return jsonify({"error": error_message}), 503
             raise e
 
-        # Step 1: Save the user's message with current timestamp
+        # Step 1: Save the user's message
         print(f"\n=== Saving User Message ===")
         user_message = Conversation(
             thread_id=thread_id,
             role='user',
             content=query,
-            timestamp=current_timestamp  # Use current timestamp for user message
+            timestamp=current_timestamp
         )
         user_message.save()
-        print(f"User message saved. message_id: {user_message.message_id}, role: {user_message.role}, content: {user_message.content[:100]}...")
+        print(f"User message saved. message_id: {user_message.message_id}, role: {user_message.role}, content: {user_message.content[:100] if user_message.content else 'None'}...")
 
-        # Step 2: Save the assistant's message with a timestamp slightly after the user's message
+        # Step 2: Save the assistant's message with the PROCESSED tool results
         print(f"\n=== Saving Assistant Message ===")
         assistant_message = Conversation(
             thread_id=thread_id,
             role='assistant',
             content=response_text,
             insight_id=insight_id,
-            veyra_results=veyra_results,
-            veyra_original_query_params=veyra_pagination.get("veyra_original_query_params"),
-            veyra_current_offset=veyra_pagination.get("veyra_current_offset"),
-            veyra_limit_per_page=veyra_pagination.get("veyra_limit_per_page"),
-            veyra_total_emails_available=veyra_pagination.get("veyra_total_emails_available"),
-            veyra_has_more=veyra_pagination.get("veyra_has_more"),
-            timestamp=current_timestamp + 1  # Ensure assistant message is after user message
+            tool_results=assistant_tool_results, # Pass the correctly structured data
+            timestamp=current_timestamp + 1
         )
-        assistant_message_attributes_for_saving = {
-            "thread_id": assistant_message.thread_id,
-            "message_id": assistant_message.message_id,
-            "role": assistant_message.role,
-            "content_for_db": assistant_message.content,
-            "insight_id": assistant_message.insight_id,
-            "veyra_results": assistant_message.veyra_results,
-            "veyra_original_query_params": assistant_message.veyra_original_query_params,
-            "veyra_current_offset": assistant_message.veyra_current_offset,
-            "veyra_limit_per_page": assistant_message.veyra_limit_per_page,
-            "veyra_total_emails_available": assistant_message.veyra_total_emails_available,
-            "veyra_has_more": assistant_message.veyra_has_more,
-            "timestamp": assistant_message.timestamp
-        }
-        print(f"[DEBUG] Assistant Conversation object attributes/related data BEFORE save: {json.dumps(assistant_message_attributes_for_saving, indent=2, default=str)}")
         assistant_message.save()
-        print(f"Assistant message saved. message_id: {assistant_message.message_id}, role: {assistant_message.role}, content: {assistant_message.content[:100]}..., veyra_results: {json.dumps(assistant_message.veyra_results, indent=2)[:1000]}")
+        print(f"Assistant message saved. message_id: {assistant_message.message_id}, role: {assistant_message.role}, content: {assistant_message.content[:100] if assistant_message.content else 'None'}...")
 
         # The response_data to the client should reflect the assistant's turn
         response_data = {
             "response": response_text,
             "thread_id": thread_id,
             "message_id": assistant_message.message_id,
-            "veyra_results": veyra_results
         }
         
-        # If we have email results, fetch the full email objects for immediate display
-        if veyra_results and 'emails' in veyra_results and veyra_results['emails']:
-            emails_collection = get_collection(EMAILS_COLLECTION)
+        # If we have email results, add them in the proper tile format for the frontend
+        if raw_email_list is not None:
+            print(f"[DEBUG] raw_email_list is not None, length: {len(raw_email_list)}")
+            # Sort emails by date, newest first, before sending to frontend
+            sorted_emails = sorted(raw_email_list, key=lambda e: parse_email_date(e.get('date')), reverse=True)
             
-            # Extract email IDs from the message objects
-            email_ids = []
-            for email_obj in veyra_results['emails']:
-                if isinstance(email_obj, dict) and 'id' in email_obj:
-                    email_ids.append(email_obj['id'])
-                elif isinstance(email_obj, str):
-                    email_ids.append(email_obj)
+            # Create tile data for each email
+            email_tiles = []
+            for email in sorted_emails:
+                tile_data = {
+                    "id": email.get('id', email.get('email_id')),
+                    "type": "email",
+                    "subject": email.get('subject'),
+                    "from_email": email.get('from_email'),
+                    "to_emails": email.get('to_emails'),
+                    "date": email.get('date'),
+                    "content": email.get('content'),
+                    "metadata": email.get('metadata'),
+                    # Include any other email fields the frontend might need
+                    **{k: v for k, v in email.items() if k not in ['id', 'subject', 'from_email', 'to_emails', 'date', 'content', 'metadata']}
+                }
+                email_tiles.append(tile_data)
             
-            print(f"[DEBUG] Extracted email IDs: {email_ids}")
-            
-            fetched_email_docs = list(emails_collection.find({'email_id': {'$in': email_ids}})) if email_ids else []
-            
-            # Sort emails by date, newest first
-            fetched_email_docs.sort(key=lambda e: parse_email_date(e.get('date')), reverse=True)
-            
-            # Convert all email documents to handle any ObjectId fields
-            processed_emails = [convert_objectid_to_str(email_doc) for email_doc in fetched_email_docs]
-            
-            # Update the response with full email objects
-            response_data['veyra_results'] = {
-                'emails': processed_emails
+            # Add both tile data and raw email data to the response
+            response_data['tool_results'] = {
+                'emails': sorted_emails,  # Keep the raw email data for compatibility
+                'tiles': email_tiles      # Add tile data for the frontend
             }
-            print(f"[DEBUG] Added {len(processed_emails)} full email objects to response")
-        
-        # Add pagination info to response if present
-        if veyra_pagination:
-            response_data.update(veyra_pagination)
+            print(f"[DEBUG] Added {len(sorted_emails)} email objects and {len(email_tiles)} email tiles to response")
+        else:
+            print(f"[DEBUG] raw_email_list is None")
+            # Ensure tool_results is present, even if empty, if a tool was called.
+            response_data['tool_results'] = assistant_message.tool_results if assistant_message.tool_results else None
+            print(f"[DEBUG] Using assistant_message.tool_results: {assistant_message.tool_results}")
+
         print(f"\n=== Sending Response ===")
         print(f"Response data: {json.dumps(response_data, indent=2)[:1000]}")
         return jsonify(response_data)
@@ -533,6 +580,11 @@ def get_thread(thread_id):
             # Convert the entire message document to handle any ObjectId fields
             processed_msg_doc = convert_objectid_to_str(msg_doc)
             
+            # Ensure processed_msg_doc is a dictionary
+            if not isinstance(processed_msg_doc, dict):
+                print(f"[WARNING] Skipping non-dict message: {type(processed_msg_doc)}")
+                continue
+            
             message_data_for_response = {
                 "role": processed_msg_doc.get("role"),
                 "content": processed_msg_doc.get("content"),
@@ -544,33 +596,53 @@ def get_thread(thread_id):
             
             # Add pagination fields for assistant messages
             if processed_msg_doc.get('role') == 'assistant':
-                if 'veyra_original_query_params' in processed_msg_doc:
-                    message_data_for_response['veyra_original_query_params'] = processed_msg_doc['veyra_original_query_params']
-                if 'veyra_current_offset' in processed_msg_doc:
-                    message_data_for_response['veyra_current_offset'] = processed_msg_doc['veyra_current_offset']
-                if 'veyra_limit_per_page' in processed_msg_doc:
-                    message_data_for_response['veyra_limit_per_page'] = processed_msg_doc['veyra_limit_per_page']
-                if 'veyra_total_emails_available' in processed_msg_doc:
-                    message_data_for_response['veyra_total_emails_available'] = processed_msg_doc['veyra_total_emails_available']
-                if 'veyra_has_more' in processed_msg_doc:
-                    message_data_for_response['veyra_has_more'] = processed_msg_doc['veyra_has_more']
+                if 'tool_original_query_params' in processed_msg_doc:
+                    message_data_for_response['tool_original_query_params'] = processed_msg_doc['tool_original_query_params']
+                if 'tool_current_offset' in processed_msg_doc:
+                    message_data_for_response['tool_current_offset'] = processed_msg_doc['tool_current_offset']
+                if 'tool_limit_per_page' in processed_msg_doc:
+                    message_data_for_response['tool_limit_per_page'] = processed_msg_doc['tool_limit_per_page']
+                if 'tool_total_emails_available' in processed_msg_doc:
+                    message_data_for_response['tool_total_emails_available'] = processed_msg_doc['tool_total_emails_available']
+                if 'tool_has_more' in processed_msg_doc:
+                    message_data_for_response['tool_has_more'] = processed_msg_doc['tool_has_more']
             
-            if processed_msg_doc.get('role') == 'assistant' and 'veyra_results' in processed_msg_doc:
-                veyra_results = processed_msg_doc['veyra_results']
-                if veyra_results and 'emails' in veyra_results:
-                    email_ids = veyra_results['emails']
-                    fetched_email_docs = list(emails_collection.find({'email_id': {'$in': email_ids}})) if email_ids else []
-                    
-                    # Sort emails by date, newest first
-                    fetched_email_docs.sort(key=lambda e: parse_email_date(e.get('date')), reverse=True)
+            if processed_msg_doc.get('role') == 'assistant' and 'tool_results' in processed_msg_doc:
+                tool_results = processed_msg_doc['tool_results']
+                if isinstance(tool_results, dict) and 'emails' in tool_results:
+                    email_ids = tool_results['emails']
+                    if isinstance(email_ids, list):
+                        fetched_email_docs = list(emails_collection.find({'email_id': {'$in': email_ids}})) if email_ids else []
+                        
+                        # Sort emails by date, newest first
+                        fetched_email_docs.sort(key=lambda e: parse_email_date(e.get('date')), reverse=True)
 
-                    # Convert all email documents to handle any ObjectId fields
-                    processed_emails = [convert_objectid_to_str(email_doc) for email_doc in fetched_email_docs]
-                    
-                    # Create a copy to avoid modifying the original dict in a loop
-                    veyra_results_copy = veyra_results.copy()
-                    veyra_results_copy['emails'] = processed_emails
-                    message_data_for_response['veyra_results'] = veyra_results_copy
+                        # Convert all email documents to handle any ObjectId fields
+                        processed_emails = [convert_objectid_to_str(email_doc) for email_doc in fetched_email_docs]
+                        
+                        # Create tile data for each email for the frontend
+                        email_tiles = []
+                        for email in processed_emails:
+                            if isinstance(email, dict):
+                                tile_data = {
+                                    "id": email.get('email_id', email.get('_id')),
+                                    "type": "email",
+                                    "subject": email.get('subject'),
+                                    "from_email": email.get('from_email'),
+                                    "to_emails": email.get('to_emails'),
+                                    "date": email.get('date'),
+                                    "content": email.get('content'),
+                                    "metadata": email.get('metadata'),
+                                    # Include any other email fields the frontend might need
+                                    **{k: v for k, v in email.items() if k not in ['email_id', '_id', 'subject', 'from_email', 'to_emails', 'date', 'content', 'metadata']}
+                                }
+                                email_tiles.append(tile_data)
+                        
+                        # Create a copy to avoid modifying the original dict in a loop
+                        tool_results_copy = tool_results.copy()
+                        tool_results_copy['emails'] = processed_emails
+                        tool_results_copy['tiles'] = email_tiles  # Add tile data for the frontend
+                        message_data_for_response['tool_results'] = tool_results_copy
             processed_messages_for_response.append(message_data_for_response)
             
         return jsonify(processed_messages_for_response)
@@ -628,9 +700,9 @@ def delete_email():
         if not email_id or not thread_id:
             print(f"Missing required parameters. email_id: {email_id}, thread_id: {thread_id}")
             return jsonify({'success': False, 'error': 'Missing required parameters: email_id and thread_id are required'}), 400
-        if not veyrax_service:
-            print("VeyraX service not initialized")
-            return jsonify({'success': False, 'error': 'VeyraX service not initialized'}), 500
+        if not tooling_service:
+            print("Tooling service not initialized")
+            return jsonify({'success': False, 'error': 'Tooling service not initialized'}), 500
         query = {'thread_id': thread_id}
         if message_id:
             query['message_id'] = message_id
@@ -642,21 +714,21 @@ def delete_email():
         if not conversation:
             print(f"Conversation not found for thread_id: {thread_id}")
             return jsonify({'success': False, 'error': 'Conversation not found'}), 404
-        if not conversation.get('veyra_results') or not conversation.get('veyra_results').get('emails'):
+        if not conversation.get('tool_results') or not conversation.get('tool_results').get('emails'):
             print(f"No emails found in conversation")
             return jsonify({'success': False, 'error': 'No emails found in conversation'}), 404
-        email_ids = conversation.get('veyra_results').get('emails', [])
+        email_ids = conversation.get('tool_results').get('emails', [])
         if email_id not in email_ids:
             print(f"Email with ID {email_id} not found in conversation")
             return jsonify({'success': False, 'error': 'Email not found in conversation'}), 404
-        delete_success = veyrax_service.delete_email(email_id)
+        delete_success = tooling_service.delete_email(email_id)
         print(f"Gmail deletion result: {delete_success}")
         if not delete_success:
             print(f"Failed to delete email from Gmail: {email_id}")
         try:
             update_result = Conversation.update_one(
                 {'_id': conversation['_id']},
-                {'$pull': {'veyra_results.emails': email_id}}
+                {'$pull': {'tool_results.emails': email_id}}
             )
             update_success = update_result.modified_count > 0
             db_message = "Database updated successfully" if update_success else "No changes made to database"
@@ -691,12 +763,12 @@ def delete_calendar_event():
                 'error': 'Missing required parameters: event_id and thread_id are required'
             }), 400
         
-        # Check if VeyraX service is initialized
-        if not veyrax_service:
-            print("VeyraX service not initialized")
+        # Check if Tooling service is initialized
+        if not tooling_service:
+            print("Tooling service not initialized")
             return jsonify({
                 'success': False,
-                'error': 'VeyraX service not initialized'
+                'error': 'Tooling service not initialized'
             }), 500
             
         # Find the conversation - first try with all parameters
@@ -721,16 +793,16 @@ def delete_calendar_event():
                 'error': 'Conversation not found'
             }), 404
             
-        # Check if the conversation has veyra_results with calendar events
-        if not conversation.get('veyra_results') or not conversation.get('veyra_results').get('calendar_events'):
+        # Check if the conversation has tool_results with calendar events
+        if not conversation.get('tool_results') or not conversation.get('tool_results').get('calendar_events'):
             print(f"No calendar events found in conversation")
             return jsonify({
                 'success': False,
                 'error': 'No calendar events found in conversation'
             }), 404
         
-        # Look for the event in veyra_results.calendar_events
-        events = conversation.get('veyra_results').get('calendar_events', [])
+        # Look for the event in tool_results.calendar_events
+        events = conversation.get('tool_results').get('calendar_events', [])
         print(f"Found {len(events)} events in conversation")
         
         # Debug: Print event IDs
@@ -747,8 +819,8 @@ def delete_calendar_event():
                 'error': 'Event not found in conversation'
             }), 404
             
-        # Delete from Google Calendar using VeyraX service
-        delete_success = veyrax_service.delete_calendar_event(event_id)
+        # Delete from Google Calendar using Tooling service
+        delete_success = tooling_service.delete_calendar_event(event_id)
         print(f"Google Calendar deletion result: {delete_success}")
         
         if not delete_success:
@@ -759,7 +831,7 @@ def delete_calendar_event():
         try:
             update_result = Conversation.update_one(
                 {'_id': conversation['_id']},
-                {'$pull': {'veyra_results.calendar_events': {'id': event_id}}}
+                {'$pull': {'tool_results.calendar_events': {'id': event_id}}}
             )
             
             update_success = update_result.modified_count > 0
@@ -802,7 +874,7 @@ def bulk_delete_items():
         data = request.get_json()
         print(f"[/bulk_delete_items] Received bulk delete request. Data: {json.dumps(data)}")
 
-        message_id = data.get('message_id')  # Assistant's message ID from the VeyraResults block
+        message_id = data.get('message_id')  # Assistant's message ID from the ToolResults block
         thread_id = data.get('thread_id')    # Current chat thread_id
         items_to_process = data.get('items', []) # List of {item_id, item_type}
 
@@ -814,8 +886,8 @@ def bulk_delete_items():
                 'error': error_msg
             }), 400
 
-        if not veyrax_service:
-            error_msg = "VeyraX service not initialized"
+        if not tooling_service:
+            error_msg = "Tooling service not initialized"
             print(f"[/bulk_delete_items] Error: {error_msg}")
             return jsonify({'success': False, 'error': error_msg}), 500
 
@@ -833,7 +905,7 @@ def bulk_delete_items():
             # For now, strict matching is safer.
             # alternative_conversations = Conversation.get_by_thread_id(thread_id)
             # if alternative_conversations:
-            #    assistant_messages = [m for m in alternative_conversations if m.get('role') == 'assistant' and m.get('veyra_results')]
+            #    assistant_messages = [m for m in alternative_conversations if m.get('role') == 'assistant' and m.get('tool_results')]
             #    if assistant_messages:
             #        conversation_doc = assistant_messages[-1] # Get the last one
             #        print(f"[/bulk_delete_items] Fallback: Found conversation by thread_id, using last assistant message: {conversation_doc.get('message_id')}")
@@ -842,8 +914,8 @@ def bulk_delete_items():
         
         print(f"[/bulk_delete_items] Found conversation with _id: {conversation_doc.get('_id')} and message_id: {conversation_doc.get('message_id')}")
 
-        if not conversation_doc.get('veyra_results'):
-            error_msg = f"No veyra_results found in conversation {conversation_doc.get('message_id')}"
+        if not conversation_doc.get('tool_results'):
+            error_msg = f"No tool_results found in conversation {conversation_doc.get('message_id')}"
             print(f"[/bulk_delete_items] Error: {error_msg}")
             return jsonify({'success': False, 'error': error_msg}), 404
 
@@ -851,8 +923,8 @@ def bulk_delete_items():
         email_ids_to_pull_from_db = []
         event_ids_to_pull_from_db = []
 
-        current_emails_in_db = conversation_doc.get('veyra_results', {}).get('emails', [])
-        current_events_in_db = conversation_doc.get('veyra_results', {}).get('calendar_events', [])
+        current_emails_in_db = conversation_doc.get('tool_results', {}).get('emails', [])
+        current_events_in_db = conversation_doc.get('tool_results', {}).get('calendar_events', [])
 
         print(f"[/bulk_delete_items] Initial emails in DB for this message: {len(current_emails_in_db)}")
         print(f"[/bulk_delete_items] Initial events in DB for this message: {len(current_events_in_db)}")
@@ -860,7 +932,7 @@ def bulk_delete_items():
         for item_data in items_to_process:
             item_id = item_data.get('item_id')
             item_type = item_data.get('item_type')
-            deletion_successful_veyrax = False
+            deletion_successful_tooling = False
             item_error_message = None
 
             print(f"[/bulk_delete_items] Processing item: id={item_id}, type={item_type}")
@@ -873,68 +945,68 @@ def bulk_delete_items():
 
             try:
                 item_exists_in_conversation_results = False
-                # Initialize deletion_successful_veyrax, as it might not be set if item_type is unknown
-                deletion_successful_veyrax = False 
+                # Initialize deletion_successful_tooling, as it might not be set if item_type is unknown
+                deletion_successful_tooling = False 
 
                 if item_type == 'email':
                     item_exists_in_conversation_results = any(e == item_id for e in current_emails_in_db)
                     if item_exists_in_conversation_results:
-                        print(f"[/bulk_delete_items] Attempting VeyraX delete for email: {item_id}")
+                        print(f"[/bulk_delete_items] Attempting Tooling delete for email: {item_id}")
                         try:
-                            # Actual veyrax_service.delete_email returns a boolean
-                            deletion_successful_veyrax = veyrax_service.delete_email(item_id)
+                            # Actual tooling_service.delete_email returns a boolean
+                            deletion_successful_tooling = tooling_service.delete_email(item_id)
                             
-                            if deletion_successful_veyrax:
-                                print(f"[/bulk_delete_items] VeyraX delete SUCCESS for email: {item_id}")
+                            if deletion_successful_tooling:
+                                print(f"[/bulk_delete_items] Tooling delete SUCCESS for email: {item_id}")
                                 email_ids_to_pull_from_db.append(item_id)
                             else:
-                                item_error_message = f"VeyraX call to delete email {item_id} returned False. This could be due to the item not being found on the VeyraX side or another issue."
-                                print(f"[/bulk_delete_items] VeyraX delete FAILED for email: {item_id}. {item_error_message}")
-                                # If VeyraX internally logs "not found" and returns False,
+                                item_error_message = f"Tooling call to delete email {item_id} returned False. This could be due to the item not being found on the Tooling side or another issue."
+                                print(f"[/bulk_delete_items] Tooling delete FAILED for email: {item_id}. {item_error_message}")
+                                # If Tooling internally logs "not found" and returns False,
                                 # we might still want to remove it from our DB if that's the desired behavior.
-                                # For now, we only add to email_ids_to_pull_from_db if VeyraX confirmed deletion (returned True).
+                                # For now, we only add to email_ids_to_pull_from_db if Tooling confirmed deletion (returned True).
                         except Exception as delete_err:
-                            deletion_successful_veyrax = False 
-                            item_error_message = f"Exception during VeyraX API call for email {item_id}: {str(delete_err)}"
+                            deletion_successful_tooling = False 
+                            item_error_message = f"Exception during Tooling API call for email {item_id}: {str(delete_err)}"
                             print(f"[/bulk_delete_items] {item_error_message}")
                             import traceback # Ensure traceback is imported here if not globally
                             print(traceback.format_exc())
                     else:
-                        item_error_message = f"Email {item_id} not found in this conversation message's Veyra results. Skipping VeyraX call."
+                        item_error_message = f"Email {item_id} not found in this conversation message's Tool results. Skipping Tooling call."
                         print(f"[/bulk_delete_items] {item_error_message}")
-                        deletion_successful_veyrax = False
+                        deletion_successful_tooling = False
                         
                 elif item_type == 'event':
                     item_exists_in_conversation_results = any(e.get('id') == item_id for e in current_events_in_db)
                     if item_exists_in_conversation_results:
-                        print(f"[/bulk_delete_items] Attempting VeyraX delete for event: {item_id}")
+                        print(f"[/bulk_delete_items] Attempting Tooling delete for event: {item_id}")
                         try:
-                            # Actual veyrax_service.delete_calendar_event returns a boolean
-                            deletion_successful_veyrax = veyrax_service.delete_calendar_event(item_id)
+                            # Actual tooling_service.delete_calendar_event returns a boolean
+                            deletion_successful_tooling = tooling_service.delete_calendar_event(item_id)
 
-                            if deletion_successful_veyrax:
-                                print(f"[/bulk_delete_items] VeyraX delete SUCCESS for event: {item_id}")
+                            if deletion_successful_tooling:
+                                print(f"[/bulk_delete_items] Tooling delete SUCCESS for event: {item_id}")
                                 event_ids_to_pull_from_db.append(item_id)
                             else:
-                                item_error_message = f"VeyraX call to delete event {item_id} returned False. This could be due to the item not being found on the VeyraX side or another issue."
-                                print(f"[/bulk_delete_items] VeyraX delete FAILED for event: {item_id}. {item_error_message}")
+                                item_error_message = f"Tooling call to delete event {item_id} returned False. This could be due to the item not being found on the Tooling side or another issue."
+                                print(f"[/bulk_delete_items] Tooling delete FAILED for event: {item_id}. {item_error_message}")
                         except Exception as delete_err:
-                            deletion_successful_veyrax = False
-                            item_error_message = f"Exception during VeyraX API call for event {item_id}: {str(delete_err)}"
+                            deletion_successful_tooling = False
+                            item_error_message = f"Exception during Tooling API call for event {item_id}: {str(delete_err)}"
                             print(f"[/bulk_delete_items] {item_error_message}")
                             import traceback # Ensure traceback is imported here if not globally
                             print(traceback.format_exc())
                     else:
-                        item_error_message = f"Event {item_id} not found in this conversation message's Veyra results. Skipping VeyraX call."
+                        item_error_message = f"Event {item_id} not found in this conversation message's Tool results. Skipping Tooling call."
                         print(f"[/bulk_delete_items] {item_error_message}")
-                        deletion_successful_veyrax = False
+                        deletion_successful_tooling = False
                 else:
                     item_error_message = f"Unknown item_type: {item_type}"
                     print(f"[/bulk_delete_items] {item_error_message}")
-                    deletion_successful_veyrax = False
+                    deletion_successful_tooling = False
 
             except Exception as e: # This is the outer try-except for the item processing logic
-                deletion_successful_veyrax = False 
+                deletion_successful_tooling = False 
                 item_error_message = f"Outer exception processing item {item_type} {item_id}: {str(e)}"
                 print(f"[/bulk_delete_items] {item_error_message}")
                 import traceback # Ensure traceback is imported here if not globally
@@ -945,24 +1017,25 @@ def bulk_delete_items():
             processed_results.append({
                 'item_id': item_id, 
                 'item_type': item_type, 
-                'deleted': deletion_successful_veyrax, 
+                'deleted': deletion_successful_tooling, 
                 'error': item_error_message
             })
 
-        # Update MongoDB to remove items that were successfully deleted from VeyraX OR reported as not_found by VeyraX
+        # Update MongoDB to remove items that were successfully deleted from Tooling OR reported as not_found by Tooling
         db_modified_count = 0
         if email_ids_to_pull_from_db or event_ids_to_pull_from_db:
             mongo_update_operations = {}
             if email_ids_to_pull_from_db:
                 mongo_update_operations['$pull'] = {
-                    'veyra_results.emails': {'$in': email_ids_to_pull_from_db}
+                    'tool_results.emails': {'$in': email_ids_to_pull_from_db}
                 }
                 print(f"[/bulk_delete_items] Preparing to pull emails from DB: {email_ids_to_pull_from_db}")
             
             if event_ids_to_pull_from_db:
-                event_pull_op = {'veyra_results.calendar_events': {'id': {'$in': event_ids_to_pull_from_db}}}
+                event_pull_op = {'tool_results.calendar_events': {'id': {'$in': event_ids_to_pull_from_db}}}
                 if '$pull' in mongo_update_operations:
-                    mongo_update_operations['$pull'].update(event_pull_op)
+                    # Merge the pull operations
+                    mongo_update_operations['$pull'] = {**mongo_update_operations['$pull'], **event_pull_op}
                 else:
                     mongo_update_operations['$pull'] = event_pull_op
                 print(f"[/bulk_delete_items] Preparing to pull events from DB: {event_ids_to_pull_from_db}")
@@ -988,16 +1061,16 @@ def bulk_delete_items():
                 except Exception as db_e:
                     db_error_msg = f"Database error during bulk update: {str(db_e)}"
                     print(f"[/bulk_delete_items] {db_error_msg}")
-                    # This error should be logged, but the overall success for items is based on VeyraX deletion primarily.
+                    # This error should be logged, but the overall success for items is based on Tooling deletion primarily.
                     # We might want to reflect this DB error in the individual item results if critical.
         else:
-            print("[/bulk_delete_items] No items successfully deleted from VeyraX, so no MongoDB update needed.")
+            print("[/bulk_delete_items] No items successfully deleted from Tooling, so no MongoDB update needed.")
 
         print(f"[/bulk_delete_items] Final processed results: {json.dumps(processed_results)}")
         return jsonify({
             'success': True, # Indicates the endpoint processed the request as a whole
-            'results': processed_results, # Detailed status for each item based on VeyraX deletion
-            'db_items_removed_count': db_modified_count # How many items were intended to be pulled from DB based on VeyraX success
+            'results': processed_results, # Detailed status for each item based on Tooling deletion
+            'db_items_removed_count': db_modified_count # How many items were intended to be pulled from DB based on Tooling success
         })
 
     except Exception as e:
@@ -1040,10 +1113,10 @@ def load_more_emails():
             print(f"[ERROR] Assistant message not found for ID: {assistant_message_id} in thread: {thread_id}")
             return jsonify({"error": "Assistant message not found"}), 404
         print(f"[DEBUG] Found assistant message: {assistant_message_doc.get('_id')}")
-        original_params = assistant_message_doc.get('veyra_original_query_params')
-        current_offset = assistant_message_doc.get('veyra_current_offset')
-        limit_per_page = assistant_message_doc.get('veyra_limit_per_page')
-        total_emails_available = assistant_message_doc.get('veyra_total_emails_available')
+        original_params = assistant_message_doc.get('tool_original_query_params')
+        current_offset = assistant_message_doc.get('tool_current_offset')
+        limit_per_page = assistant_message_doc.get('tool_limit_per_page')
+        total_emails_available = assistant_message_doc.get('tool_total_emails_available')
         print(f"[DEBUG] Stored pagination: offset={current_offset}, limit={limit_per_page}, total={total_emails_available}, original_params={original_params}")
         if original_params is None or current_offset is None or limit_per_page is None or total_emails_available is None:
             print("[ERROR] Missing one or more pagination parameters in the stored message.")
@@ -1052,26 +1125,37 @@ def load_more_emails():
         if next_offset_to_fetch >= total_emails_available:
             print("[INFO] No more emails to load.")
             return jsonify({"new_emails": [], "has_more": False, "message": "No more emails to load."}), 200
-        if not veyrax_service:
-            print("[ERROR] VeyraX service not initialized for /load_more_emails")
-            return jsonify({"error": "VeyraX service not available"}), 500
+        if not tooling_service:
+            print("[ERROR] Composio service not initialized for /load_more_emails")
+            return jsonify({"error": "Composio service not available"}), 500
         fetch_params = {
             **original_params,
             "limit": limit_per_page,
             "offset": next_offset_to_fetch
         }
-        print(f"[DEBUG] Calling VeyraX with: {fetch_params}")
-        veyrax_response = veyrax_service.post_request("/mail/get_messages", fetch_params)
-        print(f"[DEBUG] VeyraX response for /load_more_emails: {json.dumps(veyrax_response)[:500]}")
-        if "error" in veyrax_response:
-            print(f"[ERROR] VeyraX error: {veyrax_response.get('error')}")
-            return jsonify({"error": f"VeyraX error: {veyrax_response.get('error')}"}), 500
-        new_data = veyrax_response.get("data", {})
+        
+        # Map parameters for the new ComposioService method
+        fetch_params_for_composio = fetch_params.copy()
+        if 'limit' in fetch_params_for_composio:
+            fetch_params_for_composio['count'] = fetch_params_for_composio.pop('limit')
+        if 'search_query' in fetch_params_for_composio:
+            fetch_params_for_composio['query'] = fetch_params_for_composio.pop('search_query')
+            
+        print(f"[DEBUG] Calling Composio with: {fetch_params_for_composio}")
+        tooling_response = tooling_service.get_recent_emails(**fetch_params_for_composio)
+
+        print(f"[DEBUG] Composio response for /load_more_emails: {json.dumps(tooling_response)[:500]}")
+        if "error" in tooling_response:
+            print(f"[ERROR] Composio error: {tooling_response.get('error')}")
+            return jsonify({"error": f"Composio error: {tooling_response.get('error')}"}), 500
+        new_data = tooling_response.get("data", {})
+        if new_data is None:
+            new_data = {}
         new_emails = new_data.get("messages", [])
         new_offset_used = new_data.get("offset", next_offset_to_fetch)
         new_limit_used = new_data.get("limit", limit_per_page)
         new_total_available = new_data.get("total", total_emails_available)
-        print(f"[DEBUG] VeyraX returned: {len(new_emails)} emails, new_offset={new_offset_used}, new_total={new_total_available}")
+        print(f"[DEBUG] Composio returned: {len(new_emails)} emails, new_offset={new_offset_used}, new_total={new_total_available}")
         # Insert new emails into emails collection and collect their IDs
         emails_collection = get_collection(EMAILS_COLLECTION)
         new_email_ids = []
@@ -1093,7 +1177,7 @@ def load_more_emails():
                         'text': ""   # Empty until user requests summarization
                     },
                     'metadata': {
-                        'source': 'VEYRA',
+                        'source': 'TOOL',
                         'folder': email.get('folder', 'INBOX'),
                         'is_read': email.get('is_read', False),
                         'size': email.get('size')
@@ -1128,10 +1212,10 @@ def load_more_emails():
                     raise e
         # Update the Conversation document in MongoDB
         update_operations = {
-            '$push': {'veyra_results.emails': {'$each': new_email_ids}},
+            '$push': {'tool_results.emails': {'$each': new_email_ids}},
             '$set': {
-                'veyra_current_offset': new_offset_used,
-                'veyra_total_emails_available': new_total_available
+                'tool_current_offset': new_offset_used,
+                'tool_total_emails_available': new_total_available
             }
         }
         update_result = Conversation.update_one(
@@ -1200,7 +1284,8 @@ def summarize_single_email():
             
         try:
             response = current_llm_for_summary.invoke(prompt)
-            summary = response.content.strip()
+            summary = response.content[0] if isinstance(response.content, list) else response.content
+            summary = summary.strip() if isinstance(summary, str) else str(summary)
             print(f"[INFO] Generated summary for email_id: {email_id} using {type(current_llm_for_summary).__name__}")
         except Exception as e:
             error_message = str(e)
@@ -1224,7 +1309,7 @@ def summarize_single_email():
             thread_id=thread_id,
             role='assistant',
             content=summary,
-            veyra_results={'email_summary': {'email_id': email_id}}
+            tool_results={'email_summary': {'email_id': email_id}}
         )
         summary_message.save()
         print(f"[INFO] Created new conversation entry for summary with message_id: {summary_message.message_id}")
@@ -1235,7 +1320,7 @@ def summarize_single_email():
             "response": summary,
             "thread_id": thread_id,
             "message_id": summary_message.message_id,
-            "veyra_results": {'email_summary': {'email_id': email_id}}
+            "tool_results": {'email_summary': {'email_id': email_id}}
         }
         return jsonify(response_data), 200
         
@@ -1270,12 +1355,12 @@ def get_email_content():
                 'content': email_doc['content']
             }), 200
         
-        # Content doesn't exist, fetch it from VeyraX
-        if not veyrax_service:
-            return jsonify({'error': 'VeyraX service not available'}), 500
+        # Content doesn't exist, fetch it from Tooling
+        if not tooling_service:
+            return jsonify({'error': 'Tooling service not available'}), 500
             
-        # Get full email content from VeyraX
-        email_content = veyrax_service.get_email_details(email_id)
+        # Get full email content from Tooling
+        email_content = tooling_service.get_email_details(email_id)
         
         if not email_content:
             return jsonify({'error': 'Could not retrieve email content'}), 404

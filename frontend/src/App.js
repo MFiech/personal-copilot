@@ -28,7 +28,7 @@ import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogTitle from '@mui/material/DialogTitle';
-import VeyraResults from './components/VeyraResults';
+import ToolResults from './components/ToolResults';
 import './App.css';
 import { useSnackbar } from './components/SnackbarProvider';
 
@@ -155,17 +155,16 @@ function App() {
       // If data is an array, use it directly
       if (Array.isArray(data)) {
         const formattedMessages = data.map(msg => ({
+          id: msg.id || msg.message_id,
           role: msg.role,
-          content: msg.content || '',
-          timestamp: msg.timestamp || (msg.role === 'user' ? msg.query_timestamp : msg.response_timestamp),
-          veyra_results: msg.veyra_results || null,
-          message_id: msg.message_id,
-          // Add pagination fields if they exist
-          veyra_original_query_params: msg.veyra_original_query_params,
-          veyra_current_offset: msg.veyra_current_offset,
-          veyra_limit_per_page: msg.veyra_limit_per_page,
-          veyra_total_emails_available: msg.veyra_total_emails_available,
-          veyra_has_more: msg.veyra_has_more
+          content: msg.content,
+          tool_results: msg.tool_results || null,
+          insight_id: msg.insight_id,
+          tool_original_query_params: msg.tool_original_query_params,
+          tool_current_offset: msg.tool_current_offset,
+          tool_limit_per_page: msg.tool_limit_per_page,
+          tool_total_emails_available: msg.tool_total_emails_available,
+          tool_has_more: msg.tool_has_more
         }));
 
         // Sort messages by timestamp in ascending order (oldest first)
@@ -181,35 +180,42 @@ function App() {
           .map(msg => {
             if ('role' in msg) {
               return {
+                id: msg.id || msg.message_id,
                 role: msg.role,
                 content: msg.content || '',
-                timestamp: msg.role === 'user' ? msg.query_timestamp : msg.response_timestamp,
-                veyra_results: msg.veyra_results || null,
-                message_id: msg.message_id,
-                veyra_original_query_params: msg.veyra_original_query_params,
-                veyra_current_offset: msg.veyra_current_offset,
-                veyra_limit_per_page: msg.veyra_limit_per_page,
-                veyra_total_emails_available: msg.veyra_total_emails_available,
-                veyra_has_more: msg.veyra_has_more
+                tool_results: msg.tool_results || null,
+                insight_id: msg.insight_id,
+                tool_original_query_params: msg.tool_original_query_params,
+                tool_current_offset: msg.tool_current_offset,
+                tool_limit_per_page: msg.tool_limit_per_page,
+                tool_total_emails_available: msg.tool_total_emails_available,
+                tool_has_more: msg.tool_has_more
               };
             } else {
               return [
                 {
+                  id: msg.query_timestamp,
                   role: 'user',
                   content: msg.query || '',
-                  timestamp: msg.query_timestamp
+                  tool_results: null,
+                  insight_id: null,
+                  tool_original_query_params: null,
+                  tool_current_offset: null,
+                  tool_limit_per_page: null,
+                  tool_total_emails_available: null,
+                  tool_has_more: null
                 },
                 {
+                  id: msg.response_timestamp,
                   role: 'assistant',
                   content: msg.response || '',
-                  timestamp: msg.response_timestamp,
-                  veyra_results: msg.veyra_results || null,
-                  message_id: msg.message_id,
-                  veyra_original_query_params: msg.veyra_original_query_params,
-                  veyra_current_offset: msg.veyra_current_offset,
-                  veyra_limit_per_page: msg.veyra_limit_per_page,
-                  veyra_total_emails_available: msg.veyra_total_emails_available,
-                  veyra_has_more: msg.veyra_has_more
+                  tool_results: msg.tool_results || null,
+                  insight_id: msg.insight_id,
+                  tool_original_query_params: msg.tool_original_query_params,
+                  tool_current_offset: msg.tool_current_offset,
+                  tool_limit_per_page: msg.tool_limit_per_page,
+                  tool_total_emails_available: msg.tool_total_emails_available,
+                  tool_has_more: msg.tool_has_more
                 }
               ];
             }
@@ -251,9 +257,8 @@ function App() {
     const payload = { query: input };
     if (threadId) payload.thread_id = threadId;
     if (pendingConfirmation) {
-      payload.confirm_veyrax = true;
-      payload.veyrax_context = pendingConfirmation.context;
-      payload.confirmation_context = pendingConfirmation.context;
+      payload.confirm_tooling = true;
+      payload.tool_context = pendingConfirmation.context;
     }
 
     try {
@@ -270,20 +275,20 @@ function App() {
       // Always show confirmation buttons when requires_confirmation is true
       if (data.requires_confirmation) {
         console.log("Confirmation required:", data.confirmation_context);
-        // Use the confirmation_context if available, otherwise fall back to veyrax_context
-        const context = data.confirmation_context || data.veyrax_context;
+        // Use the confirmation_context if available, otherwise fall back to tool_context
+        const context = data.confirmation_context || data.tool_context;
         // For delete actions we need user to type a number, not buttons
         const noButtons = !!context.email_ids;  // hide buttons for selection flows only
         setPendingConfirmation({
+          message: data.confirmation_prompt,
           context: context,
-          threadId: data.thread_id,
           noButtons: noButtons
         });
-      } else if (data.veyrax_context) {
-        // For other VeyraX contexts without confirmation required
+      } else if (data.tool_context) {
+        // For other Tooling contexts without confirmation required
         setPendingConfirmation({
-          context: data.veyrax_context,
-          threadId: data.thread_id,
+          message: data.confirmation_prompt,
+          context: data.tool_context,
           noButtons: true // No buttons, just context pass-through
         });
       }
@@ -293,31 +298,32 @@ function App() {
         navigate(`/${data.thread_id}`);
       }
       
-      // Update to include veyra_results in the message state
+      // Update to include tool_results in the message state
       // AND the pagination data if available
       const assistantMessageData = { 
+        id: data.message_id,
         role: 'assistant', 
         content: data.response,
-        veyra_results: data.veyra_results, 
-        message_id: data.message_id 
+        tool_results: data.tool_results, 
+        insight_id: data.insight_id
       };
 
       // Add pagination fields from the top level of the response to the message object
-      // so VeyraResults can access them.
-      if (data.veyra_original_query_params !== undefined) {
-        assistantMessageData.veyra_original_query_params = data.veyra_original_query_params;
+      // so ToolResults can access them.
+      if (data.tool_original_query_params !== undefined) {
+        assistantMessageData.tool_original_query_params = data.tool_original_query_params;
       }
-      if (data.veyra_current_offset !== undefined) {
-        assistantMessageData.veyra_current_offset = data.veyra_current_offset;
+      if (data.tool_current_offset !== undefined) {
+        assistantMessageData.tool_current_offset = data.tool_current_offset;
       }
-      if (data.veyra_limit_per_page !== undefined) {
-        assistantMessageData.veyra_limit_per_page = data.veyra_limit_per_page;
+      if (data.tool_limit_per_page !== undefined) {
+        assistantMessageData.tool_limit_per_page = data.tool_limit_per_page;
       }
-      if (data.veyra_total_emails_available !== undefined) {
-        assistantMessageData.veyra_total_emails_available = data.veyra_total_emails_available;
+      if (data.tool_total_emails_available !== undefined) {
+        assistantMessageData.tool_total_emails_available = data.tool_total_emails_available;
       }
-      if (data.veyra_has_more !== undefined) {
-        assistantMessageData.veyra_has_more = data.veyra_has_more;
+      if (data.tool_has_more !== undefined) {
+        assistantMessageData.tool_has_more = data.tool_has_more;
       }
 
       console.log("[App.js handleSubmit] Assistant message data prepared:", assistantMessageData);
@@ -331,7 +337,7 @@ function App() {
     }
   };
 
-  // Handle VeyraX confirmation
+  // Handle Tooling confirmation
   const handleConfirmation = async (confirmed) => {
     if (!pendingConfirmation) return;
     
@@ -341,14 +347,13 @@ function App() {
     setIsLoading(true);
     
     if (confirmed) {
-      // User confirmed, proceed with VeyraX data fetch
+      // User confirmed, proceed with Tooling data fetch
       try {
         const payload = {
-          query: "Yes, please proceed with that.",
-          thread_id: pendingConfirmation.threadId,
-          confirm_veyrax: true,
-          veyrax_context: pendingConfirmation.context,
-          confirmation_context: pendingConfirmation.context
+          query: pendingConfirmation.message,
+          thread_id: threadId,
+          confirm_tooling: true,
+          tool_context: pendingConfirmation.context,
         };
         
         console.log("Sending confirmation request with payload:", payload);
@@ -365,7 +370,7 @@ function App() {
         
         setMessages((prev) => [
           ...prev,
-          { role: 'user', content: "Yes, please proceed with that." },
+          { role: 'user', content: pendingConfirmation.message },
           { role: 'assistant', content: data.response }
         ]);
         
@@ -419,11 +424,16 @@ function App() {
   const handleNewAssistantMessage = (newMessageData) => {
     // Ensure the message has the minimum required fields
     const formattedMessage = {
+      id: newMessageData.message_id || `temp-${Date.now()}`,
       role: 'assistant',
       content: newMessageData.response || "Summary received.", // Use response field from backend
-      message_id: newMessageData.message_id || `temp-${Date.now()}`, // Use message_id from backend
-      timestamp: Date.now() / 1000, // Approximate timestamp
-      veyra_results: newMessageData.veyra_results || null // Include if backend sends it
+      tool_results: newMessageData.tool_results || null,
+      insight_id: newMessageData.insight_id,
+      tool_original_query_params: newMessageData.tool_original_query_params,
+      tool_current_offset: newMessageData.tool_current_offset,
+      tool_limit_per_page: newMessageData.tool_limit_per_page,
+      tool_total_emails_available: newMessageData.tool_total_emails_available,
+      tool_has_more: newMessageData.tool_has_more
     };
     console.log("[App.js] Adding new assistant message:", formattedMessage);
     setMessages(prevMessages => [...prevMessages, formattedMessage]);
@@ -432,21 +442,21 @@ function App() {
   // Render message content with proper formatting
   const renderMessage = (message, onNewMessage) => {
     console.log('renderMessage called with full message:', message );
-    console.log('renderMessage - veyra_results:', message.veyra_results);
-    console.log('renderMessage - veyra_current_offset:', message.veyra_current_offset);
-    console.log('renderMessage - condition check:', (message.veyra_results || message.veyra_current_offset !== undefined));
+    console.log('renderMessage - tool_results:', message.tool_results);
+    console.log('renderMessage - tool_current_offset:', message.tool_current_offset);
+    console.log('renderMessage - condition check:', (message.tool_results || message.tool_current_offset !== undefined));
     
     return (
       <Box sx={{ mb: 0 }}>
         <Typography variant="body1" component="div" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
           {message.content}
         </Typography>
-        {(message.veyra_results || message.veyra_current_offset !== undefined) && ( // Check if there's Veyra data or pagination info
+        {(message.tool_results || message.tool_current_offset !== undefined) && ( // Check if there's Tooling data or pagination info
           <Box sx={{ mt: 1, bgcolor: 'transparent', borderRadius: 1 }}>
-            <VeyraResults 
-              results={message} // Pass the whole message object as results
+            <ToolResults 
+              results={message.tool_results} // Pass the tool_results object, not the whole message
               currentThreadId={threadId} // threadId is available in App.js scope
-              message_id={message.message_id} // assistant's message_id
+              message_id={message.id} // assistant's message_id
               onNewMessageReceived={onNewMessage}
               showSnackbar={showSnackbar}
             />
@@ -722,7 +732,7 @@ function App() {
                     color: message.role === 'user' ? theme.palette.text.userMessage : theme.palette.text.primary,
                     wordBreak: 'break-word', // Ensure long words break
                   }}
-                  {...(message.role === 'assistant' && message.message_id && { 'data-message-id': message.message_id })}
+                  {...(message.role === 'assistant' && message.id && { 'data-message-id': message.id })}
                 >
                   {renderMessage(
                     message, 

@@ -1,0 +1,99 @@
+.veyra-tile {
+  background-color: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  transition: all 0.2s ease-in-out;
+  cursor: pointer;
+  min-width: 200px;
+  max-width: 100%;
+  position: relative;
+}
+
+.veyra-tile:hover,
+.email-tile:hover,
+.calendar-tile:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  border-color: #1976d2;
+}
+
+.tile-subject {
+  font-weight: 500;
+  font-size: 14px;
+  color: #333;
+  margin-bottom: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tile-sender,
+.tile-date {
+  font-size: 12px;
+  color: #666;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Selection styles */
+.veyra-tile.selected {
+  background-color: #e3f2fd !important;
+  border-color: #1976d2 !important;
+}
+
+/* Checkbox styles */
+.tile-checkbox {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #1976d2;
+  border-radius: 3px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.tile-checkbox.selected {
+  background-color: #1976d2;
+}
+
+.tile-checkbox span {
+  color: white;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+/* Action buttons */
+.tile-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.veyra-tile:hover .tile-actions {
+  opacity: 1;
+}
+
+.tile-actions button {
+  background: #ff4444;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 8px;
+  fontSize: 12px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.tile-actions button:hover {
+  background: #cc0000;
+} 

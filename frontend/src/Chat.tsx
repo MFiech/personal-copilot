@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchEventSource } from '@microsoft/fetch-event-source';
-import VeyraTile from './components/VeyraTile';
-import './components/VeyraTile.css';
+import ToolTile from './components/ToolTile';
+import './components/ToolTile.css';
 import { Message } from './components/Message';
 import { ChatInput } from './components/ChatInput';
-import { ProfileSwitcher } from './components/ProfileSwitcher';
-import SelectionControlPanel from './components/SelectionControlPanel';
+import { ProfileSwitcher } from './ProfileSwitcher';
+import SelectionControlPanel from './SelectionControlPanel';
 
 const ctrlClickListener = (event: KeyboardEvent) => {
   if (event.key === 'k' && (event.metaKey || event.ctrlKey)) {
@@ -149,103 +149,65 @@ export const Chat: React.FC = () => {
     }
 
     try {
-      let assistantMessageId: string | null = null;
-      let accumulatedContent = '';
-      let accumulatedParts: ChatMessage['parts'] = [];
-
-      await fetchEventSource('/api/chat', {
+      // Use regular fetch instead of streaming for now
+      const response = await fetch('/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          messages: [...messages.map(m => ({ role: m.role, content: m.content, id: m.id, name: m.name, parts: m.parts })), userMessage],
+          query: currentInput,
           profile: currentProfile,
           lastAssistantMessageId: lastAssistantMessageId,
         }),
-        onopen: async (response) => {
-          if (!response.ok) {
-            setIsLoading(false);
-            const errorText = await response.text();
-            setMessages(prev => [...prev, {
-              id: 'err-' + Date.now(),
-              role: 'system',
-              content: `Error: ${response.status} ${response.statusText} - ${errorText}`,
-              createdAt: new Date(),
-              parts: [{ type: 'text', content: `Error: ${response.status} ${response.statusText} - ${errorText}`}]
-            }]);
-            throw new Error(`Failed to open stream: ${response.status} ${errorText}`);
-          }
-        },
-        onmessage(ev) {
-          const data = JSON.parse(ev.data);
-          if (data.id) {
-            assistantMessageId = data.id;
-          }
-
-          const part = processStreamedData(data);
-
-          setMessages(prevMessages => {
-            const newMessages = [...prevMessages];
-            let assistantMsg = newMessages.find(m => m.id === assistantMessageId);
-
-            if (!assistantMsg) {
-              assistantMsg = {
-                id: assistantMessageId || 'temp-ast-' + Date.now(),
-                role: 'assistant',
-                content: '',
-                createdAt: new Date(),
-                parts: [],
-              };
-              newMessages.push(assistantMsg);
-            }
-            
-            if (part.content) { // Assuming processStreamedData might return content directly for text
-                assistantMsg.content += part.content;
-            }
-            if (part.parts && part.parts.length > 0) {
-                // Simple concatenation for text, more complex logic for tiles
-                part.parts.forEach(p_new => {
-                    if (p_new.type === 'text') {
-                        const last_part = assistantMsg!.parts[assistantMsg!.parts.length-1];
-                        if (last_part && last_part.type === 'text') {
-                            // Ensure both contents exist before concatenation
-                            if (last_part.content && p_new.content) {
-                                last_part.content += p_new.content;
-                            } else if (p_new.content) { // If last_part has no content, assign p_new's
-                                last_part.content = p_new.content;
-                            }
-                        } else {
-                            assistantMsg!.parts.push(p_new);
-                        }
-                        // Ensure p_new.content exists before adding to assistantMsg.content
-                        if (p_new.content) {
-                            assistantMsg!.content += p_new.content; // also update the main content for now
-                        }
-                    } else {
-                        assistantMsg!.parts.push(p_new);
-                    }
-                });
-            }
-            return newMessages;
-          });
-        },
-        onclose() {
-          setIsLoading(false);
-        },
-        onerror(err) {
-          console.error('EventSource failed:', err);
-          setIsLoading(false);
-          setMessages(prev => [...prev, {
-            id: 'err-' + Date.now(),
-            role: 'system',
-            content: 'Error connecting to the stream. Please try again.',
-            createdAt: new Date(),
-            parts: [{ type: 'text', content: 'Error connecting to the stream. Please try again.'}]
-          }]);
-          throw err; 
-        },
       });
+
+      if (!response.ok) {
+        setIsLoading(false);
+        const errorText = await response.text();
+        setMessages(prev => [...prev, {
+          id: 'err-' + Date.now(),
+          role: 'system',
+          content: `Error: ${response.status} ${response.statusText} - ${errorText}`,
+          createdAt: new Date(),
+          parts: [{ type: 'text', content: `Error: ${response.status} ${response.statusText} - ${errorText}`}]
+        }]);
+        return;
+      }
+
+      const data = await response.json();
+      console.log('Received response:', data);
+
+      // Create the assistant message from the response
+      const assistantMessage: ChatMessage = {
+        id: data.message_id || 'ast-' + Date.now(),
+        role: 'assistant',
+        content: data.response || '',
+        createdAt: new Date(),
+        parts: [],
+      };
+
+      // Add text content as the first part
+      if (data.response) {
+        assistantMessage.parts.push({
+          type: 'text',
+          content: data.response
+        });
+      }
+
+      // Process tool results to create tiles
+      if (data.tool_results && data.tool_results.tiles) {
+        console.log('Processing tiles:', data.tool_results.tiles);
+        data.tool_results.tiles.forEach((tileData: any) => {
+          assistantMessage.parts.push({
+            type: 'tile',
+            tileData: tileData
+          });
+        });
+      }
+
+      setMessages(prev => [...prev, assistantMessage]);
+      setIsLoading(false);
     } catch (error) {
       console.error('Failed to send message:', error);
       setIsLoading(false);
@@ -302,7 +264,7 @@ export const Chat: React.FC = () => {
                         onChange={() => handleTileSelect(message.id, tileId)}
                         onClick={(e) => e.stopPropagation()}
                       />
-                      <VeyraTile 
+                      <ToolTile 
                         type={part.tileData.type || 'email'}
                         data={part.tileData}
                       />
@@ -350,7 +312,7 @@ export const Chat: React.FC = () => {
           }}
         />
       </div>
-      <style jsx global>{`
+      <style>{`
         .tile-checkbox {
            cursor: pointer;
         }
