@@ -1,111 +1,64 @@
 # PM Co-Pilot
 
-A conversational AI assistant that uses a vector database to provide context-aware responses.
+PM Co-Pilot is an AI-powered assistant designed to supercharge your productivity by integrating with your personal applications like Gmail and Google Calendar. It uses a sophisticated RAG (Retrieval-Augmented Generation) model to provide context-aware assistance and allows you to take action on your data directly from the chat interface.
 
-## Overview
+## Features
 
-PM Co-Pilot is an AI-powered assistant that:
-- Stores and retrieves information from a vector database (Pinecone)
-- Uses OpenAI embeddings and Anthropic Claude for language processing
-- Maintains conversation history and thread context
-- Allows saving user insights for future retrieval
-- Integrates with Gmail and Google Calendar via VeyraX (optional)
+- **Conversational AI:** Chat with your data using natural language.
+- **RAG-based Insights:** The application leverages a Pinecone vector database to provide answers based on your saved insights and conversation history.
+- **Tooling Integration:** Connects with Gmail and Google Calendar via Composio to fetch, display, and manage your emails and events.
+- **Interactive UI:** A clean, modern interface built with React that allows you to interact with your data in real-time.
+- **Secure and Private:** Your data is your own. The application runs locally, and you control all connections to your personal apps.
 
-## Setup
+## Tech Stack
 
-### System Requirements
+- **Backend:** Flask, LangChain, OpenAI, Anthropic, Pinecone, MongoDB
+- **Frontend:** React, Material-UI
+- **Integrations:** Composio (for Gmail, Google Calendar)
 
-- **macOS**: Xcode Command Line Tools (for MongoDB installation)
-- **Python**: 3.11+ (recommended: 3.13)
-- **Node.js**: 18+ and npm
-- **MongoDB**: 7.0+ (will be installed via Homebrew)
+## Setup and Installation
 
-### API Keys Required
+### Prerequisites
 
-- Pinecone account and API key
+- Python 3.10+
+- Node.js 16+
+- Pinecone API key
 - OpenAI API key
 - Anthropic API key
-- VeyraX API key (optional, for Gmail/Calendar integration)
+- Google API key (for certain LLM features)
 
-### Environment Variables
+### Backend Setup
 
-Create a `.env` file in the `backend` directory with the following:
+1.  Navigate to the `backend` directory: `cd backend`
+2.  Create a virtual environment: `python -m venv myenv`
+3.  Activate the environment: `source myenv/bin/activate` (macOS/Linux) or `myenv\Scripts\activate` (Windows)
+4.  Install dependencies: `pip install -r requirements.txt`
+5.  Create a `.env` file in the `backend` directory and add your API keys:
 
-```
-PINECONE_API_TOKEN=your_pinecone_api_key
-OPENAI_API_KEY=your_openai_api_key
-ANTHROPIC_API_KEY=your_anthropic_api_key
-VEYRAX_API_KEY=your_veyrax_api_key  # Optional, for Gmail/Calendar
-```
+    ```
+    PINECONE_API_TOKEN=your_pinecone_api_key
+    OPENAI_API_KEY=your_openai_api_key
+    ANTHROPIC_API_KEY=your_anthropic_api_key
+    GOOGLE_API_KEY=your_google_api_key
+    ```
+6.  To connect to your tools, you will need to set up Composio. Follow their documentation to get your GMail and Google Calendar connected.
+7.  Run the backend server: `python app.py`
 
-### Installation
+### Frontend Setup
 
-#### 1. Install System Dependencies
+1.  Navigate to the `frontend` directory: `cd frontend`
+2.  Install dependencies: `npm install`
+3.  Run the frontend development server: `npm start`
 
-**macOS:**
-```bash
-# Install Xcode Command Line Tools (if not already installed)
-xcode-select --install
+The application should now be running on `http://localhost:3000`.
 
-# Install MongoDB via Homebrew
-brew tap mongodb/brew
-brew install mongodb-community@7.0
+## Project Structure
 
-# Start MongoDB service
-brew services start mongodb/brew/mongodb-community@7.0
-```
+(Details about the project structure can be added here)
 
-#### 2. Setup Python Virtual Environment
+## Contributing
 
-```bash
-# Create virtual environment
-python3 -m venv myenv
-
-# Activate virtual environment
-source myenv/bin/activate
-```
-
-#### 3. Install Backend Dependencies
-
-```bash
-cd backend
-pip install -r requirements.txt
-```
-
-#### 4. Install Frontend Dependencies
-
-```bash
-cd frontend
-npm install
-```
-
-## Running the Application
-
-### Backend
-
-**Important**: Always activate the virtual environment before running the backend.
-
-```bash
-# Activate virtual environment
-source myenv/bin/activate
-
-# Navigate to backend directory
-cd backend
-
-# Start the Flask server
-python3 app.py
-```
-
-The server will run on `http://localhost:5001`.
-
-### Frontend
-
-```bash
-cd frontend
-npm run dev
-```
-
-The frontend will run on `http://localhost:3000`.
+(Details on how to contribute can be added here)
 
 ## Adding Data
 
@@ -145,11 +98,6 @@ This will store the text in the Pinecone database for future retrieval.
 - `/threads` (GET): Get a list of all conversation threads
 - `/chat/<thread_id>` (GET): Get the message history for a specific thread
 - `/save_insight` (POST): Save a new insight to the vector database
-- `/veyrax/check` (GET): Check VeyraX configuration status
-
-## Gmail and Google Calendar Integration
-
-For instructions on setting up Gmail and Google Calendar integration via VeyraX, see [README-VEYRAX.md](README-VEYRAX.md).
 
 ## Database Structure
 
