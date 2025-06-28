@@ -345,9 +345,9 @@ def chat():
                                 # Parse date from timestamp
                                 date_header = date_timestamp if date_timestamp else 'Unknown Date'
                                 
-                                # Get email content
+                                # Don't save any content during initial fetch to keep DB light
                                 content = {
-                                    'text': message_text[:500] + '...' if len(message_text) > 500 else message_text,
+                                    'text': '',
                                     'html': ''
                                 }
                                 
@@ -373,16 +373,15 @@ def chat():
                                 email_doc.save()
                                 print(f"[DEBUG] Saved email to database: {email_id} - Subject: {subject[:50]}")
                                 
-                                # Create a dict representation for frontend/LLM use
+                                # Create a dict representation for frontend use (no content to keep it light)
                                 email_dict = {
                                     'id': email_id,
                                     'subject': subject,
                                     'from_email': from_email,
                                     'to_emails': to_emails,
                                     'date': date_header,
-                                    'content': content,
-                                    'metadata': email_doc.metadata,
-                                    'message_text': message_text  # Include full text for LLM
+                                    'content': content,  # Empty content as per requirement
+                                    'metadata': email_doc.metadata
                                 }
                                 
                                 processed_emails.append(email_dict)
@@ -1347,22 +1346,38 @@ def get_email_content():
         emails_collection = get_collection(EMAILS_COLLECTION)
         email_doc = emails_collection.find_one({'email_id': email_id})
         
-        if email_doc and email_doc.get('content', {}).get('html', '').strip() and email_doc.get('content', {}).get('text', '').strip():
-            # Content already exists and is non-empty, return it
+        # Check if we have substantial content already (either HTML or text with significant length)
+        existing_content = email_doc.get('content', {}) if email_doc else {}
+        has_html = existing_content.get('html', '').strip()
+        has_substantial_text = len(existing_content.get('text', '').strip()) > 100  # More than just snippet
+        
+        if email_doc and (has_html or has_substantial_text):
+            # Content already exists and is substantial, return it
+            print(f"[DEBUG] get_email_content - Using existing content for {email_id}")
             return jsonify({
                 'success': True,
                 'email_id': email_id,
-                'content': email_doc['content']
+                'content': existing_content
             }), 200
         
-        # Content doesn't exist, fetch it from Tooling
+        # Content doesn't exist or is insufficient, fetch it from Tooling
         if not tooling_service:
             return jsonify({'error': 'Tooling service not available'}), 500
-            
+        
+        print(f"[DEBUG] get_email_content - Fetching full content for {email_id} from Composio")
         # Get full email content from Tooling
         email_content = tooling_service.get_email_details(email_id)
         
         if not email_content:
+            print(f"[DEBUG] get_email_content - No content retrieved from Composio for {email_id}")
+            # If we have an email in DB but failed to get full content, use existing content as fallback
+            if email_doc and existing_content.get('text'):
+                print(f"[DEBUG] get_email_content - Using existing DB content as fallback for {email_id}")
+                return jsonify({
+                    'success': True,
+                    'email_id': email_id,
+                    'content': existing_content
+                }), 200
             return jsonify({'error': 'Could not retrieve email content'}), 404
         
         # Process the content to extract HTML and convert to markdown
@@ -1394,19 +1409,24 @@ def get_email_content():
             text_content = ""
         
         # Update the email document in database with the content
-        update_result = emails_collection.update_one(
-            {'email_id': email_id},
-            {
-                '$set': {
-                    'content.html': html_content,
-                    'content.text': text_content,
-                    'updated_at': int(time.time())
+        # If email doesn't exist in DB, we need to handle that case
+        if email_doc:
+            update_result = emails_collection.update_one(
+                {'email_id': email_id},
+                {
+                    '$set': {
+                        'content.html': html_content,
+                        'content.text': text_content,
+                        'updated_at': int(time.time())
+                    }
                 }
-            }
-        )
-        
-        if update_result.modified_count == 0:
-            return jsonify({'error': 'Failed to update email in database'}), 500
+            )
+            
+            if update_result.modified_count == 0 and update_result.matched_count == 0:
+                print(f"[DEBUG] get_email_content - Email {email_id} not found in DB for update")
+                # Email doesn't exist in DB, we can still return the content for summarization
+        else:
+            print(f"[DEBUG] get_email_content - Email {email_id} not in DB, returning content without saving")
         
         return jsonify({
             'success': True,

@@ -455,8 +455,8 @@ function App() {
           <Box sx={{ mt: 1, bgcolor: 'transparent', borderRadius: 1 }}>
             <ToolResults 
               results={message.tool_results} // Pass the tool_results object, not the whole message
-              currentThreadId={threadId} // threadId is available in App.js scope
-              message_id={message.id} // assistant's message_id
+              threadId={threadId} // threadId is available in App.js scope
+              messageId={message.id} // assistant's message_id
               onNewMessageReceived={onNewMessage}
               showSnackbar={showSnackbar}
             />

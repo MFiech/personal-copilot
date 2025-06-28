@@ -41,28 +41,102 @@ class ComposioService:
         return {"data": {"messages": response.get("data", [])}} if response.get("successful") else {"error": response.get("error")}
 
     def get_email_details(self, email_id):
-        # This action might need adjustment based on the new SDK version
+        """
+        Get full email content using GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID action.
+        Returns the full email content (HTML or text) for summarization.
+        """
         response = self._execute_action(
-            action=Action.GMAIL_GET_EMAIL,
-            params={"message_id": email_id, "format": "full"}
+            action=Action.GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID,
+            params={
+                "message_id": email_id, 
+                "format": "full",
+                "user_id": "me"
+            }
         )
+        
         if response.get("successful"):
-            email_data = response.get("data", {})
+            email_data = response.get("data")
+            if not email_data:
+                email_data = {}
+            print(f"[DEBUG] get_email_details - Full email data keys: {list(email_data.keys()) if email_data else 'None'}")
+            
+            # Try to extract content from the response
+            # The response structure may vary, so we'll try multiple approaches
+            content = ""
+            
+            # Try to get payload data (Gmail API format)
             payload = email_data.get("payload", {})
-            html_content = ""
-            if payload.get("mimeType") == "text/html":
-                body_data = payload.get("body", {}).get("data")
+            if payload:
+                print(f"[DEBUG] get_email_details - Payload mimeType: {payload.get('mimeType')}")
+                
+                # Check if it's a simple text/html message
+                if payload.get("mimeType") in ["text/html", "text/plain"]:
+                    body_data = payload.get("body", {}).get("data")
+                    if body_data:
+                        try:
+                            content = base64.urlsafe_b64decode(body_data.encode('ASCII')).decode('utf-8')
+                            print(f"[DEBUG] get_email_details - Decoded simple message, length: {len(content)}")
+                        except Exception as e:
+                            print(f"[DEBUG] get_email_details - Error decoding simple message: {e}")
+                
+                # Check if it's a multipart message
+                elif "parts" in payload:
+                    print(f"[DEBUG] get_email_details - Multipart message with {len(payload.get('parts', []))} parts")
+                    content = self._extract_content_from_parts(payload.get("parts", []))
+            
+            # Fallback to other fields if no content found in payload
+            if not content:
+                # Try messageText field (Composio specific)
+                message_text = email_data.get("messageText", "")
+                if message_text:
+                    content = message_text
+                    print(f"[DEBUG] get_email_details - Using messageText fallback, length: {len(content)}")
+                
+                # Final fallback to snippet
+                if not content:
+                    content = email_data.get("snippet", "")
+                    print(f"[DEBUG] get_email_details - Using snippet fallback, length: {len(content)}")
+            
+            return content if content else None
+        else:
+            print(f"[DEBUG] get_email_details - Action not successful: {response.get('error', 'Unknown error')}")
+            return None
+
+    def _extract_content_from_parts(self, parts, depth=0):
+        """
+        Recursively extract content from email parts, handling nested multipart structures.
+        """
+        indent = "  " * depth
+        content = ""
+        
+        for i, part in enumerate(parts):
+            mime_type = part.get("mimeType", "")
+            print(f"[DEBUG] get_email_details - {indent}Part {i}: {mime_type}")
+            
+            # If this is a multipart part, recurse into its parts
+            if mime_type.startswith("multipart/") and "parts" in part:
+                print(f"[DEBUG] get_email_details - {indent}Recursing into multipart with {len(part.get('parts', []))} sub-parts")
+                nested_content = self._extract_content_from_parts(part.get("parts", []), depth + 1)
+                if nested_content and not content:  # Use first non-empty content found
+                    content = nested_content
+            
+            # If this is a text part, try to extract content
+            elif mime_type in ["text/html", "text/plain"]:
+                body_data = part.get("body", {}).get("data")
                 if body_data:
-                    html_content = base64.urlsafe_b64decode(body_data.encode('ASCII')).decode('utf-8')
-            elif "parts" in payload:
-                for part in payload.get("parts", []):
-                    if part.get("mimeType") == "text/html":
-                        body_data = part.get("body", {}).get("data")
-                        if body_data:
-                            html_content = base64.urlsafe_b64decode(body_data.encode('ASCII')).decode('utf-8')
-                            break
-            return html_content or email_data.get("snippet", "")
-        return None
+                    try:
+                        decoded_content = base64.urlsafe_b64decode(body_data.encode('ASCII')).decode('utf-8')
+                        print(f"[DEBUG] get_email_details - {indent}Decoded part {i}, length: {len(decoded_content)}")
+                        
+                        # Prefer HTML content, but accept text/plain as fallback
+                        if mime_type == "text/html" or (not content and mime_type == "text/plain"):
+                            content = decoded_content
+                            if mime_type == "text/html":
+                                break  # Prefer HTML, so break on first HTML part
+                    except Exception as e:
+                        print(f"[DEBUG] get_email_details - {indent}Error decoding part {i}: {e}")
+        
+        return content
 
     def delete_email(self, message_id, permanently=False, **kwargs):
         action = Action.GMAIL_DELETE_EMAIL_PERMANENTLY if permanently else Action.GMAIL_TRASH_EMAIL
