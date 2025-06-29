@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
 import ToolTile from './ToolTile';
-import SelectionControlPanel from './SelectionControlPanel';
 import TipsAndUpdatesOutlinedIcon from '@mui/icons-material/TipsAndUpdatesOutlined';
 import OpenInFullOutlinedIcon from '@mui/icons-material/OpenInFullOutlined';
 import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import './VeyraResults.css'; // Import the original styling
 
-const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageReceived, showSnackbar, currentOffset, limitPerPage, totalEmailsAvailable, hasMore, ...paginationProps }) => {
+const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageReceived, showSnackbar, onOpenEmail, currentOffset, limitPerPage, totalEmailsAvailable, hasMore, ...paginationProps }) => {
   const [selectedEmails, setSelectedEmails] = useState([]);
   const [selectedEvents, setSelectedEvents] = useState([]);
   const [hoveredEmailId, setHoveredEmailId] = useState(null);
@@ -112,6 +111,10 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
 
   // Email selection handlers
   const handleEmailSelection = (emailId) => {
+    if (!emailId) {
+      console.warn('Attempted to select email without valid ID');
+      return;
+    }
     setSelectedEmails(prev => 
       prev.includes(emailId) 
         ? prev.filter(id => id !== emailId)
@@ -128,13 +131,8 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
     setSelectedEmails([]);
   };
 
-  const handleEmailDeleted = (deletedEmailId) => {
-    const updatedEmails = emails.filter(email => email.email_id !== deletedEmailId);
-    setSelectedEmails(prev => prev.filter(id => id !== deletedEmailId));
-    if (onUpdate) {
-      onUpdate(messageId, { ...results, emails: updatedEmails });
-    }
-  };
+  // Note: handleEmailDeleted function removed as it's not currently used
+  // but kept for potential future implementation
 
   const handleBulkDeleteEmails = () => {
     const updatedEmails = emails.filter(email => 
@@ -288,7 +286,8 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
     }
   };
 
-  const totalSelected = selectedEmails.length + selectedEvents.length;
+  // Note: totalSelected removed as it's not currently used
+  // const totalSelected = selectedEmails.length + selectedEvents.length;
 
   return (
     <>
@@ -327,6 +326,7 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
             {/* Email rows */}
             {emails.map((email, index) => {
               const emailId = email.email_id || email._id;
+              const uniqueKey = emailId ? `email-${emailId}` : `email-index-${index}`;
               const isSelected = selectedEmails.includes(emailId);
               const isHovered = hoveredEmailId === emailId;
               const isSummarizing = summarizingEmails.has(emailId);
@@ -334,9 +334,15 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
               const subject = email.subject || 'No Subject';
               const date = formatDate(email.date);
               
+              // Skip this email if we don't have a valid emailId to prevent state confusion
+              if (!emailId) {
+                console.warn('Email without valid ID detected, skipping:', email);
+                return null;
+              }
+              
               return (
                 <div 
-                  key={emailId || index}
+                  key={uniqueKey}
                   className={`email-row ${isSelected ? 'selected' : ''}`}
                   onClick={() => handleEmailSelection(emailId)}
                   onMouseEnter={() => setHoveredEmailId(emailId)}
@@ -347,7 +353,10 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
                       type="checkbox"
                       className="email-checkbox"
                       checked={isSelected}
-                      onChange={() => handleEmailSelection(emailId)}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        handleEmailSelection(emailId);
+                      }}
                       onClick={(e) => e.stopPropagation()}
                     />
                   </div>
@@ -375,8 +384,9 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
                           className="hover-icon-btn open-hover-btn"
                           onClick={(e) => {
                             e.stopPropagation();
-                            console.log('Open email:', emailId);
-                            // TODO: Implement email opening
+                            if (onOpenEmail) {
+                              onOpenEmail(email);
+                            }
                           }}
                           title="Open"
                         >
