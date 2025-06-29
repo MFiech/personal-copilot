@@ -503,8 +503,10 @@ def chat():
         # Add pagination metadata if we have email results
         if raw_email_list is not None and 'pagination_data' in locals():
             assistant_message.metadata = assistant_message.metadata or {}
+            # Use the Gmail query for pagination, not the original user query
+            gmail_query = raw_tool_results.get('original_gmail_query', query)
             assistant_message.metadata.update({
-                'tool_original_query_params': {'query': query, 'count': pagination_data['limit']},
+                'tool_original_query_params': {'query': gmail_query, 'count': pagination_data['limit']},
                 'tool_current_page_token': pagination_data['page_token'],
                 'tool_next_page_token': pagination_data['next_page_token'],
                 'tool_limit_per_page': pagination_data['limit'],
@@ -1177,18 +1179,14 @@ def load_more_emails():
         if not tooling_service:
             print("[ERROR] Composio service not initialized for /load_more_emails")
             return jsonify({"error": "Composio service not available"}), 500
-        fetch_params = {
-            **original_params,
+        # For Gmail native tokens, we only need count and page_token
+        # No query modification needed - Gmail token contains all context
+        fetch_params_for_composio = {
             "count": limit_per_page,
-            "page_token": next_page_token  # Use page_token instead of offset
+            "page_token": next_page_token
         }
         
-        # Map parameters for the new ComposioService method
-        fetch_params_for_composio = fetch_params.copy()
-        if 'search_query' in fetch_params_for_composio:
-            fetch_params_for_composio['query'] = fetch_params_for_composio.pop('search_query')
-            
-        print(f"[DEBUG] Calling Composio with: {fetch_params_for_composio}")
+        print(f"[DEBUG] Using Gmail native token - calling Composio with: {fetch_params_for_composio}")
         tooling_response = tooling_service.get_recent_emails(**fetch_params_for_composio)
 
         print(f"[DEBUG] Composio response for /load_more_emails: {json.dumps(tooling_response)[:500]}")
@@ -1520,6 +1518,37 @@ def get_email_content():
         import traceback
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
+
+@app.route('/test_pagination', methods=['POST'])
+def test_pagination():
+    """
+    Test endpoint to compare different Gmail pagination approaches.
+    """
+    try:
+        data = request.get_json()
+        query = data.get('query', '')
+        count = data.get('count', 5)
+        
+        print(f"[DEBUG] Testing pagination approaches with query: '{query}', count: {count}")
+        
+        # Initialize Composio service
+        composio_service = ComposioService()
+        
+        # Run the test
+        test_results = composio_service.test_pagination_approaches(query=query, count=count)
+        
+        return jsonify({
+            "success": True,
+            "test_results": test_results,
+            "message": "Pagination test completed. Check server logs for detailed output."
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] Test pagination error: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 if __name__ == '__main__':
     app.run(port=5001, debug=True)
