@@ -14,11 +14,8 @@ import {
   TextField,
   Button,
   IconButton,
-  CircularProgress,
   Snackbar,
-  InputAdornment,
 } from '@mui/material';
-import SaveIcon from '@mui/icons-material/Save';
 import MenuIcon from '@mui/icons-material/Menu';
 import EditIcon from '@mui/icons-material/Edit';
 import CheckIcon from '@mui/icons-material/Check';
@@ -29,6 +26,7 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogTitle from '@mui/material/DialogTitle';
 import ToolResults from './components/ToolResults';
+import EmailSidebar from './components/EmailSidebar';
 import './App.css';
 import { useSnackbar } from './components/SnackbarProvider';
 
@@ -75,6 +73,7 @@ const theme = createTheme({
 });
 
 const drawerWidth = 240; // Define drawer width as a constant
+// Email sidebar will be 60% of main content width, calculated dynamically
 
 function App() {
   const { threadId } = useParams();
@@ -96,6 +95,14 @@ function App() {
   const [editTitle, setEditTitle] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [threadToDelete, setThreadToDelete] = useState(null);
+
+  // Email sidebar state
+  const [emailSidebar, setEmailSidebar] = useState({
+    open: false,
+    email: null,
+    loading: false,
+    error: null
+  });
 
   const { showSnackbar } = useSnackbar();
 
@@ -490,6 +497,7 @@ function App() {
               onNewMessageReceived={onNewMessage}
               onUpdate={handleUpdateMessage}
               showSnackbar={showSnackbar}
+              onOpenEmail={handleOpenEmail}
               // Pass pagination props
               currentOffset={message.tool_current_offset}
               limitPerPage={message.tool_limit_per_page}
@@ -555,6 +563,73 @@ function App() {
       setDeleteDialogOpen(false);
       setThreadToDelete(null);
     }
+  };
+
+  // Email sidebar functions
+  const handleOpenEmail = async (email) => {
+    console.log('Opening email:', email);
+    
+    // On mobile, close the drawer sidebar to make room for email sidebar
+    if (isMobile) {
+      setDrawerOpen(false);
+    }
+    
+    // Close any existing sidebar and set loading state
+    setEmailSidebar({
+      open: true,
+      email: null,
+      loading: true,
+      error: null
+    });
+
+    try {
+      // Fetch email content if not already present
+      const response = await fetch('http://localhost:5001/get_email_content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email_id: email.email_id || email.id }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch email content: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      if (data.success) {
+        // Merge the fetched content with the existing email data
+        const emailWithContent = {
+          ...email,
+          content: data.content
+        };
+
+        setEmailSidebar({
+          open: true,
+          email: emailWithContent,
+          loading: false,
+          error: null
+        });
+      } else {
+        throw new Error('Failed to retrieve email content');
+      }
+    } catch (error) {
+      console.error('Error fetching email content:', error);
+      setEmailSidebar({
+        open: true,
+        email: null,
+        loading: false,
+        error: error.message
+      });
+    }
+  };
+
+  const handleCloseEmailSidebar = () => {
+    setEmailSidebar({
+      open: false,
+      email: null,
+      loading: false,
+      error: null
+    });
   };
 
   const DeleteConfirmationDialog = () => (
@@ -724,11 +799,7 @@ function App() {
             flexDirection: 'column', 
             height: '100vh',
             overflow: 'hidden', // For internal content scroll, not page scroll
-            transition: theme.transitions.create(['margin-left'], { // Transition only margin-left
-               easing: theme.transitions.easing.sharp,
-               duration: drawerOpen ? theme.transitions.duration.enteringScreen : theme.transitions.duration.leavingScreen,
-            }),
-            // marginLeft removed to allow main content to always fill available space
+            position: 'relative', // For overlay positioning
           }}
         >
           {/* Header for Toggle and Title */}
@@ -883,6 +954,15 @@ function App() {
             </Box>
           </Box>
         </Box>
+
+        {/* Email Sidebar */}
+        <EmailSidebar
+          open={emailSidebar.open}
+          email={emailSidebar.email}
+          loading={emailSidebar.loading}
+          error={emailSidebar.error}
+          onClose={handleCloseEmailSidebar}
+        />
 
         <DeleteConfirmationDialog />
         <Snackbar
