@@ -2,7 +2,7 @@
 This module contains all the prompt templates used in the application.
 Each prompt has a specific purpose and is optimized for a particular task.
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 
 def master_intent_router_prompt(user_query, conversation_history=None):
     """
@@ -133,4 +133,70 @@ Email Content:
 
 Provide a concise summary (2-4 sentences) of the above email. Highlight the main topic, key information, and any explicit action items mentioned.
 Output only the summary without any introductory text or explanations. Focus solely on the text, not HTML. At most, you can HTML to undderstand better the email structure/heading.
-""" 
+"""
+
+def gmail_query_builder_prompt(user_query, conversation_history=None):
+    """
+    Prompt for building Gmail search queries from natural language user requests.
+    This prompt instructs the LLM to parse user intent and construct proper Gmail search queries
+    using Gmail's advanced search operators.
+    """
+    history_context = ""
+    if conversation_history:
+        # Include recent conversation for context
+        recent_messages = conversation_history[-6:]  # Last 3 exchanges
+        for msg in recent_messages:
+            role = msg.get('role', 'user')
+            content = msg.get('content', '')[:200]  # Truncate for brevity
+            history_context += f"{role.capitalize()}: {content}\n"
+    
+    current_date = datetime.now()
+    yesterday_date = (current_date - timedelta(days=1)).strftime('%Y/%m/%d')
+    today_date = current_date.strftime('%Y/%m/%d')
+    last_week_date = (current_date - timedelta(days=7)).strftime('%Y/%m/%d')
+    
+    return f"""You are an expert Gmail search query builder. Your task is to convert natural language email requests into precise Gmail search queries using Gmail's advanced search operators.
+
+CURRENT DATE: {current_date.strftime('%Y-%m-%d')} (use for relative date calculations)
+
+AVAILABLE GMAIL SEARCH OPERATORS:
+- from:email@domain.com (sender)
+- to:email@domain.com (recipient) 
+- subject:"exact phrase" or subject:keyword
+- label:labelname (e.g., label:important, label:work)
+- has:attachment (emails with attachments)
+- is:unread, is:read, is:starred, is:important
+- after:YYYY/MM/DD, before:YYYY/MM/DD (date ranges)
+- newer_than:Nd, older_than:Nd (N days, e.g., newer_than:7d)
+- size:larger:10M, size:smaller:1M (file sizes)
+- AND, OR, NOT (logical operators)
+- "exact phrase" (exact phrase matching)
+- filename:type (e.g., filename:pdf, filename:doc)
+
+CONVERSATION CONTEXT:
+{history_context}
+
+USER REQUEST: "{user_query}"
+
+INSTRUCTIONS:
+1. Analyze the user's request to identify email search criteria
+2. Map natural language to appropriate Gmail operators
+3. Handle relative dates (today, yesterday, last week, etc.) by converting to YYYY/MM/DD format
+4. Use quotes for exact phrases and multi-word subjects
+5. Combine operators with AND/OR as needed
+6. If no specific criteria mentioned, return empty string for general recent emails
+7. Be conservative - only add operators you're confident about from the user's request
+
+EXAMPLES:
+- "show me emails from john about the meeting" → from:john subject:meeting
+- "unread emails from last week" → is:unread after:{last_week_date}
+- "emails with attachments from sarah" → from:sarah has:attachment
+- "important emails about project alpha" → is:important subject:"project alpha"
+- "emails from gmail.com domain yesterday" → from:gmail.com after:{yesterday_date} before:{today_date}
+- "show my emails" → (empty string)
+
+RESPONSE FORMAT:
+Return ONLY the Gmail search query string. Do not include explanations, quotes around the entire response, or additional text.
+If no specific search criteria can be identified, return an empty string.
+
+GMAIL QUERY:""" 

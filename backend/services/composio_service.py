@@ -2,6 +2,8 @@ from composio.client.enums import Action
 from composio.tools import ComposioToolSet
 from datetime import datetime, timedelta
 import base64
+import openai
+import os
 
 class ComposioService:
     def __init__(self, api_key: str):
@@ -32,28 +34,24 @@ class ComposioService:
     def get_recent_emails(self, count=10, query=None, page_token=None, **kwargs):
         """
         Get recent emails using the GMAIL_FETCH_EMAILS action.
-        Uses date-based chronological pagination instead of pageToken for consistent ordering.
+        Uses Gmail's native pagination tokens from Composio.
         """
-        # For chronological pagination, we use date-based queries instead of pageToken
-        # pageToken doesn't guarantee chronological order across pages
-        
         params = {
             "max_results": count
         }
         
-        # Build query for chronological pagination
-        search_query = query or ""
+        # Only include query on first request (when no page_token)
+        if not page_token and query:
+            params["query"] = query
+            print(f"[DEBUG] First request with Gmail query: {query}")
         
-        # If page_token is provided, it's actually a date string for "before:" query
+        # Include Gmail's native page_token if provided
         if page_token:
-            # page_token contains the date of the oldest email from previous batch
-            if search_query:
-                search_query = f"{search_query} before:{page_token}"
-            else:
-                search_query = f"before:{page_token}"
+            params["page_token"] = page_token
+            print(f"[DEBUG] Subsequent request with Gmail page_token: {page_token[:50]}...")
         
-        params["query"] = search_query
-            
+        print(f"[DEBUG] Calling Composio with params: {params}")
+        
         response = self._execute_action(
             action=Action.GMAIL_FETCH_EMAILS,
             params=params
@@ -63,53 +61,135 @@ class ComposioService:
             data = response.get("data", {})
             messages = data.get("messages", [])
             
-            # For chronological pagination, we need to find the oldest email date
-            # to use as the "before:" date for the next page
-            next_page_token = None
-            if messages and len(messages) == count:
-                # Find the oldest email date from this batch
-                oldest_date = None
-                for message in messages:
-                    # Try to get date from various possible fields
-                    date_str = (message.get("messageTimestamp") or 
-                              message.get("date") or 
-                              message.get("internalDate"))
-                    
-                    if date_str:
-                        try:
-                            # Convert to Gmail search format (YYYY/MM/DD)
-                            if date_str.isdigit():
-                                # Unix timestamp in milliseconds
-                                import datetime
-                                timestamp_ms = int(date_str)
-                                date_obj = datetime.datetime.fromtimestamp(timestamp_ms / 1000)
-                            else:
-                                # Try to parse ISO format or other formats
-                                from utils.date_parser import parse_email_date
-                                date_obj = parse_email_date(date_str)
-                            
-                            if date_obj:
-                                gmail_date = date_obj.strftime("%Y/%m/%d")
-                                if oldest_date is None or gmail_date < oldest_date:
-                                    oldest_date = gmail_date
-                        except Exception as e:
-                            print(f"[DEBUG] Error parsing date {date_str}: {e}")
-                            continue
-                
-                # Use the oldest date as the next page token for "before:" query
-                next_page_token = oldest_date
+            # Get Gmail's native nextPageToken from Composio response
+            gmail_next_token = data.get("nextPageToken")
             
-            # Estimate total - we can't get exact total with date-based pagination
+            print(f"[DEBUG] Gmail response: {len(messages)} messages")
+            print(f"[DEBUG] Gmail nextPageToken from Composio: {gmail_next_token[:50] + '...' if gmail_next_token else 'None'}")
+            
+            # Get total estimate from Gmail
             result_size_estimate = data.get("resultSizeEstimate", len(messages))
             
             return {
                 "data": data,
-                "next_page_token": next_page_token,
+                "next_page_token": gmail_next_token,  # Use Gmail's native token
                 "total_estimate": result_size_estimate,
-                "has_more": bool(next_page_token and len(messages) == count)
+                "has_more": bool(gmail_next_token and len(messages) == count)
             }
         else:
+            print(f"[DEBUG] Gmail request failed: {response.get('error')}")
             return {"error": response.get("error")}
+
+    def get_recent_emails_with_gmail_tokens(self, count=10, query=None, page_token=None, **kwargs):
+        """
+        Test version using pure Gmail pageToken approach.
+        This method tests if Composio supports Gmail's native pagination tokens.
+        """
+        params = {
+            "max_results": count
+        }
+        
+        # Only include query on first request (when no page_token)
+        if not page_token and query:
+            params["query"] = query
+            print(f"[DEBUG] First request with query: {query}")
+        
+        # Include page_token if provided (should be Gmail's opaque token)
+        if page_token:
+            params["page_token"] = page_token
+            print(f"[DEBUG] Subsequent request with page_token: {page_token[:50]}...")
+        
+        print(f"[DEBUG] Gmail token test - calling Composio with params: {params}")
+        
+        response = self._execute_action(
+            action=Action.GMAIL_FETCH_EMAILS,
+            params=params
+        )
+        
+        if response.get("successful"):
+            data = response.get("data", {})
+            messages = data.get("messages", [])
+            
+            # Try to get Gmail's native nextPageToken from response
+            gmail_next_token = data.get("nextPageToken")
+            
+            print(f"[DEBUG] Gmail token test - got {len(messages)} messages")
+            print(f"[DEBUG] Gmail token test - nextPageToken from response: {gmail_next_token[:50] if gmail_next_token else 'None'}...")
+            
+            # Estimate total
+            result_size_estimate = data.get("resultSizeEstimate", len(messages))
+            
+            return {
+                "data": data,
+                "next_page_token": gmail_next_token,  # Use Gmail's native token
+                "total_estimate": result_size_estimate,
+                "has_more": bool(gmail_next_token and len(messages) == count),
+                "token_type": "gmail_native"  # Flag to identify this approach
+            }
+        else:
+            print(f"[DEBUG] Gmail token test - Error: {response.get('error')}")
+            return {"error": response.get("error")}
+
+    def test_pagination_approaches(self, query=None, count=5):
+        """
+        Test both pagination approaches side by side for comparison.
+        Returns results from both methods to compare effectiveness.
+        """
+        print(f"\n=== Testing Pagination Approaches ===")
+        print(f"Query: {query}, Count: {count}")
+        
+        # Test 1: Current date-based approach
+        print(f"\n--- Test 1: Date-based pagination ---")
+        try:
+            date_result = self.get_recent_emails(count=count, query=query)
+            print(f"Date-based result: {len(date_result.get('data', {}).get('messages', []))} messages")
+            print(f"Date-based next_token: {date_result.get('next_page_token')}")
+            print(f"Date-based has_more: {date_result.get('has_more')}")
+        except Exception as e:
+            print(f"Date-based approach failed: {e}")
+            date_result = {"error": str(e)}
+        
+        # Test 2: Gmail native token approach
+        print(f"\n--- Test 2: Gmail native token pagination ---")
+        try:
+            gmail_result = self.get_recent_emails_with_gmail_tokens(count=count, query=query)
+            print(f"Gmail token result: {len(gmail_result.get('data', {}).get('messages', []))} messages")
+            print(f"Gmail token next_token: {gmail_result.get('next_page_token', 'None')[:50] if gmail_result.get('next_page_token') else 'None'}...")
+            print(f"Gmail token has_more: {gmail_result.get('has_more')}")
+        except Exception as e:
+            print(f"Gmail token approach failed: {e}")
+            gmail_result = {"error": str(e)}
+        
+        # Compare results
+        print(f"\n--- Comparison ---")
+        date_count = len(date_result.get('data', {}).get('messages', [])) if 'error' not in date_result else 0
+        gmail_count = len(gmail_result.get('data', {}).get('messages', [])) if 'error' not in gmail_result else 0
+        
+        print(f"Date-based approach: {date_count} messages, {'✓' if date_count > 0 else '✗'}")
+        print(f"Gmail token approach: {gmail_count} messages, {'✓' if gmail_count > 0 else '✗'}")
+        
+        # Check if we got different message sets (which would indicate different sorting/pagination)
+        if date_count > 0 and gmail_count > 0:
+            date_ids = [msg.get('messageId') for msg in date_result.get('data', {}).get('messages', [])]
+            gmail_ids = [msg.get('messageId') for msg in gmail_result.get('data', {}).get('messages', [])]
+            
+            common_ids = set(date_ids) & set(gmail_ids)
+            print(f"Common messages between approaches: {len(common_ids)}/{min(date_count, gmail_count)}")
+            
+            if len(common_ids) == min(date_count, gmail_count):
+                print("✓ Both approaches returned the same messages (possibly in different order)")
+            else:
+                print("⚠ Approaches returned different message sets")
+        
+        return {
+            "date_based": date_result,
+            "gmail_native": gmail_result,
+            "comparison": {
+                "date_count": date_count,
+                "gmail_count": gmail_count,
+                "both_successful": date_count > 0 and gmail_count > 0
+            }
+        }
 
     def get_email_details(self, email_id):
         """
@@ -378,14 +458,73 @@ class ComposioService:
 
         return "\n".join(summary)
 
+    def build_gmail_query_with_llm(self, user_query, conversation_history=None):
+        """
+        Use LLM to intelligently build Gmail search queries from natural language.
+        Returns a Gmail search query string or empty string for general queries.
+        """
+        try:
+            from prompts import gmail_query_builder_prompt
+            
+            # Build the prompt
+            prompt = gmail_query_builder_prompt(user_query, conversation_history)
+            
+            # Get OpenAI API key from environment
+            api_key = os.getenv('OPENAI_API_KEY')
+            if not api_key:
+                print("[WARNING] No OpenAI API key found, falling back to simple query building")
+                return self._build_simple_query(user_query)
+            
+            # Call OpenAI API
+            client = openai.OpenAI(api_key=api_key)
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",  # Using cost-effective model for query building
+                messages=[
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=100,  # Gmail queries are typically short
+                temperature=0.1,  # Low temperature for consistent, precise queries
+                timeout=10  # Quick timeout for responsiveness
+            )
+            
+            gmail_query = (response.choices[0].message.content or "").strip()
+            print(f"[DEBUG] LLM-generated Gmail query: '{gmail_query}'")
+            
+            # Validate the query is reasonable (basic safety check)
+            if len(gmail_query) > 500:  # Gmail has query limits
+                print("[WARNING] Generated query too long, falling back to simple query")
+                return self._build_simple_query(user_query)
+            
+            return gmail_query
+            
+        except Exception as e:
+            print(f"[ERROR] Failed to build Gmail query with LLM: {e}")
+            # Fallback to simple query building
+            return self._build_simple_query(user_query)
+    
+    def _build_simple_query(self, user_query):
+        """
+        Fallback method for simple query building when LLM is unavailable.
+        """
+        query_lower = user_query.lower()
+        if "unread" in query_lower:
+            return "is:unread"
+        return ""
+
     def process_query(self, query, thread_history=None):
         query_lower = query.lower()
         email_keywords = ["email", "mail", "gmail"]
         calendar_keywords = ["calendar", "event", "meeting"]
 
         if any(keyword in query_lower for keyword in email_keywords):
-            search_query = "is:unread" if "unread" in query_lower else ""
+            # Use LLM to build intelligent Gmail query
+            search_query = self.build_gmail_query_with_llm(query, thread_history)
+            print(f"[DEBUG] Using Gmail query: '{search_query}'")
             response = self.get_recent_emails(query=search_query)
+            
+            # Store the actual Gmail query used for pagination (not the original user query)
+            if response and 'data' in response:
+                response['original_gmail_query'] = search_query
             if response and not response.get("error"):
                  return {
                     "source_type": "mail",
