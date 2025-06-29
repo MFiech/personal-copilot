@@ -15,7 +15,7 @@ class ComposioService:
         self.google_calendar_integration_id = "ac_ew6S2XYd__tb"
         self.gmail_integration_id = "ac_JyTGY5W15_eM" # Updated ID
 
-    def _execute_action(self, action: Action, params: dict = None):
+    def _execute_action(self, action: Action, params: dict | None = None):
         """Helper to execute an action."""
         try:
             response = self.toolset.execute_action(
@@ -29,16 +29,87 @@ class ComposioService:
             print(f"Error executing action {str(action)}: {e}")
             return {"successful": False, "error": str(e)}
 
-    def get_recent_emails(self, count=25, query=None, **kwargs):
+    def get_recent_emails(self, count=10, query=None, page_token=None, **kwargs):
         """
         Get recent emails using the GMAIL_FETCH_EMAILS action.
+        Uses date-based chronological pagination instead of pageToken for consistent ordering.
         """
+        # For chronological pagination, we use date-based queries instead of pageToken
+        # pageToken doesn't guarantee chronological order across pages
+        
+        params = {
+            "max_results": count
+        }
+        
+        # Build query for chronological pagination
+        search_query = query or ""
+        
+        # If page_token is provided, it's actually a date string for "before:" query
+        if page_token:
+            # page_token contains the date of the oldest email from previous batch
+            if search_query:
+                search_query = f"{search_query} before:{page_token}"
+            else:
+                search_query = f"before:{page_token}"
+        
+        params["query"] = search_query
+            
         response = self._execute_action(
             action=Action.GMAIL_FETCH_EMAILS,
-            params={"query": query or "", "max_results": count}
+            params=params
         )
-        # The new action returns data directly, not nested
-        return {"data": {"messages": response.get("data", [])}} if response.get("successful") else {"error": response.get("error")}
+        
+        if response.get("successful"):
+            data = response.get("data", {})
+            messages = data.get("messages", [])
+            
+            # For chronological pagination, we need to find the oldest email date
+            # to use as the "before:" date for the next page
+            next_page_token = None
+            if messages and len(messages) == count:
+                # Find the oldest email date from this batch
+                oldest_date = None
+                for message in messages:
+                    # Try to get date from various possible fields
+                    date_str = (message.get("messageTimestamp") or 
+                              message.get("date") or 
+                              message.get("internalDate"))
+                    
+                    if date_str:
+                        try:
+                            # Convert to Gmail search format (YYYY/MM/DD)
+                            if date_str.isdigit():
+                                # Unix timestamp in milliseconds
+                                import datetime
+                                timestamp_ms = int(date_str)
+                                date_obj = datetime.datetime.fromtimestamp(timestamp_ms / 1000)
+                            else:
+                                # Try to parse ISO format or other formats
+                                from utils.date_parser import parse_email_date
+                                date_obj = parse_email_date(date_str)
+                            
+                            if date_obj:
+                                gmail_date = date_obj.strftime("%Y/%m/%d")
+                                if oldest_date is None or gmail_date < oldest_date:
+                                    oldest_date = gmail_date
+                        except Exception as e:
+                            print(f"[DEBUG] Error parsing date {date_str}: {e}")
+                            continue
+                
+                # Use the oldest date as the next page token for "before:" query
+                next_page_token = oldest_date
+            
+            # Estimate total - we can't get exact total with date-based pagination
+            result_size_estimate = data.get("resultSizeEstimate", len(messages))
+            
+            return {
+                "data": data,
+                "next_page_token": next_page_token,
+                "total_estimate": result_size_estimate,
+                "has_more": bool(next_page_token and len(messages) == count)
+            }
+        else:
+            return {"error": response.get("error")}
 
     def get_email_details(self, email_id):
         """
@@ -319,7 +390,10 @@ class ComposioService:
                  return {
                     "source_type": "mail",
                     "content": "Emails fetched.",
-                    "data": response.get("data")
+                    "data": response.get("data"),
+                    "next_page_token": response.get("next_page_token"),
+                    "total_estimate": response.get("total_estimate"),
+                    "has_more": response.get("has_more")
                 }
             else:
                 return {"source_type": "mail", "content": f"I couldn't retrieve your emails: {response.get('error')}", "data": {"messages": []}}

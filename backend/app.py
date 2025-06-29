@@ -280,13 +280,37 @@ def chat():
                     
                     if isinstance(messages_data, dict):
                         raw_gmail_emails = messages_data.get("messages", [])
+                        # Gmail API pagination metadata
+                        next_page_token = raw_tool_results.get('next_page_token') if raw_tool_results else None
+                        total_available = raw_tool_results.get('total_estimate', len(raw_gmail_emails)) if raw_tool_results else len(raw_gmail_emails)
+                        print(f"[DEBUG] next_page_token: {next_page_token}, total_estimate: {total_available}, raw_gmail_emails count: {len(raw_gmail_emails)}")
+                        pagination_data = {
+                            'page_token': None,  # First page has no token
+                            'next_page_token': next_page_token,
+                            'limit': len(raw_gmail_emails),
+                            'total': total_available,
+                            'has_more': bool(next_page_token)  # Has more if we got a next_page_token
+                        }
                         print(f"[DEBUG] Extracted raw Gmail emails from nested dict: {len(raw_gmail_emails) if raw_gmail_emails else 0}")
+                        print(f"[DEBUG] Gmail API pagination data: {pagination_data}")
                     elif isinstance(messages_data, list):
                         raw_gmail_emails = messages_data
+                        # For list format, assume we might have more if we got exactly 10
+                        next_page_token = raw_tool_results.get('next_page_token') if raw_tool_results else None
+                        total_available = raw_tool_results.get('total_estimate', len(raw_gmail_emails)) if raw_tool_results else len(raw_gmail_emails)
+                        pagination_data = {
+                            'page_token': None,
+                            'next_page_token': next_page_token,
+                            'limit': len(raw_gmail_emails),
+                            'total': total_available,
+                            'has_more': bool(next_page_token)
+                        }
                         print(f"[DEBUG] messages_data is already a list: {len(raw_gmail_emails)}")
+                        print(f"[DEBUG] Gmail API pagination data: {pagination_data}")
                     else:
                         print(f"[DEBUG] messages_data is neither dict nor list: {type(messages_data)}")
                         raw_gmail_emails = []
+                        pagination_data = {'page_token': None, 'next_page_token': None, 'limit': 0, 'total': 0, 'has_more': False}
 
                     if raw_gmail_emails is not None and len(raw_gmail_emails) > 0:
                         print(f"[DEBUG] Processing {len(raw_gmail_emails)} raw Gmail emails...")
@@ -475,6 +499,19 @@ def chat():
             tool_results=assistant_tool_results, # Pass the correctly structured data
             timestamp=current_timestamp + 1
         )
+        
+        # Add pagination metadata if we have email results
+        if raw_email_list is not None and 'pagination_data' in locals():
+            assistant_message.metadata = assistant_message.metadata or {}
+            assistant_message.metadata.update({
+                'tool_original_query_params': {'query': query, 'count': pagination_data['limit']},
+                'tool_current_page_token': pagination_data['page_token'],
+                'tool_next_page_token': pagination_data['next_page_token'],
+                'tool_limit_per_page': pagination_data['limit'],
+                'tool_total_emails_available': pagination_data['total'],
+                'tool_has_more': pagination_data['has_more']
+            })
+            print(f"[DEBUG] Added pagination metadata to assistant message: {pagination_data}")
         assistant_message.save()
         print(f"Assistant message saved. message_id: {assistant_message.message_id}, role: {assistant_message.role}, content: {assistant_message.content[:100] if assistant_message.content else 'None'}...")
 
@@ -513,6 +550,18 @@ def chat():
                 'emails': sorted_emails,  # Keep the raw email data for compatibility
                 'tiles': email_tiles      # Add tile data for the frontend
             }
+            
+            # Add pagination metadata to the response if available
+            if 'pagination_data' in locals():
+                response_data.update({
+                    'tool_current_page_token': pagination_data['page_token'],
+                    'tool_next_page_token': pagination_data['next_page_token'],
+                    'tool_limit_per_page': pagination_data['limit'],
+                    'tool_total_emails_available': pagination_data['total'],
+                    'tool_has_more': pagination_data['has_more']
+                })
+                print(f"[DEBUG] Added pagination metadata to response: next_page_token={pagination_data['next_page_token']}, has_more={pagination_data['has_more']}")
+            
             print(f"[DEBUG] Added {len(sorted_emails)} email objects and {len(email_tiles)} email tiles to response")
         else:
             print(f"[DEBUG] raw_email_list is None")
@@ -593,18 +642,16 @@ def get_thread(thread_id):
                 "timestamp": processed_msg_doc.get("timestamp") 
             }
             
-            # Add pagination fields for assistant messages
+            # Add pagination fields for assistant messages (check both root level and metadata)
             if processed_msg_doc.get('role') == 'assistant':
-                if 'tool_original_query_params' in processed_msg_doc:
-                    message_data_for_response['tool_original_query_params'] = processed_msg_doc['tool_original_query_params']
-                if 'tool_current_offset' in processed_msg_doc:
-                    message_data_for_response['tool_current_offset'] = processed_msg_doc['tool_current_offset']
-                if 'tool_limit_per_page' in processed_msg_doc:
-                    message_data_for_response['tool_limit_per_page'] = processed_msg_doc['tool_limit_per_page']
-                if 'tool_total_emails_available' in processed_msg_doc:
-                    message_data_for_response['tool_total_emails_available'] = processed_msg_doc['tool_total_emails_available']
-                if 'tool_has_more' in processed_msg_doc:
-                    message_data_for_response['tool_has_more'] = processed_msg_doc['tool_has_more']
+                metadata = processed_msg_doc.get('metadata', {})
+                
+                # Check root level first, then metadata
+                for field in ['tool_original_query_params', 'tool_current_page_token', 'tool_next_page_token', 'tool_limit_per_page', 'tool_total_emails_available', 'tool_has_more']:
+                    if field in processed_msg_doc:
+                        message_data_for_response[field] = processed_msg_doc[field]
+                    elif field in metadata:
+                        message_data_for_response[field] = metadata[field]
             
             if processed_msg_doc.get('role') == 'assistant' and 'tool_results' in processed_msg_doc:
                 tool_results = processed_msg_doc['tool_results']
@@ -1112,31 +1159,32 @@ def load_more_emails():
             print(f"[ERROR] Assistant message not found for ID: {assistant_message_id} in thread: {thread_id}")
             return jsonify({"error": "Assistant message not found"}), 404
         print(f"[DEBUG] Found assistant message: {assistant_message_doc.get('_id')}")
-        original_params = assistant_message_doc.get('tool_original_query_params')
-        current_offset = assistant_message_doc.get('tool_current_offset')
-        limit_per_page = assistant_message_doc.get('tool_limit_per_page')
-        total_emails_available = assistant_message_doc.get('tool_total_emails_available')
-        print(f"[DEBUG] Stored pagination: offset={current_offset}, limit={limit_per_page}, total={total_emails_available}, original_params={original_params}")
-        if original_params is None or current_offset is None or limit_per_page is None or total_emails_available is None:
+        # Check both root level and metadata for pagination fields
+        metadata = assistant_message_doc.get('metadata', {})
+        original_params = assistant_message_doc.get('tool_original_query_params') or metadata.get('tool_original_query_params')
+        next_page_token = assistant_message_doc.get('tool_next_page_token') or metadata.get('tool_next_page_token')
+        limit_per_page = assistant_message_doc.get('tool_limit_per_page') or metadata.get('tool_limit_per_page')
+        total_emails_available = assistant_message_doc.get('tool_total_emails_available') or metadata.get('tool_total_emails_available')
+        
+        print(f"[DEBUG] Stored pagination: next_page_token={next_page_token}, limit={limit_per_page}, total={total_emails_available}, original_params={original_params}")
+        if original_params is None or limit_per_page is None or total_emails_available is None:
             print("[ERROR] Missing one or more pagination parameters in the stored message.")
             return jsonify({"new_emails": [], "has_more": False, "message": "Pagination parameters missing in stored message."}), 400
-        next_offset_to_fetch = current_offset + limit_per_page
-        if next_offset_to_fetch >= total_emails_available:
-            print("[INFO] No more emails to load.")
+        
+        if not next_page_token:
+            print("[INFO] No more emails to load - no next page token available.")
             return jsonify({"new_emails": [], "has_more": False, "message": "No more emails to load."}), 200
         if not tooling_service:
             print("[ERROR] Composio service not initialized for /load_more_emails")
             return jsonify({"error": "Composio service not available"}), 500
         fetch_params = {
             **original_params,
-            "limit": limit_per_page,
-            "offset": next_offset_to_fetch
+            "count": limit_per_page,
+            "page_token": next_page_token  # Use page_token instead of offset
         }
         
         # Map parameters for the new ComposioService method
         fetch_params_for_composio = fetch_params.copy()
-        if 'limit' in fetch_params_for_composio:
-            fetch_params_for_composio['count'] = fetch_params_for_composio.pop('limit')
         if 'search_query' in fetch_params_for_composio:
             fetch_params_for_composio['query'] = fetch_params_for_composio.pop('search_query')
             
@@ -1150,27 +1198,58 @@ def load_more_emails():
         new_data = tooling_response.get("data", {})
         if new_data is None:
             new_data = {}
-        new_emails = new_data.get("messages", [])
-        new_offset_used = new_data.get("offset", next_offset_to_fetch)
-        new_limit_used = new_data.get("limit", limit_per_page)
-        new_total_available = new_data.get("total", total_emails_available)
-        print(f"[DEBUG] Composio returned: {len(new_emails)} emails, new_offset={new_offset_used}, new_total={new_total_available}")
+        
+        # Extract new pagination info from response
+        new_next_page_token = tooling_response.get('next_page_token')
+        new_total_available = tooling_response.get('total_estimate', total_emails_available)
+        
+        # Handle different response formats from Composio
+        if isinstance(new_data, dict) and "messages" in new_data:
+            # Nested format: {"data": {"messages": {"messages": [...]}}}
+            messages_container = new_data.get("messages", {})
+            if isinstance(messages_container, dict) and "messages" in messages_container:
+                new_emails = messages_container.get("messages", [])
+            else:
+                new_emails = messages_container if isinstance(messages_container, list) else []
+        else:
+            # Direct format: {"data": [...]}
+            new_emails = new_data if isinstance(new_data, list) else []
+            
+        print(f"[DEBUG] Extracted new_emails: {len(new_emails)} emails, first email type: {type(new_emails[0]) if new_emails else 'N/A'}")
+        print(f"[DEBUG] Composio returned: {len(new_emails)} emails, new_next_page_token={new_next_page_token}, new_total={new_total_available}")
         # Insert new emails into emails collection and collect their IDs
         emails_collection = get_collection(EMAILS_COLLECTION)
         new_email_ids = []
         for email in new_emails:
-            if 'id' in email:
+            # Handle both formats: Composio returns 'messageId', but we expect 'id'
+            email_id = email.get('messageId') or email.get('id')
+            if email_id:
                 # Transform the email data to match the schema
-                from_email = email.get('from_email', {})
+                # Handle Composio format - extract subject, sender, date from the raw format
+                subject = email.get('subject', f"Email {email_id[:8]}")
+                sender_raw = email.get('sender', '')
+                date_timestamp = email.get('messageTimestamp', '')
+                
+                # Parse sender information like in the main chat function
+                from_email = {'email': 'unknown@unknown.com', 'name': 'Unknown Sender'}
+                if sender_raw:
+                    import re
+                    email_match = re.search(r'<([^>]+)>', sender_raw)
+                    name_match = re.search(r'"([^"]+)"', sender_raw)
+                    
+                    if email_match:
+                        email_addr = email_match.group(1)
+                        name = name_match.group(1) if name_match else email_addr.split('@')[0]
+                        from_email = {'email': email_addr, 'name': name}
+                    elif '@' in sender_raw:
+                        from_email = {'email': sender_raw.strip(), 'name': sender_raw.split('@')[0]}
+                
                 formatted_email = {
-                    'email_id': email['id'].strip(),
+                    'email_id': email_id.strip(),
                     'thread_id': thread_id,
-                    'subject': email.get('subject', '')[:1000],  # Truncate subject if too long
-                    'from_email': {
-                        'email': from_email.get('email', ''),
-                        'name': from_email.get('name') or from_email.get('email', '').split('@')[0].replace('.', ' ').title()
-                    },
-                    'date': email.get('date', ''),
+                    'subject': subject[:1000],  # Truncate subject if too long
+                    'from_email': from_email,
+                    'date': date_timestamp or '',
                     'content': {
                         'html': "",  # Empty until user requests summarization
                         'text': ""   # Empty until user requests summarization
@@ -1187,12 +1266,10 @@ def load_more_emails():
                     'reply_to': email.get('reply_to'),
                     'to_emails': [
                         {
-                            'email': recipient.get('email', ''),
-                            'name': recipient.get('name') or recipient.get('email', '').split('@')[0].replace('.', ' ').title()
+                            'email': 'unknown@unknown.com',
+                            'name': 'Unknown Recipient'
                         }
-                        for recipient in (email.get('to', []) or [])
-                        if recipient and recipient.get('email')
-                    ][:50],  # Limit TO recipients
+                    ],  # Simplified for now, can be enhanced later
                     'created_at': int(time.time()),
                     'updated_at': int(time.time())
                 }
@@ -1204,16 +1281,16 @@ def load_more_emails():
                         {'$set': formatted_email},
                         upsert=True
                     )
-                    new_email_ids.append(email['id'])
+                    new_email_ids.append(email_id)
                 except Exception as e:
-                    print(f"Error saving email {email['id']}: {str(e)}")
+                    print(f"Error saving email {email_id}: {str(e)}")
                     print(f"Problematic email data: {json.dumps(formatted_email)[:1000]}")
                     raise e
         # Update the Conversation document in MongoDB
         update_operations = {
             '$push': {'tool_results.emails': {'$each': new_email_ids}},
             '$set': {
-                'tool_current_offset': new_offset_used,
+                'tool_next_page_token': new_next_page_token,
                 'tool_total_emails_available': new_total_available
             }
         }
@@ -1222,7 +1299,7 @@ def load_more_emails():
             update_operations
         )
         print(f"[DEBUG] MongoDB update result: matched={update_result.matched_count}, modified={update_result.modified_count}")
-        has_more_after_this_load = (new_offset_used + new_limit_used) < new_total_available
+        has_more_after_this_load = (new_next_page_token is not None)
         # Fetch full email objects for response
         full_new_emails = list(emails_collection.find({'email_id': {'$in': new_email_ids}})) if new_email_ids else []
 
@@ -1232,8 +1309,9 @@ def load_more_emails():
 
         response_payload = {
             "new_emails": [convert_objectid_to_str(e) for e in full_new_emails],
-            "current_offset": new_offset_used,
-            "limit_per_page": new_limit_used,
+            "current_page_token": next_page_token,
+            "next_page_token": new_next_page_token,
+            "limit_per_page": limit_per_page,
             "total_emails_available": new_total_available,
             "has_more": has_more_after_this_load
         }
