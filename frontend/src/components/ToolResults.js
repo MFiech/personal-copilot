@@ -6,11 +6,21 @@ import OpenInFullOutlinedIcon from '@mui/icons-material/OpenInFullOutlined';
 import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import './VeyraResults.css'; // Import the original styling
 
-const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageReceived, showSnackbar, ...paginationProps }) => {
+const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageReceived, showSnackbar, currentOffset, limitPerPage, totalEmailsAvailable, hasMore, ...paginationProps }) => {
   const [selectedEmails, setSelectedEmails] = useState([]);
   const [selectedEvents, setSelectedEvents] = useState([]);
   const [hoveredEmailId, setHoveredEmailId] = useState(null);
   const [summarizingEmails, setSummarizingEmails] = useState(new Set());
+  const [loadingMoreEmails, setLoadingMoreEmails] = useState(false);
+
+  // Debug pagination props
+  console.log('[ToolResults] Pagination props:', {
+    currentOffset,
+    limitPerPage,
+    totalEmailsAvailable,
+    hasMore,
+    emailCount: results?.emails?.length
+  });
 
   if (!results || (!results.emails && !results.calendar_events)) {
     console.log('[ToolResults] No results to display');
@@ -195,6 +205,61 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
     }
   };
 
+  const handleLoadMoreEmails = async () => {
+    if (loadingMoreEmails || !hasMore) return;
+    
+    try {
+      setLoadingMoreEmails(true);
+      
+      const response = await fetch('http://localhost:5001/load_more_emails', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          thread_id: threadId,
+          assistant_message_id: messageId,
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to load more emails: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.new_emails && data.new_emails.length > 0) {
+        // Update the results with new emails
+        const updatedResults = {
+          ...results,
+          emails: [...(results.emails || []), ...data.new_emails]
+        };
+        
+        if (onUpdate) {
+          onUpdate(messageId, updatedResults, {
+            currentOffset: data.current_offset,
+            limitPerPage: data.limit_per_page,
+            totalEmailsAvailable: data.total_emails_available,
+            hasMore: data.has_more
+          });
+        }
+        
+        if (showSnackbar) {
+          showSnackbar(`Loaded ${data.new_emails.length} more emails`, 'success');
+        }
+      } else {
+        if (showSnackbar) {
+          showSnackbar('No more emails to load', 'info');
+        }
+      }
+    } catch (error) {
+      console.error('[ToolResults] Error loading more emails:', error);
+      if (showSnackbar) {
+        showSnackbar(`Failed to load more emails: ${error.message}`, 'error');
+      }
+    } finally {
+      setLoadingMoreEmails(false);
+    }
+  };
+
   const handleMasterCheckboxChange = () => {
     if (selectedEmails.length === emails.length) {
       handleDeselectAllEmails();
@@ -338,6 +403,21 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
                 </div>
               );
             })}
+            
+            {/* Load more emails row */}
+            {hasMore && (
+              <div className="email-row load-more-row">
+                <div className="load-more-content">
+                  <button 
+                    onClick={handleLoadMoreEmails} 
+                    disabled={loadingMoreEmails}
+                    className="load-more-btn"
+                  >
+                    {loadingMoreEmails ? 'Loading more emails...' : 'Load more emails'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
         

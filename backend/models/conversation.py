@@ -50,6 +50,12 @@ class Conversation:
         if self.insight_id:
             message['insight_id'] = self.insight_id
 
+        # Add pagination fields if they exist in metadata
+        if self.metadata:
+            for field in ['tool_original_query_params', 'tool_current_offset', 'tool_limit_per_page', 'tool_total_emails_available', 'tool_has_more']:
+                if field in self.metadata:
+                    message[field] = self.metadata[field]
+
         if 'emails' in self.tool_results and self.tool_results['emails']:
             processed_email_ids = []
             emails_collection = get_collection(EMAILS_COLLECTION)

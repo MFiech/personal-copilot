@@ -440,11 +440,41 @@ function App() {
   };
 
   // Render message content with proper formatting
+  const handleUpdateMessage = (messageId, updatedResults, paginationData) => {
+    setMessages(prevMessages => 
+      prevMessages.map(msg => {
+        if (msg.id === messageId) {
+          const updatedMessage = {
+            ...msg,
+            tool_results: updatedResults
+          };
+          
+          // Update pagination data if provided
+          if (paginationData) {
+            updatedMessage.tool_current_offset = paginationData.currentOffset;
+            updatedMessage.tool_limit_per_page = paginationData.limitPerPage;
+            updatedMessage.tool_total_emails_available = paginationData.totalEmailsAvailable;
+            updatedMessage.tool_has_more = paginationData.hasMore;
+          }
+          
+          return updatedMessage;
+        }
+        return msg;
+      })
+    );
+  };
+
   const renderMessage = (message, onNewMessage) => {
     console.log('renderMessage called with full message:', message );
     console.log('renderMessage - tool_results:', message.tool_results);
-    console.log('renderMessage - tool_current_offset:', message.tool_current_offset);
-    console.log('renderMessage - condition check:', (message.tool_results || message.tool_current_offset !== undefined));
+                console.log('renderMessage - tool_current_offset:', message.tool_current_offset);
+            console.log('renderMessage - condition check:', (message.tool_results || message.tool_current_offset !== undefined));
+            console.log('renderMessage - pagination props to pass:', {
+              currentOffset: message.tool_current_offset,
+              limitPerPage: message.tool_limit_per_page,
+              totalEmailsAvailable: message.tool_total_emails_available,
+              hasMore: message.tool_has_more
+            });
     
     return (
       <Box sx={{ mb: 0 }}>
@@ -458,7 +488,13 @@ function App() {
               threadId={threadId} // threadId is available in App.js scope
               messageId={message.id} // assistant's message_id
               onNewMessageReceived={onNewMessage}
+              onUpdate={handleUpdateMessage}
               showSnackbar={showSnackbar}
+              // Pass pagination props
+              currentOffset={message.tool_current_offset}
+              limitPerPage={message.tool_limit_per_page}
+              totalEmailsAvailable={message.tool_total_emails_available}
+              hasMore={message.tool_has_more}
             />
           </Box>
         )}
