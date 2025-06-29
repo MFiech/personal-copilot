@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+import json
 from dotenv import load_dotenv
 import os
 import json
@@ -183,8 +184,13 @@ For non-email and non-calendar queries, provide a helpful response based on the 
                 print(f"[DEBUG] messages content: {json.dumps(messages, indent=2)[:500] if messages else 'None'}")
                 print(f"[DEBUG] messages truthy check: {bool(messages)}")
             elif tool_context["source_type"] == "google-calendar":
-                prompt_parts.append("Calendar data available")
-                print(f"[DEBUG] Added to prompt: Calendar data available")
+                events = tool_context.get("data", {}).get("events", [])
+                total_events = len(events)
+                prompt_parts.append(f"Calendar data available: {total_events} events found")
+                print(f"[DEBUG] Added to prompt: Calendar data available: {total_events} events found")
+                print(f"[DEBUG] events type: {type(events)}")
+                print(f"[DEBUG] events content: {json.dumps(events, indent=2)[:500] if events else 'None'}")
+                print(f"[DEBUG] events truthy check: {bool(events)}")
         prompt_parts.append("\n")
 
     # Add retrieved context to the prompt
@@ -431,8 +437,20 @@ def chat():
                             "source_type": "mail",
                             "emails": []
                         }
+                elif raw_tool_results and raw_tool_results.get('source_type') == 'google-calendar':
+                    # Process calendar events for database storage
+                    print(f"[DEBUG] Processing calendar results for database storage")
+                    calendar_data = raw_tool_results.get('data', {})
+                    events = calendar_data.get('items', []) if calendar_data else []
+                    
+                    # For calendar events, we store the full event objects (not just IDs like emails)
+                    assistant_tool_results = {
+                        "source_type": "google-calendar", 
+                        "calendar_events": events
+                    }
+                    print(f"[DEBUG] Processed {len(events)} calendar events for conversation storage")
                 else:
-                    print(f"[DEBUG] Not processing as mail results. source_type: {raw_tool_results.get('source_type') if isinstance(raw_tool_results, dict) else 'N/A'}")
+                    print(f"[DEBUG] Not processing as mail or calendar results. source_type: {raw_tool_results.get('source_type') if raw_tool_results and isinstance(raw_tool_results, dict) else 'N/A'}")
                     print(f"[DEBUG] raw_tool_results is: {raw_tool_results}")
 
             except Exception as e:
@@ -442,7 +460,7 @@ def chat():
         else:
             print("Tooling service not initialized")
 
-        # `tool_context` is used for prompt building. We need to provide processed email data to the LLM.
+        # `tool_context` is used for prompt building. We need to provide processed data to the LLM.
         tool_context = None
         if raw_tool_results and raw_tool_results.get('source_type') == 'mail' and raw_email_list:
             tool_context = {
@@ -451,10 +469,23 @@ def chat():
                     'messages': raw_email_list  # Use processed emails for LLM context
                 }
             }
-        elif raw_tool_results and raw_tool_results.get('source_type') != 'mail':
-            # For non-email tool results, use the original structure
-            tool_context_data = raw_tool_results.get('data', {}) if isinstance(raw_tool_results, dict) else {}
-            tool_context = tool_context_data if tool_context_data else None
+        elif raw_tool_results and raw_tool_results.get('source_type') == 'google-calendar':
+            # For calendar tool results, maintain the source_type and structure the data properly
+            calendar_data = raw_tool_results.get('data', {}) if isinstance(raw_tool_results, dict) else {}
+            events = calendar_data.get('items', []) if calendar_data else []
+            tool_context = {
+                'source_type': 'google-calendar',
+                'data': {
+                    'events': events,
+                    'total_events': len(events)
+                }
+            }
+        elif raw_tool_results and raw_tool_results.get('source_type') not in ['mail', 'google-calendar']:
+            # For other tool results, use the original structure but preserve source_type
+            tool_context = {
+                'source_type': raw_tool_results.get('source_type'),
+                'data': raw_tool_results.get('data', {}) if isinstance(raw_tool_results, dict) else {}
+            }
         
         # Get relevant documents using the retriever
         try:
@@ -504,7 +535,7 @@ def chat():
         if raw_email_list is not None and 'pagination_data' in locals():
             assistant_message.metadata = assistant_message.metadata or {}
             # Use the Gmail query for pagination, not the original user query
-            gmail_query = raw_tool_results.get('original_gmail_query', query)
+            gmail_query = raw_tool_results.get('original_gmail_query', query) if raw_tool_results else query
             assistant_message.metadata.update({
                 'tool_original_query_params': {'query': gmail_query, 'count': pagination_data['limit']},
                 'tool_current_page_token': pagination_data['page_token'],
@@ -565,8 +596,19 @@ def chat():
                 print(f"[DEBUG] Added pagination metadata to response: next_page_token={pagination_data['next_page_token']}, has_more={pagination_data['has_more']}")
             
             print(f"[DEBUG] Added {len(sorted_emails)} email objects and {len(email_tiles)} email tiles to response")
+        
+        # If we have calendar results, add them in the proper format for the frontend
+        elif raw_tool_results and raw_tool_results.get('source_type') == 'google-calendar':
+            print(f"[DEBUG] Processing calendar results for frontend")
+            calendar_data = raw_tool_results.get('data', {})
+            events = calendar_data.get('items', []) if calendar_data else []
+            
+            response_data['tool_results'] = {
+                'calendar_events': events
+            }
+            print(f"[DEBUG] Added {len(events)} calendar events to response")
         else:
-            print(f"[DEBUG] raw_email_list is None")
+            print(f"[DEBUG] No email or calendar results to add to response")
             # Ensure tool_results is present, even if empty, if a tool was called.
             response_data['tool_results'] = assistant_message.tool_results if assistant_message.tool_results else None
             print(f"[DEBUG] Using assistant_message.tool_results: {assistant_message.tool_results}")
@@ -691,6 +733,19 @@ def get_thread(thread_id):
                         tool_results_copy['emails'] = processed_emails
                         tool_results_copy['tiles'] = email_tiles  # Add tile data for the frontend
                         message_data_for_response['tool_results'] = tool_results_copy
+                
+                # Handle calendar events in tool_results
+                elif isinstance(tool_results, dict) and 'calendar_events' in tool_results:
+                    calendar_events = tool_results['calendar_events']
+                    if isinstance(calendar_events, list):
+                        # Calendar events are already stored as full objects, so just pass them through
+                        tool_results_copy = tool_results.copy()
+                        message_data_for_response['tool_results'] = tool_results_copy
+                        print(f"[DEBUG] Added {len(calendar_events)} calendar events to thread response")
+                
+                # Handle other tool results or empty tool results
+                else:
+                    message_data_for_response['tool_results'] = tool_results
             processed_messages_for_response.append(message_data_for_response)
             
         return jsonify(processed_messages_for_response)

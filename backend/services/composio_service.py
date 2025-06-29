@@ -298,74 +298,187 @@ class ComposioService:
         return response.get("successful", False)
 
     def get_upcoming_events(self, days=7, max_results=10, **kwargs):
+        """
+        Legacy method for backwards compatibility. 
+        Use list_events() for more flexible event listing.
+        """
         time_min = datetime.utcnow().isoformat() + "Z"
         time_max = (datetime.utcnow() + timedelta(days=days)).isoformat() + "Z"
+        return self.list_events(time_min=time_min, time_max=time_max, max_results=max_results)
+
+    def list_events(self, calendar_id="primary", time_min=None, time_max=None, max_results=10, 
+                   single_events=True, order_by="startTime", show_deleted=False, **kwargs):
+        """
+        List calendar events with flexible filtering options.
+        Enhanced replacement for get_upcoming_events() with more functionality.
+        
+        Args:
+            calendar_id: Calendar identifier (default: "primary")
+            time_min: Lower bound for event end time (RFC3339 timestamp)
+            time_max: Upper bound for event start time (RFC3339 timestamp)
+            max_results: Maximum number of events to return (1-2500)
+            single_events: Expand recurring events into instances
+            order_by: Order of events ("startTime" or "updated")
+            show_deleted: Include deleted events
+        """
+        params = {
+            "calendarId": calendar_id,
+            "maxResults": max_results,
+            "singleEvents": single_events,
+            "showDeleted": show_deleted
+        }
+        
+        # Add optional parameters
+        if time_min:
+            params["timeMin"] = time_min
+        if time_max:
+            params["timeMax"] = time_max
+        if order_by:
+            params["orderBy"] = order_by
+            
         response = self._execute_action(
-            action=Action.GOOGLECALENDAR_GET_EVENTS,
-            params={"calendarId": "primary", "maxResults": max_results, "timeMin": time_min, "timeMax": time_max}
+            action=Action.GOOGLECALENDAR_EVENTS_LIST,
+            params=params
         )
-        return {"data": {"items": response.get("data", [])}} if response.get("successful") else {"error": response.get("error")}
+        if response and response.get("successful"):
+            return {"data": response.get("data", {})}
+        else:
+            return {"error": response.get("error") if response else "No response received"}
+
+    def find_events(self, query=None, calendar_id="primary", time_min=None, time_max=None, 
+                   max_results=10, event_types=None, single_events=True, **kwargs):
+        """
+        Search for events using text query and filters.
+        Perfect for "show me meetings with John" or "events about project X"
+        
+        Args:
+            query: Free-text search terms to find events
+            calendar_id: Calendar identifier (default: "primary")
+            time_min: Lower bound for event end time (RFC3339 timestamp)
+            time_max: Upper bound for event start time (RFC3339 timestamp)
+            max_results: Maximum number of events to return (1-2500)
+            event_types: List of event types to include
+            single_events: Expand recurring events into instances
+        """
+        params = {
+            "calendar_id": calendar_id,
+            "max_results": max_results,
+            "single_events": single_events
+        }
+        
+        # Add search query
+        if query:
+            params["query"] = query
+            
+        # Add time filters
+        if time_min:
+            params["timeMin"] = time_min
+        if time_max:
+            params["timeMax"] = time_max
+            
+        # Add event types filter
+        if event_types:
+            params["event_types"] = event_types
+            
+        response = self._execute_action(
+            action=Action.GOOGLECALENDAR_FIND_EVENT,
+            params=params
+        )
+        if response and response.get("successful"):
+            return {"data": response.get("data", {})}
+        else:
+            return {"error": response.get("error") if response else "No response received"}
 
     def create_calendar_event(self, summary, start_time, end_time, location=None, description=None, attendees=None, calendar_id="primary"):
+        """
+        Create a calendar event with improved parameter handling and validation.
+        """
+        # Process attendees
         attendee_emails = []
         if attendees:
             for att in attendees:
                 attendee_emails.append(att['email'] if isinstance(att, dict) else att)
+        
+        # Build parameters following Composio schema
+        params = {
+            "calendarId": calendar_id,  # Using camelCase as per schema
+            "summary": summary,
+            "start": {"dateTime": start_time},  # Structured format
+            "end": {"dateTime": end_time}
+        }
+        
+        # Add optional parameters
+        if description:
+            params["description"] = description
+        if location:
+            params["location"] = location
+        if attendee_emails:
+            params["attendees"] = [{"email": email} for email in attendee_emails]
+        
         response = self._execute_action(
             action=Action.GOOGLECALENDAR_CREATE_EVENT,
-            params={
-                "calendar_id": calendar_id, "summary": summary, "start_time": start_time, "end_time": end_time,
-                "description": description, "location": location, "attendees": attendee_emails
-            }
+            params=params
         )
-        return {"data": response.get("data", {})} if response.get("successful") else {"error": response.get("error")}
+        
+        if response and response.get("successful"):
+            return {"data": response.get("data", {})}
+        else:
+            return {"error": response.get("error") if response else "No response received"}
 
     def update_calendar_event(self, event_id, summary=None, start_time=None, end_time=None, location=None, description=None, attendees=None, calendar_id="primary"):
         """
-        Update a calendar event using Composio's GOOGLECALENDAR_UPDATE_EVENT tool.
+        Update a calendar event using enhanced parameter structure.
         """
-        arguments = {"event_id": event_id, "calendar_id": calendar_id}
-        if summary: arguments["summary"] = summary
-        if start_time: arguments["start_time"] = start_time
-        if end_time: arguments["end_time"] = end_time
-        if description: arguments["description"] = description
-        if location: arguments["location"] = location
+        # Build parameters with proper schema structure
+        params = {
+            "calendarId": calendar_id,  # Using camelCase as per schema
+            "eventId": event_id
+        }
+        
+        # Add optional parameters with proper structure
+        if summary: 
+            params["summary"] = summary
+        if start_time: 
+            params["start"] = {"dateTime": start_time}
+        if end_time: 
+            params["end"] = {"dateTime": end_time}
+        if description: 
+            params["description"] = description
+        if location: 
+            params["location"] = location
         if attendees:
             attendee_emails = [att['email'] for att in attendees if isinstance(att, dict) and 'email' in att]
-            arguments["attendees"] = attendee_emails
+            params["attendees"] = [{"email": email} for email in attendee_emails]
 
-        try:
-            execution_details = self._execute_action(
-                action=Action.GOOGLECALENDAR_UPDATE_EVENT,
-                params=arguments
-            )
-            if execution_details and execution_details.get("successful"):
-                return {"data": execution_details.get("data", {})}
-            else:
-                return {"error": execution_details.get("error", "Unknown error")}
-        except Exception as e:
-            return {"error": str(e)}
+        response = self._execute_action(
+            action=Action.GOOGLECALENDAR_UPDATE_EVENT,
+            params=params
+        )
+        
+        if response and response.get("successful"):
+            return {"data": response.get("data", {})}
+        else:
+            return {"error": response.get("error") if response else "No response received"}
             
     def delete_calendar_event(self, event_id, calendar_id="primary"):
         """
-        Delete a calendar event using Composio's GOOGLECALENDAR_DELETE_EVENT tool.
+        Delete a calendar event using proper schema structure.
         """
-        try:
-            execution_details = self._execute_action(
-                action=Action.GOOGLECALENDAR_DELETE_EVENT,
-                params={
-                    "event_id": event_id,
-                    "calendar_id": calendar_id
-                }
-            )
-            return execution_details and execution_details.get("successful", False)
-        except Exception as e:
-            print(f"Error deleting calendar event via Composio: {e}")
-            return False
+        params = {
+            "calendarId": calendar_id,  # Using camelCase as per schema
+            "eventId": event_id
+        }
+        
+        response = self._execute_action(
+            action=Action.GOOGLECALENDAR_DELETE_EVENT,
+            params=params
+        )
+        
+        return response and response.get("successful", False)
 
     def get_events_for_date(self, date=None):
         """
-        Get calendar events for a specific date using Composio.
+        Get calendar events for a specific date using the enhanced list_events method.
         """
         if date is None:
             date_obj = datetime.utcnow()
@@ -379,22 +492,8 @@ class ComposioService:
         time_min = date_obj.replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + "Z"
         time_max = date_obj.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat() + "Z"
 
-        try:
-            execution_details = self._execute_action(
-                action=Action.GOOGLECALENDAR_GET_EVENTS,
-                params={
-                    "calendar_id": "primary",
-                    "time_min": time_min,
-                    "time_max": time_max
-                }
-            )
-            if execution_details and execution_details.get("successful"):
-                events = execution_details.get("data", [])
-                return {"data": {"items": events}}
-            else:
-                return {"error": execution_details.get("error", "Unknown error")}
-        except Exception as e:
-            return {"error": str(e)}
+        # Use the enhanced list_events method
+        return self.list_events(time_min=time_min, time_max=time_max, max_results=50)
 
     def summarize_emails(self, emails):
         """
@@ -502,6 +601,115 @@ class ComposioService:
             # Fallback to simple query building
             return self._build_simple_query(user_query)
     
+    def _process_calendar_query(self, user_query, thread_history=None):
+        """
+        Intelligently process calendar queries to determine the best method and parameters.
+        
+        Args:
+            user_query: The user's natural language query
+            thread_history: Previous conversation context
+            
+        Returns:
+            Response from appropriate calendar method
+        """
+        query_lower = user_query.lower()
+        
+        # Check for specific search terms that would benefit from find_events()
+        search_indicators = [
+            "find", "search", "show me", "with", "about", "regarding", 
+            "meeting with", "call with", "project", "client"
+        ]
+        
+        # Check for time period specifications
+        time_indicators = [
+            "today", "tomorrow", "this week", "next week", "this month", "next month",
+            "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"
+        ]
+        
+        # Determine time range if specified
+        time_min, time_max = self._extract_time_range(query_lower)
+        
+        # If there are search terms, use find_events for better results
+        if any(indicator in query_lower for indicator in search_indicators):
+            # Extract search query (remove time indicators and common words)
+            search_query = self._extract_search_terms(user_query)
+            return self.find_events(
+                query=search_query,
+                time_min=time_min,
+                time_max=time_max,
+                max_results=20  # More results for search queries
+            )
+        
+        # For general time-based queries, use list_events
+        elif any(indicator in query_lower for indicator in time_indicators) or time_min or time_max:
+            return self.list_events(
+                time_min=time_min,
+                time_max=time_max,
+                max_results=15
+            )
+        
+        # Default: show upcoming events
+        else:
+            return self.get_upcoming_events()
+    
+    def _extract_time_range(self, query_lower):
+        """
+        Extract time range from natural language query.
+        Returns (time_min, time_max) as RFC3339 timestamps.
+        """
+        now = datetime.utcnow()
+        
+        if "today" in query_lower:
+            start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+            return start.isoformat() + "Z", end.isoformat() + "Z"
+            
+        elif "tomorrow" in query_lower:
+            tomorrow = now + timedelta(days=1)
+            start = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
+            end = tomorrow.replace(hour=23, minute=59, second=59, microsecond=999999)
+            return start.isoformat() + "Z", end.isoformat() + "Z"
+            
+        elif "this week" in query_lower:
+            # Start of current week (Monday)
+            days_since_monday = now.weekday()
+            start_of_week = (now - timedelta(days=days_since_monday)).replace(hour=0, minute=0, second=0, microsecond=0)
+            end_of_week = start_of_week + timedelta(days=6, hours=23, minutes=59, seconds=59, microseconds=999999)
+            return start_of_week.isoformat() + "Z", end_of_week.isoformat() + "Z"
+            
+        elif "next week" in query_lower:
+            # Start of next week (Monday)
+            days_since_monday = now.weekday()
+            start_of_next_week = (now + timedelta(days=7-days_since_monday)).replace(hour=0, minute=0, second=0, microsecond=0)
+            end_of_next_week = start_of_next_week + timedelta(days=6, hours=23, minutes=59, seconds=59, microseconds=999999)
+            return start_of_next_week.isoformat() + "Z", end_of_next_week.isoformat() + "Z"
+            
+        elif "this month" in query_lower:
+            start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            # Get last day of current month
+            next_month = start.replace(month=start.month + 1) if start.month < 12 else start.replace(year=start.year + 1, month=1)
+            end = next_month - timedelta(microseconds=1)
+            return start.isoformat() + "Z", end.isoformat() + "Z"
+            
+        return None, None
+    
+    def _extract_search_terms(self, user_query):
+        """
+        Extract meaningful search terms from user query for event searching.
+        """
+        # Remove common calendar-related words and time indicators
+        stop_words = {
+            "show", "me", "my", "events", "meetings", "calendar", "find", "search",
+            "today", "tomorrow", "this", "week", "month", "next", "on", "for",
+            "about", "with", "regarding", "the", "and", "or", "in", "at"
+        }
+        
+        # Split query into words and filter
+        words = user_query.lower().split()
+        meaningful_words = [word for word in words if word not in stop_words and len(word) > 2]
+        
+        return " ".join(meaningful_words) if meaningful_words else None
+
     def _build_simple_query(self, user_query):
         """
         Fallback method for simple query building when LLM is unavailable.
@@ -538,7 +746,8 @@ class ComposioService:
                 return {"source_type": "mail", "content": f"I couldn't retrieve your emails: {response.get('error')}", "data": {"messages": []}}
 
         if any(keyword in query_lower for keyword in calendar_keywords):
-            response = self.get_upcoming_events()
+            # Enhanced calendar query processing
+            response = self._process_calendar_query(query, thread_history)
             if response and not response.get("error"):
                  return {
                     "source_type": "google-calendar",
