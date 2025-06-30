@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import base64
 import openai
 import os
+import json
 
 class ComposioService:
     def __init__(self, api_key: str):
@@ -16,6 +17,171 @@ class ComposioService:
         # Note: Integration IDs are not used in execute calls, but are kept here for reference
         self.google_calendar_integration_id = "ac_ew6S2XYd__tb"
         self.gmail_integration_id = "ac_JyTGY5W15_eM" # Updated ID
+        
+        # Initialize Gemini LLM for query classification
+        self.gemini_llm = None
+        self._init_gemini_llm()
+
+    def _init_gemini_llm(self):
+        """Initialize Gemini LLM for query classification if available."""
+        try:
+            google_api_key = os.getenv('GOOGLE_API_KEY')
+            if google_api_key:
+                from langchain_google_genai import ChatGoogleGenerativeAI
+                self.gemini_llm = ChatGoogleGenerativeAI(
+                    model="gemini-2.0-flash-lite",
+                    google_api_key=google_api_key,
+                    convert_system_message_to_human=True
+                )
+                print("[DEBUG] Gemini LLM initialized for Composio query classification")
+            else:
+                print("[WARNING] GOOGLE_API_KEY not found. Query classification will fall back to keyword matching.")
+        except Exception as e:
+            print(f"[WARNING] Failed to initialize Gemini LLM for query classification: {e}")
+            self.gemini_llm = None
+
+    def classify_query_with_llm(self, user_query, conversation_history=None):
+        """
+        Use Gemini LLM to classify user query intent with conversation context.
+        
+        Returns:
+            dict: {
+                "intent": "email" | "calendar" | "general",
+                "confidence": 0.0-1.0,
+                "reasoning": "explanation",
+                "parameters": {...}
+            }
+        """
+        if not self.gemini_llm:
+            print("[DEBUG] Gemini LLM not available, falling back to keyword classification")
+            return self._fallback_keyword_classification(user_query)
+        
+        try:
+            # Build conversation context
+            context_text = ""
+            if conversation_history:
+                # Include last 6 messages for context (3 exchanges)
+                recent_history = conversation_history[-6:] if len(conversation_history) > 6 else conversation_history
+                for msg in recent_history:
+                    role = msg.get('role', 'user')
+                    content = msg.get('content', '')[:300]  # Truncate for brevity
+                    context_text += f"{role.capitalize()}: {content}\n"
+            
+            # Create the classification prompt
+            prompt = f"""You are an expert query classifier for a personal assistant that can access emails and calendar events.
+
+CONVERSATION CONTEXT (recent messages):
+{context_text}
+
+USER QUERY: "{user_query}"
+
+CLASSIFICATION TASK:
+Analyze the user's query considering the conversation context. Classify the intent as one of:
+
+1. "email" - User wants to find, search, or work with emails/messages
+   Examples: "show me emails", "check my inbox", "emails from John", "unread messages"
+
+2. "calendar" - User wants to find, search, or work with calendar events/meetings
+   Examples: "what's on my calendar", "meetings today", "schedule for this week", "upcoming events"
+
+3. "general" - General questions, conversation, or non-email/calendar requests
+   Examples: "how's the weather", "what is AI", "tell me a joke"
+
+IMPORTANT CONTEXT RULES:
+- If previous messages were about emails/calendar and current query is vague ("and this week?", "show me more", "what about tomorrow?"), inherit that context
+- Time-related queries without explicit service ("today", "this week", "tomorrow") should prefer calendar if recent context suggests it
+- Follow-up questions typically maintain the same intent as previous queries
+
+RESPONSE FORMAT (JSON only):
+{{
+  "intent": "email" | "calendar" | "general",
+  "confidence": 0.95,
+  "reasoning": "Brief explanation of why this classification was chosen",
+  "parameters": {{
+    "timeframe": "today|this_week|tomorrow|...",
+    "keywords": ["relevant", "search", "terms"],
+    "context_inherited": true/false
+  }}
+}}
+
+Respond with ONLY the JSON object, no additional text."""
+
+            # Call Gemini
+            response = self.gemini_llm.invoke(prompt)
+            response_text = str(response.content).strip()
+            
+            print(f"[DEBUG] Gemini classification response: {response_text}")
+            
+            # Parse JSON response - strip markdown code blocks if present
+            try:
+                # Remove markdown code block formatting if present
+                json_text = response_text
+                if json_text.startswith('```json'):
+                    json_text = json_text.replace('```json', '').replace('```', '').strip()
+                elif json_text.startswith('```'):
+                    json_text = json_text.replace('```', '').strip()
+                
+                classification = json.loads(json_text)
+                
+                # Validate the response structure
+                if not isinstance(classification, dict) or "intent" not in classification:
+                    raise ValueError("Invalid classification response structure")
+                
+                intent = classification.get("intent")
+                if intent not in ["email", "calendar", "general"]:
+                    raise ValueError(f"Invalid intent: {intent}")
+                
+                # Ensure confidence is present and reasonable
+                confidence = classification.get("confidence", 0.8)
+                if not isinstance(confidence, (int, float)) or confidence < 0 or confidence > 1:
+                    confidence = 0.8
+                    classification["confidence"] = confidence
+                
+                print(f"[DEBUG] Successfully classified query as '{intent}' with confidence {confidence}")
+                return classification
+                
+            except (json.JSONDecodeError, ValueError) as e:
+                print(f"[WARNING] Failed to parse Gemini classification response: {e}")
+                print(f"[WARNING] Raw response: {response_text}")
+                return self._fallback_keyword_classification(user_query)
+                
+        except Exception as e:
+            print(f"[ERROR] Error during Gemini query classification: {e}")
+            return self._fallback_keyword_classification(user_query)
+
+    def _fallback_keyword_classification(self, user_query):
+        """
+        Fallback keyword-based classification when LLM is unavailable.
+        """
+        query_lower = user_query.lower()
+        
+        # Email keywords
+        email_keywords = ["email", "mail", "gmail", "inbox", "message", "unread"]
+        # Calendar keywords  
+        calendar_keywords = ["calendar", "event", "meeting", "schedule", "appointment", "agenda"]
+        
+        email_score = sum(1 for keyword in email_keywords if keyword in query_lower)
+        calendar_score = sum(1 for keyword in calendar_keywords if keyword in query_lower)
+        
+        if email_score > calendar_score:
+            intent = "email"
+            confidence = min(0.9, 0.5 + email_score * 0.2)
+        elif calendar_score > email_score:
+            intent = "calendar" 
+            confidence = min(0.9, 0.5 + calendar_score * 0.2)
+        else:
+            intent = "general"
+            confidence = 0.3
+        
+        return {
+            "intent": intent,
+            "confidence": confidence,
+            "reasoning": f"Keyword-based classification: email_score={email_score}, calendar_score={calendar_score}",
+            "parameters": {
+                "context_inherited": False,
+                "keywords": user_query.split()[:3]  # First 3 words as keywords
+            }
+        }
 
     def _execute_action(self, action: Action, params: dict | None = None):
         """Helper to execute an action."""
@@ -720,20 +886,34 @@ class ComposioService:
         return ""
 
     def process_query(self, query, thread_history=None):
-        query_lower = query.lower()
-        email_keywords = ["email", "mail", "gmail"]
-        calendar_keywords = ["calendar", "event", "meeting"]
-
-        if any(keyword in query_lower for keyword in email_keywords):
+        """
+        Enhanced process_query that uses LLM-based classification instead of simple keyword matching.
+        """
+        print(f"[DEBUG] Processing query with LLM classification: '{query}'")
+        
+        # Use LLM to classify the query with conversation context
+        classification = self.classify_query_with_llm(query, thread_history)
+        
+        intent = classification.get("intent")
+        confidence = classification.get("confidence", 0.0)
+        reasoning = classification.get("reasoning", "")
+        
+        print(f"[DEBUG] LLM Classification Result:")
+        print(f"  Intent: {intent}")
+        print(f"  Confidence: {confidence}")
+        print(f"  Reasoning: {reasoning}")
+        
+        # Process based on classified intent
+        if intent == "email":
             # Use LLM to build intelligent Gmail query
             search_query = self.build_gmail_query_with_llm(query, thread_history)
             print(f"[DEBUG] Using Gmail query: '{search_query}'")
             response = self.get_recent_emails(query=search_query)
             
             # Store the actual Gmail query used for pagination (not the original user query)
-            if response and 'data' in response:
+            if response and isinstance(response, dict) and 'data' in response:
                 response['original_gmail_query'] = search_query
-            if response and not response.get("error"):
+            if response and isinstance(response, dict) and not response.get("error"):
                  return {
                     "source_type": "mail",
                     "content": "Emails fetched.",
@@ -743,18 +923,22 @@ class ComposioService:
                     "has_more": response.get("has_more")
                 }
             else:
-                return {"source_type": "mail", "content": f"I couldn't retrieve your emails: {response.get('error')}", "data": {"messages": []}}
+                error_msg = response.get("error") if response and isinstance(response, dict) else "Unknown error"
+                return {"source_type": "mail", "content": f"I couldn't retrieve your emails: {error_msg}", "data": {"messages": []}}
 
-        if any(keyword in query_lower for keyword in calendar_keywords):
+        elif intent == "calendar":
             # Enhanced calendar query processing
             response = self._process_calendar_query(query, thread_history)
-            if response and not response.get("error"):
+            if response and isinstance(response, dict) and not response.get("error"):
                  return {
                     "source_type": "google-calendar",
                     "content": "Events fetched.",
                     "data": response.get("data")
                 }
             else:
-                 return {"source_type": "google-calendar", "content": f"I couldn't retrieve your events: {response.get('error')}", "data": {"items": []}}
-            
+                error_msg = response.get("error") if response and isinstance(response, dict) else "Unknown error"
+                return {"source_type": "google-calendar", "content": f"I couldn't retrieve your events: {error_msg}", "data": {"items": []}}
+        
+        # For general queries, return None to let the main system handle it
+        print(f"[DEBUG] Query classified as 'general' - no tool processing needed")
         return None 
