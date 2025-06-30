@@ -5,6 +5,8 @@ import base64
 import openai
 import os
 import json
+import zoneinfo
+import time
 
 class ComposioService:
     def __init__(self, api_key: str):
@@ -565,12 +567,12 @@ Respond with ONLY the JSON object, no additional text."""
             for att in attendees:
                 attendee_emails.append(att['email'] if isinstance(att, dict) else att)
         
-        # Build parameters following Composio schema
+        # Build parameters following Composio schema (not Google Calendar API format)
         params = {
-            "calendarId": calendar_id,  # Using camelCase as per schema
+            "calendarId": calendar_id,
             "summary": summary,
-            "start": {"dateTime": start_time},  # Structured format
-            "end": {"dateTime": end_time}
+            "start_datetime": start_time,  # Flat field format for Composio
+            "end_datetime": end_time       # Flat field format for Composio
         }
         
         # Add optional parameters
@@ -581,15 +583,46 @@ Respond with ONLY the JSON object, no additional text."""
         if attendee_emails:
             params["attendees"] = [{"email": email} for email in attendee_emails]
         
+        print(f"[DEBUG] Composio API call parameters: {params}")
+        
         response = self._execute_action(
             action=Action.GOOGLECALENDAR_CREATE_EVENT,
             params=params
         )
         
-        if response and response.get("successful"):
-            return {"data": response.get("data", {})}
+        if response and not response.get("error"):
+            print(f"[DEBUG] Calendar event created successfully")
+            event_data = response.get("data", {})
+            print(f"[DEBUG] Event data received from API: {event_data}")
+            
+            # FRONTEND FIX: Flatten the response_data structure for frontend compatibility
+            if "response_data" in event_data:
+                # Extract the actual event data from response_data wrapper
+                actual_event_data = event_data["response_data"]
+                print(f"[DEBUG] Flattening response_data for frontend compatibility")
+            else:
+                actual_event_data = event_data
+            
+            # Add additional context for better LLM response
+            response_content = {
+                "source_type": "google-calendar",
+                "content": f"Successfully created calendar event '{summary}' for {start_time}",
+                "data": actual_event_data,  # Use flattened data
+                "action_performed": "create",
+                "event_details": {
+                    "title": summary,
+                    "date": start_time.split('T')[0],
+                    "start_time": start_time.split('T')[1],
+                    "end_time": end_time.split('T')[1],
+                    "location": location
+                }
+            }
+            print(f"[DEBUG] Returning creation response: action_performed=create")
+            return response_content
         else:
-            return {"error": response.get("error") if response else "No response received"}
+            error_msg = response.get("error") if response else "Unknown error during event creation"
+            print(f"[ERROR] Failed to create calendar event: {error_msg}")
+            return {"error": error_msg}
 
     def update_calendar_event(self, event_id, summary=None, start_time=None, end_time=None, location=None, description=None, attendees=None, calendar_id="primary"):
         """
@@ -597,7 +630,7 @@ Respond with ONLY the JSON object, no additional text."""
         """
         # Build parameters with proper schema structure
         params = {
-            "calendarId": calendar_id,  # Using camelCase as per schema
+            "calendarId": calendar_id,
             "eventId": event_id
         }
         
@@ -605,9 +638,9 @@ Respond with ONLY the JSON object, no additional text."""
         if summary: 
             params["summary"] = summary
         if start_time: 
-            params["start"] = {"dateTime": start_time}
+            params["start_datetime"] = start_time  # Flat field format for Composio
         if end_time: 
-            params["end"] = {"dateTime": end_time}
+            params["end_datetime"] = end_time     # Flat field format for Composio
         if description: 
             params["description"] = description
         if location: 
@@ -767,9 +800,190 @@ Respond with ONLY the JSON object, no additional text."""
             # Fallback to simple query building
             return self._build_simple_query(user_query)
     
-    def _process_calendar_query(self, user_query, thread_history=None):
+    def _analyze_calendar_intent(self, user_query, thread_history=None):
         """
-        Intelligently process calendar queries to determine the best method and parameters.
+        Use LLM to analyze calendar intent and extract parameters.
+        Determines if user wants to create or search calendar events and extracts relevant parameters.
+        
+        Returns:
+            dict: {
+                "operation": "create" | "search",
+                "parameters": {...},
+                "confidence": float
+            }
+        """
+        if not self.gemini_llm:
+            print("[DEBUG] Gemini LLM not available for calendar intent analysis, using fallback")
+            return self._fallback_calendar_intent_analysis(user_query)
+        
+        try:
+            # Build conversation context
+            context_text = ""
+            if thread_history:
+                recent_history = thread_history[-6:] if len(thread_history) > 6 else thread_history
+                for msg in recent_history:
+                    role = msg.get('role', 'user')
+                    content = msg.get('content', '')[:300]
+                    context_text += f"{role.capitalize()}: {content}\n"
+            
+            current_date = datetime.now()
+            current_weekday = current_date.strftime('%A')  # Monday, Tuesday, etc.
+            
+            prompt = f"""You are an expert calendar assistant. Analyze the user's query to determine if they want to CREATE a new calendar event or SEARCH for existing events.
+
+CURRENT CONTEXT:
+- Current date: {current_date.strftime('%Y-%m-%d')} ({current_weekday})
+- Current time: {current_date.strftime('%H:%M')}
+
+CONVERSATION CONTEXT:
+{context_text}
+
+USER QUERY: "{user_query}"
+
+TASK: Determine the operation type and extract parameters.
+
+OPERATIONS:
+1. "create" - User wants to create/schedule/add a new calendar event
+   - Keywords: create, schedule, add, book, set up, plan, new, make
+   - Extract: title, date, time, location, description, attendees
+
+2. "search" - User wants to find/view existing calendar events  
+   - Keywords: show, find, what's, check, list, view, see
+   - Extract: date_range, keywords, attendee_filter
+
+PARAMETER EXTRACTION RULES:
+For CREATE operations:
+- title: Event title/summary (required)
+- date: Event date in YYYY-MM-DD format (required) 
+- start_time: Start time in HH:MM format (required)
+- end_time: End time in HH:MM format (optional, default +1 hour)
+- location: Event location (optional)
+- description: Event description (optional)
+- attendees: List of email addresses (optional)
+
+For SEARCH operations:
+- date_range: today/tomorrow/this week/next week/etc
+- keywords: Search terms for event content
+- time_range: morning/afternoon/evening
+
+DATE/TIME PARSING:
+- "Friday" = next Friday if today is not Friday, today if today is Friday
+- "tomorrow" = {(current_date + timedelta(days=1)).strftime('%Y-%m-%d')}
+- "today" = {current_date.strftime('%Y-%m-%d')}
+- "5pm" = "17:00", "5:30pm" = "17:30"
+- "noon" = "12:00", "midnight" = "00:00"
+- If no time specified for create, use "09:00" as default
+
+RESPONSE FORMAT (JSON only):
+{{
+  "operation": "create" | "search",
+  "confidence": 0.95,
+  "parameters": {{
+    // For create:
+    "title": "Event title",
+    "date": "YYYY-MM-DD", 
+    "start_time": "HH:MM",
+    "end_time": "HH:MM",
+    "location": "location",
+    "description": "description",
+    "attendees": ["email1@domain.com"]
+    
+    // For search:
+    "date_range": "today|tomorrow|this week",
+    "keywords": "search terms",
+    "time_range": "morning|afternoon|evening"
+  }}
+}}
+
+Respond with ONLY the JSON object."""
+
+            # Call Gemini
+            response = self.gemini_llm.invoke(prompt)
+            response_text = str(response.content).strip()
+            
+            print(f"[DEBUG] Calendar intent analysis response: {response_text}")
+            
+            # Parse JSON response
+            try:
+                # Remove markdown code blocks if present
+                json_text = response_text
+                if json_text.startswith('```json'):
+                    json_text = json_text.replace('```json', '').replace('```', '').strip()
+                elif json_text.startswith('```'):
+                    json_text = json_text.replace('```', '').strip()
+                
+                analysis = json.loads(json_text)
+                
+                # Validate response structure
+                if not isinstance(analysis, dict) or "operation" not in analysis:
+                    raise ValueError("Invalid analysis response structure")
+                
+                operation = analysis.get("operation")
+                if operation not in ["create", "search"]:
+                    raise ValueError(f"Invalid operation: {operation}")
+                
+                # Ensure confidence is present and reasonable
+                confidence = analysis.get("confidence", 0.8)
+                if not isinstance(confidence, (int, float)) or confidence < 0 or confidence > 1:
+                    confidence = 0.8
+                    analysis["confidence"] = confidence
+                
+                print(f"[DEBUG] Successfully analyzed calendar intent: {operation} (confidence: {confidence})")
+                return analysis
+                
+            except (json.JSONDecodeError, ValueError) as e:
+                print(f"[WARNING] Failed to parse calendar intent analysis: {e}")
+                print(f"[WARNING] Raw response: {response_text}")
+                return self._fallback_calendar_intent_analysis(user_query)
+                
+        except Exception as e:
+            print(f"[ERROR] Error during calendar intent analysis: {e}")
+            return self._fallback_calendar_intent_analysis(user_query)
+
+    def _fallback_calendar_intent_analysis(self, user_query):
+        """
+        Fallback method for calendar intent analysis when LLM is unavailable.
+        """
+        query_lower = user_query.lower()
+        
+        # Keywords for creation
+        create_keywords = ["create", "schedule", "add", "book", "set up", "plan", "new", "make"]
+        # Keywords for searching  
+        search_keywords = ["show", "find", "what's", "check", "list", "view", "see"]
+        
+        create_score = sum(1 for keyword in create_keywords if keyword in query_lower)
+        search_score = sum(1 for keyword in search_keywords if keyword in query_lower)
+        
+        if create_score > search_score:
+            operation = "create"
+            confidence = min(0.8, 0.5 + create_score * 0.1)
+            # Basic parameter extraction for fallback
+            parameters = {
+                "title": user_query,  # Use full query as title fallback
+                "date": (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d'),  # Default to tomorrow
+                "start_time": "09:00",  # Default start time
+                "end_time": "10:00"     # Default end time
+            }
+        else:
+            operation = "search"
+            confidence = min(0.8, 0.5 + search_score * 0.1)
+            parameters = {
+                "date_range": "this week",
+                "keywords": user_query
+            }
+        
+        return {
+            "operation": operation,
+            "confidence": confidence,
+            "parameters": parameters
+        }
+
+    def _process_calendar_intent(self, user_query, thread_history=None):
+        """
+        Enhanced calendar processing that handles both creation and searching using 2-stage approach.
+        
+        Stage 1: Analyze intent (create vs search) and extract parameters
+        Stage 2: Execute appropriate action based on intent
         
         Args:
             user_query: The user's natural language query
@@ -778,46 +992,222 @@ Respond with ONLY the JSON object, no additional text."""
         Returns:
             Response from appropriate calendar method
         """
-        query_lower = user_query.lower()
+        print(f"[DEBUG] Processing calendar intent for query: '{user_query}'")
         
-        # Check for specific search terms that would benefit from find_events()
-        search_indicators = [
-            "find", "search", "show me", "with", "about", "regarding", 
-            "meeting with", "call with", "project", "client"
-        ]
+        # Stage 1: Analyze intent and extract parameters
+        analysis = self._analyze_calendar_intent(user_query, thread_history)
         
-        # Check for time period specifications
-        time_indicators = [
-            "today", "tomorrow", "this week", "next week", "this month", "next month",
-            "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"
-        ]
+        operation = analysis.get("operation")
+        parameters = analysis.get("parameters", {})
+        confidence = analysis.get("confidence", 0.0)
         
-        # Determine time range if specified
-        time_min, time_max = self._extract_time_range(query_lower)
+        print(f"[DEBUG] Calendar intent analysis result:")
+        print(f"  Operation: {operation}")
+        print(f"  Confidence: {confidence}")
+        print(f"  Parameters: {parameters}")
         
-        # If there are search terms, use find_events for better results
-        if any(indicator in query_lower for indicator in search_indicators):
-            # Extract search query (remove time indicators and common words)
-            search_query = self._extract_search_terms(user_query)
+        # Stage 2: Execute appropriate action
+        if operation == "create":
+            return self._handle_calendar_creation(parameters)
+        elif operation == "search":
+            return self._handle_calendar_search(parameters, user_query)
+        else:
+            print(f"[WARNING] Unknown calendar operation: {operation}")
+            # Fallback to search
+            return self._handle_calendar_search(parameters, user_query)
+
+    def _handle_calendar_creation(self, parameters):
+        """
+        Handle calendar event creation with extracted parameters.
+        """
+        try:
+            # Validate required parameters
+            title = parameters.get("title")
+            date = parameters.get("date")
+            start_time = parameters.get("start_time")
+            
+            if not all([title, date, start_time]):
+                error_msg = f"Missing required parameters for event creation. Title: {title}, Date: {date}, Start time: {start_time}"
+                print(f"[ERROR] {error_msg}")
+                return {"error": error_msg}
+            
+            print(f"[DEBUG] Raw parameters received:")
+            print(f"  Title: {title}")
+            print(f"  Date: {date}")
+            print(f"  Start time: {start_time}")
+            print(f"  End time: {parameters.get('end_time')}")
+            
+            # Build start and end datetime strings in RFC3339 format
+            end_time = parameters.get("end_time")
+            if not end_time:
+                # Default to 1 hour duration if no end time specified
+                start_dt = datetime.strptime(f"{date} {start_time}", "%Y-%m-%d %H:%M")
+                end_dt = start_dt + timedelta(hours=1)
+                end_time = end_dt.strftime("%H:%M")
+                print(f"[DEBUG] Generated end_time: {end_time}")
+            
+            # Get the local timezone (this will be the user's system timezone)
+            # For Poland/Wrocław, this should be Europe/Warsaw
+            try:
+                local_tz = zoneinfo.ZoneInfo("Europe/Warsaw")  # Explicit timezone for Poland
+                print(f"[DEBUG] Using timezone: Europe/Warsaw")
+            except Exception as tz_error:
+                # Fallback to system timezone if Europe/Warsaw is not available
+                print(f"[WARNING] Europe/Warsaw timezone not available: {tz_error}")
+                local_tz = zoneinfo.ZoneInfo(time.tzname[0])
+                print(f"[DEBUG] Fallback to system timezone: {time.tzname[0]}")
+            
+            # Convert to timezone-aware datetime objects
+            print(f"[DEBUG] Parsing datetime strings:")
+            print(f"  Date + Start: '{date} {start_time}'")
+            print(f"  Date + End: '{date} {end_time}'")
+            
+            start_dt = datetime.strptime(f"{date} {start_time}", "%Y-%m-%d %H:%M")
+            end_dt = datetime.strptime(f"{date} {end_time}", "%Y-%m-%d %H:%M")
+            
+            print(f"[DEBUG] Parsed naive datetimes:")
+            print(f"  Start: {start_dt}")
+            print(f"  End: {end_dt}")
+            
+            # TIMEZONE FIX v2: Send as local time with timezone offset, but tell Composio the timezone
+            # The issue is Composio treats naive datetime as UTC. We need to be explicit about local time.
+            
+            # Add timezone awareness to show this is local time
+            start_dt_tz = start_dt.replace(tzinfo=local_tz)
+            end_dt_tz = end_dt.replace(tzinfo=local_tz)
+            
+            # Convert to the format that represents the ACTUAL local time we want
+            # But we'll adjust for the fact that Composio seems to expect UTC input
+            
+            # Calculate what UTC time would result in our desired local time
+            # If we want 17:00 local (+02:00), we need to send 15:00 UTC so when converted it becomes 17:00 local
+            utc_offset_hours = 2  # For Europe/Warsaw in summer (CEST)
+            
+            adjusted_start_dt = start_dt - timedelta(hours=utc_offset_hours)
+            adjusted_end_dt = end_dt - timedelta(hours=utc_offset_hours)
+            
+            start_datetime = adjusted_start_dt.isoformat()
+            end_datetime = adjusted_end_dt.isoformat()
+            
+            print(f"[DEBUG] Adjusted datetimes (accounting for Composio UTC conversion):")
+            print(f"  Start: {start_datetime} (will become {start_time} local after Composio conversion)")
+            print(f"  End: {end_datetime} (will become {end_time} local after Composio conversion)")
+            
+            # Get optional parameters
+            location = parameters.get("location")
+            description = parameters.get("description")
+            attendees = parameters.get("attendees", [])
+            
+            print(f"[DEBUG] Final parameters for calendar creation:")
+            print(f"  Title: {title}")
+            print(f"  Start: {start_datetime}")
+            print(f"  End: {end_datetime}")
+            print(f"  Location: {location}")
+            print(f"  Description: {description}")
+            print(f"  Attendees: {attendees}")
+            
+            # Call the existing create_calendar_event method
+            response = self.create_calendar_event(
+                summary=title,
+                start_time=start_datetime,
+                end_time=end_datetime,
+                location=location,
+                description=description,
+                attendees=attendees
+            )
+            
+            if response and not response.get("error"):
+                print(f"[DEBUG] Calendar event created successfully")
+                event_data = response.get("data", {})
+                print(f"[DEBUG] Event data received from API: {event_data}")
+                
+                # FRONTEND FIX: Flatten the response_data structure for frontend compatibility
+                if "response_data" in event_data:
+                    # Extract the actual event data from response_data wrapper
+                    actual_event_data = event_data["response_data"]
+                    print(f"[DEBUG] Flattening response_data for frontend compatibility")
+                else:
+                    actual_event_data = event_data
+                
+                # Add additional context for better LLM response
+                response_content = {
+                    "source_type": "google-calendar",
+                    "content": f"Successfully created calendar event '{title}' for {date} at {start_time}",
+                    "data": actual_event_data,  # Use flattened data
+                    "action_performed": "create",
+                    "event_details": {
+                        "title": title,
+                        "date": date,
+                        "start_time": start_time,
+                        "end_time": end_time,
+                        "location": location
+                    }
+                }
+                print(f"[DEBUG] Returning creation response: action_performed=create")
+                return response_content
+            else:
+                error_msg = response.get("error") if response else "Unknown error during event creation"
+                print(f"[ERROR] Failed to create calendar event: {error_msg}")
+                return {"error": error_msg}
+                
+        except Exception as e:
+            error_msg = f"Exception during calendar event creation: {str(e)}"
+            print(f"[ERROR] {error_msg}")
+            import traceback
+            print(f"[ERROR] Traceback: {traceback.format_exc()}")
+            return {"error": error_msg}
+
+    def _handle_calendar_search(self, parameters, original_query):
+        """
+        Handle calendar event searching with extracted parameters.
+        Uses the existing search logic but with enhanced parameter processing.
+        """
+        print(f"[DEBUG] Handling calendar search with parameters: {parameters}")
+        
+        # Extract search parameters
+        date_range = parameters.get("date_range")
+        keywords = parameters.get("keywords", "")
+        time_range = parameters.get("time_range")
+        
+        # Convert date_range to time_min/time_max
+        time_min, time_max = None, None
+        if date_range:
+            time_min, time_max = self._extract_time_range(date_range.lower())
+        
+        # Determine search method based on parameters
+        if keywords and keywords.strip():
+            # Use find_events for keyword-based search
+            search_query = self._extract_search_terms(keywords)
+            print(f"[DEBUG] Using find_events with query: '{search_query}'")
             return self.find_events(
                 query=search_query,
                 time_min=time_min,
                 time_max=time_max,
-                max_results=20  # More results for search queries
+                max_results=20
             )
-        
-        # For general time-based queries, use list_events
-        elif any(indicator in query_lower for indicator in time_indicators) or time_min or time_max:
+        elif time_min or time_max:
+            # Use list_events for time-based search
+            print(f"[DEBUG] Using list_events with time range: {time_min} to {time_max}")
             return self.list_events(
                 time_min=time_min,
                 time_max=time_max,
                 max_results=15
             )
-        
-        # Default: show upcoming events
         else:
+            # Default: show upcoming events
+            print(f"[DEBUG] Using get_upcoming_events as default")
             return self.get_upcoming_events()
-    
+
+    def _process_calendar_query(self, user_query, thread_history=None):
+        """
+        DEPRECATED: Legacy method for backward compatibility.
+        New code should use _process_calendar_intent() instead.
+        """
+        print(f"[WARNING] Using deprecated _process_calendar_query method. Consider migrating to _process_calendar_intent.")
+        
+        # For now, delegate to the new method to maintain functionality
+        return self._process_calendar_intent(user_query, thread_history)
+
     def _extract_time_range(self, query_lower):
         """
         Extract time range from natural language query.
@@ -887,11 +1277,14 @@ Respond with ONLY the JSON object, no additional text."""
 
     def process_query(self, query, thread_history=None):
         """
-        Enhanced process_query that uses LLM-based classification instead of simple keyword matching.
+        Enhanced process_query that uses LLM-based classification and 2-stage approach for calendar processing.
+        
+        Stage 1: Classify intent (email, calendar, general)
+        Stage 2: For calendar intent, use _process_calendar_intent for create vs search + parameter extraction
         """
         print(f"[DEBUG] Processing query with LLM classification: '{query}'")
         
-        # Use LLM to classify the query with conversation context
+        # Stage 1: Use LLM to classify the query with conversation context
         classification = self.classify_query_with_llm(query, thread_history)
         
         intent = classification.get("intent")
@@ -903,7 +1296,7 @@ Respond with ONLY the JSON object, no additional text."""
         print(f"  Confidence: {confidence}")
         print(f"  Reasoning: {reasoning}")
         
-        # Process based on classified intent
+        # Stage 2: Process based on classified intent
         if intent == "email":
             # Use LLM to build intelligent Gmail query
             search_query = self.build_gmail_query_with_llm(query, thread_history)
@@ -914,7 +1307,7 @@ Respond with ONLY the JSON object, no additional text."""
             if response and isinstance(response, dict) and 'data' in response:
                 response['original_gmail_query'] = search_query
             if response and isinstance(response, dict) and not response.get("error"):
-                 return {
+                return {
                     "source_type": "mail",
                     "content": "Emails fetched.",
                     "data": response.get("data"),
@@ -927,17 +1320,51 @@ Respond with ONLY the JSON object, no additional text."""
                 return {"source_type": "mail", "content": f"I couldn't retrieve your emails: {error_msg}", "data": {"messages": []}}
 
         elif intent == "calendar":
-            # Enhanced calendar query processing
-            response = self._process_calendar_query(query, thread_history)
+            # Enhanced calendar processing using 2-stage approach
+            print(f"[DEBUG] Using enhanced calendar processing with _process_calendar_intent")
+            response = self._process_calendar_intent(query, thread_history)
+            
             if response and isinstance(response, dict) and not response.get("error"):
-                 return {
-                    "source_type": "google-calendar",
-                    "content": "Events fetched.",
-                    "data": response.get("data")
-                }
+                # Check if this is a creation response (has action_performed field)
+                if response.get("action_performed") == "create":
+                    # This is a calendar creation response
+                    event_details = response.get("event_details", {})
+                    print(f"[DEBUG] Calendar event creation successful, returning creation confirmation")
+                    return {
+                        "source_type": "google-calendar",
+                        "content": f"Successfully created calendar event '{event_details.get('title', 'Untitled')}' for {event_details.get('date', 'unknown date')} at {event_details.get('start_time', 'unknown time')}",
+                        "data": {"created_event": response.get("data", {}), "action": "create"}
+                    }
+                
+                # Handle search/list responses
+                elif "data" in response:
+                    calendar_data = response.get("data", {})
+                    
+                    # Check if this is a creation response without action_performed (fallback)
+                    if isinstance(calendar_data, dict) and "id" in calendar_data and "items" not in calendar_data:
+                        # This is a single event creation response (fallback detection)
+                        print(f"[DEBUG] Calendar event creation successful (fallback detection), event ID: {calendar_data.get('id')}")
+                        return {
+                            "source_type": "google-calendar",
+                            "content": "Calendar event created successfully.",
+                            "data": {"created_event": calendar_data, "action": "create"}
+                        }
+                    else:
+                        # This is a search response (should have 'items' array)
+                        return {
+                            "source_type": "google-calendar", 
+                            "content": "Events fetched.",
+                            "data": calendar_data
+                        }
+                else:
+                    # Response has no data field, treat as error
+                    error_msg = "No data in calendar response"
+                    print(f"[ERROR] {error_msg}")
+                    return {"source_type": "google-calendar", "content": f"I couldn't process your calendar request: {error_msg}", "data": {"items": []}}
             else:
                 error_msg = response.get("error") if response and isinstance(response, dict) else "Unknown error"
-                return {"source_type": "google-calendar", "content": f"I couldn't retrieve your events: {error_msg}", "data": {"items": []}}
+                print(f"[ERROR] Calendar processing failed: {error_msg}")
+                return {"source_type": "google-calendar", "content": f"I couldn't process your calendar request: {error_msg}", "data": {"items": []}}
         
         # For general queries, return None to let the main system handle it
         print(f"[DEBUG] Query classified as 'general' - no tool processing needed")

@@ -165,10 +165,10 @@ When responding to email-related queries:
 
 When responding to calendar-related queries:
 
-1. If calendar events are found, ONLY respond with: "Here are your calendar events:"
-2. If no calendar events are found, respond with: "I couldn't find any calendar events matching your query."
-3. Do not list or describe any events - they will be shown as tiles.
-4. Do not add any other text or explanations.
+1. If a calendar EVENT WAS CREATED, provide a helpful summary of the created event with details like title, date, time, location, etc.
+2. If calendar events are found from a SEARCH, ONLY respond with: "Here are your calendar events:"
+3. If no calendar events are found from a search, respond with: "I couldn't find any calendar events matching your query."
+4. For calendar searches, do not list or describe any events - they will be shown as tiles.
 
 For non-email and non-calendar queries, provide a helpful response based on the retrieved context when available. If no relevant context is found, provide a helpful response based on your knowledge.""")
     
@@ -184,13 +184,66 @@ For non-email and non-calendar queries, provide a helpful response based on the 
                 print(f"[DEBUG] messages content: {json.dumps(messages, indent=2)[:500] if messages else 'None'}")
                 print(f"[DEBUG] messages truthy check: {bool(messages)}")
             elif tool_context["source_type"] == "google-calendar":
-                events = tool_context.get("data", {}).get("events", [])
-                total_events = len(events)
-                prompt_parts.append(f"Calendar data available: {total_events} events found")
-                print(f"[DEBUG] Added to prompt: Calendar data available: {total_events} events found")
-                print(f"[DEBUG] events type: {type(events)}")
-                print(f"[DEBUG] events content: {json.dumps(events, indent=2)[:500] if events else 'None'}")
-                print(f"[DEBUG] events truthy check: {bool(events)}")
+                # Check if this is a calendar creation or search response
+                data = tool_context.get("data", {})
+                if "created_event" in data:
+                    # This is a calendar creation response - provide detailed event information
+                    created_event = data.get("created_event", {})
+                    
+                    # Extract event details for LLM context
+                    title = created_event.get("summary", "Untitled Event")
+                    location = created_event.get("location", "")
+                    
+                    # Parse start and end times
+                    start_info = created_event.get("start", {})
+                    end_info = created_event.get("end", {})
+                    start_datetime = start_info.get("dateTime", "")
+                    end_datetime = end_info.get("dateTime", "")
+                    
+                    # Format the detailed event information for LLM
+                    event_details = f"""Calendar event created successfully! Here are the details of the event that was added to the calendar:
+
+Event Details:
+- Title: {title}"""
+                    
+                    if location:
+                        event_details += f"\n- Location: {location}"
+                    
+                    if start_datetime:
+                        try:
+                            # Parse the datetime string (e.g., "2025-07-04T17:00:00+02:00")
+                            start_dt = datetime.fromisoformat(start_datetime.replace('Z', '+00:00'))
+                            formatted_date = start_dt.strftime("%A, %B %d, %Y")
+                            formatted_time = start_dt.strftime("%I:%M %p").lstrip('0')
+                            
+                            event_details += f"\n- Date: {formatted_date}"
+                            event_details += f"\n- Start Time: {formatted_time}"
+                            
+                            if end_datetime:
+                                end_dt = datetime.fromisoformat(end_datetime.replace('Z', '+00:00'))
+                                end_formatted_time = end_dt.strftime("%I:%M %p").lstrip('0')
+                                duration_hours = (end_dt - start_dt).total_seconds() / 3600
+                                event_details += f"\n- End Time: {end_formatted_time}"
+                                event_details += f"\n- Duration: {duration_hours:.1f} hour(s)"
+                        except:
+                            # Fallback if datetime parsing fails
+                            event_details += f"\n- Start: {start_datetime}"
+                            if end_datetime:
+                                event_details += f"\n- End: {end_datetime}"
+                    
+                    event_details += f"\n\nThe user requested to create this event and it has been successfully added to their Google Calendar."
+                    
+                    prompt_parts.append(event_details)
+                    print(f"[DEBUG] Added detailed event information to prompt")
+                else:
+                    # This is a calendar search response  
+                    events = data.get("events", [])
+                    total_events = len(events)
+                    prompt_parts.append(f"Calendar data available: {total_events} events found")
+                    print(f"[DEBUG] Added to prompt: Calendar data available: {total_events} events found")
+                    print(f"[DEBUG] events type: {type(events)}")
+                    print(f"[DEBUG] events content: {json.dumps(events, indent=2)[:500] if events else 'None'}")
+                    print(f"[DEBUG] events truthy check: {bool(events)}")
         prompt_parts.append("\n")
 
     # Add retrieved context to the prompt
@@ -441,7 +494,25 @@ def chat():
                     # Process calendar events for database storage
                     print(f"[DEBUG] Processing calendar results for database storage")
                     calendar_data = raw_tool_results.get('data', {})
-                    events = calendar_data.get('items', []) if calendar_data else []
+                    
+                    # Handle both creation and search responses
+                    events = []
+                    if calendar_data:
+                        if 'created_event' in calendar_data:
+                            # This is a creation response - wrap the single event in a list
+                            created_event = calendar_data.get('created_event', {})
+                            if created_event:
+                                events = [created_event]
+                            print(f"[DEBUG] Processing calendar creation response with 1 created event")
+                        elif 'items' in calendar_data:
+                            # This is a search/list response with multiple events
+                            events = calendar_data.get('items', [])
+                            print(f"[DEBUG] Processing calendar search response with {len(events)} events")
+                        else:
+                            # Fallback: check if calendar_data itself is an event object
+                            if isinstance(calendar_data, dict) and 'id' in calendar_data:
+                                events = [calendar_data]
+                                print(f"[DEBUG] Processing single calendar event as fallback")
                     
                     # For calendar events, we store the full event objects (not just IDs like emails)
                     assistant_tool_results = {
@@ -472,14 +543,24 @@ def chat():
         elif raw_tool_results and raw_tool_results.get('source_type') == 'google-calendar':
             # For calendar tool results, maintain the source_type and structure the data properly
             calendar_data = raw_tool_results.get('data', {}) if isinstance(raw_tool_results, dict) else {}
-            events = calendar_data.get('items', []) if calendar_data else []
-            tool_context = {
-                'source_type': 'google-calendar',
-                'data': {
-                    'events': events,
-                    'total_events': len(events)
+            
+            # Handle both creation and search responses for tool_context
+            if 'created_event' in calendar_data:
+                # This is a creation response - pass the creation data directly
+                tool_context = {
+                    'source_type': 'google-calendar',
+                    'data': calendar_data  # Pass the whole data including created_event
                 }
-            }
+            else:
+                # This is a search response - extract events list
+                events = calendar_data.get('items', []) if calendar_data else []
+                tool_context = {
+                    'source_type': 'google-calendar',
+                    'data': {
+                        'events': events,
+                        'total_events': len(events)
+                    }
+                }
         elif raw_tool_results and raw_tool_results.get('source_type') not in ['mail', 'google-calendar']:
             # For other tool results, use the original structure but preserve source_type
             tool_context = {
@@ -601,7 +682,25 @@ def chat():
         elif raw_tool_results and raw_tool_results.get('source_type') == 'google-calendar':
             print(f"[DEBUG] Processing calendar results for frontend")
             calendar_data = raw_tool_results.get('data', {})
-            events = calendar_data.get('items', []) if calendar_data else []
+            
+            # Handle both creation and search responses for frontend
+            events = []
+            if calendar_data:
+                if 'created_event' in calendar_data:
+                    # This is a creation response - wrap the single event in a list
+                    created_event = calendar_data.get('created_event', {})
+                    if created_event:
+                        events = [created_event]
+                    print(f"[DEBUG] Processing calendar creation response for frontend with 1 created event")
+                elif 'items' in calendar_data:
+                    # This is a search/list response with multiple events
+                    events = calendar_data.get('items', [])
+                    print(f"[DEBUG] Processing calendar search response for frontend with {len(events)} events")
+                else:
+                    # Fallback: check if calendar_data itself is an event object
+                    if isinstance(calendar_data, dict) and 'id' in calendar_data:
+                        events = [calendar_data]
+                        print(f"[DEBUG] Processing single calendar event for frontend as fallback")
             
             response_data['tool_results'] = {
                 'calendar_events': events
