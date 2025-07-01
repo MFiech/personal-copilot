@@ -180,7 +180,14 @@ When responding to calendar-related queries:
 4. For calendar searches, do not list or describe any events - they will be shown as tiles.
 5. IMPORTANT: Always check the "Calendar data available" line to determine if events were found (X > 0) or not found (X = 0) before deciding your response.
 
-For non-email and non-calendar queries, provide a helpful response based on the retrieved context when available. If no relevant context is found, provide a helpful response based on your knowledge.""")
+When responding to contact-related queries:
+
+1. If contacts are found (when you see "Contact data available: X contacts found" where X > 0), provide the contact information directly in your response. Include name, email address, phone number, and any other relevant details from the contact data.
+2. If no contacts are found (when you see "Contact data available: 0 contacts found"), provide a helpful explanation that no contacts were found matching the search term.
+3. Format the contact information in a clear, readable way for the user.
+4. IMPORTANT: Always check the "Contact data available" line to determine if contacts were found (X > 0) or not found (X = 0) before deciding your response.
+
+For non-email, non-calendar, and non-contact queries, provide a helpful response based on the retrieved context when available. If no relevant context is found, provide a helpful response based on your knowledge.""")
     
     # Add Tooling context if provided
     if tool_context:
@@ -274,6 +281,58 @@ Event Details:
                     print(f"[DEBUG] events type: {type(events)}")
                     print(f"[DEBUG] events content: {json.dumps(events, indent=2)[:500] if events else 'None'}")
                     print(f"[DEBUG] events truthy check: {bool(events)}")
+            elif tool_context["source_type"] == "contact":
+                # Handle contact search results
+                contacts = tool_context.get("data", {}).get("contacts", [])
+                search_term = tool_context.get("data", {}).get("search_term", "")
+                total_contacts = len(contacts)
+                
+                if total_contacts == 0:
+                    prompt_parts.append(f"Contact data available: {total_contacts} contacts found (NO CONTACTS). Search term: '{search_term}'")
+                    print(f"[DEBUG] Added to prompt: Contact data available: {total_contacts} contacts found (NO CONTACTS)")
+                else:
+                    prompt_parts.append(f"Contact data available: {total_contacts} contacts found (CONTACTS FOUND - provide contact details)")
+                    print(f"[DEBUG] Added to prompt: Contact data available: {total_contacts} contacts found")
+                    
+                    # Add the actual contact details to the prompt for the LLM to use
+                    prompt_parts.append("\nContact Details Found:")
+                    for i, contact in enumerate(contacts[:5], 1):  # Limit to first 5 contacts to avoid prompt bloat
+                        contact_info = []
+                        if contact.get('name'):
+                            contact_info.append(f"Name: {contact['name']}")
+                        
+                        # Include primary email
+                        if contact.get('primary_email'):
+                            contact_info.append(f"Primary Email: {contact['primary_email']}")
+                        
+                        # Include ALL emails from the emails array
+                        emails = contact.get('emails', [])
+                        if emails and len(emails) > 1:
+                            all_emails = []
+                            for email_obj in emails:
+                                email_addr = email_obj.get('email', '')
+                                if email_addr and email_addr != contact.get('primary_email'):
+                                    all_emails.append(email_addr)
+                            if all_emails:
+                                contact_info.append(f"Additional Emails: {', '.join(all_emails)}")
+                        
+                        # Include phone
+                        if contact.get('phone'):
+                            contact_info.append(f"Phone: {contact['phone']}")
+                        
+                        prompt_parts.append(f"{i}. {', '.join(contact_info)}")
+                        
+                        # Add some spacing between contacts if there are multiple
+                        if len(contacts) > 1 and i < len(contacts[:5]):
+                            prompt_parts.append("")
+                
+                print(f"[DEBUG] contacts type: {type(contacts)}")
+                try:
+                    safe_contacts_for_logging = convert_objectid_to_str(contacts)
+                    print(f"[DEBUG] contacts content: {json.dumps(safe_contacts_for_logging, indent=2)[:500] if contacts else 'None'}")
+                except Exception as log_err:
+                    print(f"[DEBUG] Could not serialize contacts for logging: {log_err}")
+                print(f"[DEBUG] contacts truthy check: {bool(contacts)}")
         prompt_parts.append("\n")
 
     # Add retrieved context to the prompt
@@ -351,7 +410,13 @@ def chat():
                 print(f"[DEBUG] About to call tooling_service.process_query...")
                 raw_tool_results = tooling_service.process_query(query, thread_history)
                 print(f"[DEBUG] tooling_service.process_query completed successfully")
-                print(f"[DEBUG] Raw data from service assigned to raw_tool_results: {json.dumps(raw_tool_results, indent=2)[:1000]}")
+                # Safe logging that handles ObjectIds
+                try:
+                    safe_results_for_logging = convert_objectid_to_str(raw_tool_results)
+                    print(f"[DEBUG] Raw data from service assigned to raw_tool_results: {json.dumps(safe_results_for_logging, indent=2)[:1000]}")
+                except Exception as log_err:
+                    print(f"[DEBUG] Could not serialize raw_tool_results for logging: {log_err}")
+                    print(f"[DEBUG] raw_tool_results type: {type(raw_tool_results)}")
                 print(f"[DEBUG] raw_tool_results type: {type(raw_tool_results)}")
                 print(f"[DEBUG] raw_tool_results keys: {list(raw_tool_results.keys()) if isinstance(raw_tool_results, dict) else 'N/A'}")
                 print(f"[DEBUG] raw_tool_results source_type: {raw_tool_results.get('source_type') if isinstance(raw_tool_results, dict) else 'N/A'}")
@@ -550,6 +615,20 @@ def chat():
                         "calendar_events": events
                     }
                     print(f"[DEBUG] Processed {len(events)} calendar events for conversation storage")
+                elif raw_tool_results and raw_tool_results.get('source_type') == 'contact':
+                    # For contact tool results, structure the data for prompt building
+                    contact_data = raw_tool_results.get('data', {}) if isinstance(raw_tool_results, dict) else {}
+                    contacts = contact_data.get('contacts', [])
+                    search_term = contact_data.get('search_term', '')
+                    
+                    tool_context = {
+                        'source_type': 'contact',
+                        'data': {
+                            'contacts': contacts,
+                            'search_term': search_term,
+                            'total_contacts': len(contacts)
+                        }
+                    }
                 else:
                     print(f"[DEBUG] Not processing as mail or calendar results. source_type: {raw_tool_results.get('source_type') if raw_tool_results and isinstance(raw_tool_results, dict) else 'N/A'}")
                     print(f"[DEBUG] raw_tool_results is: {raw_tool_results}")
@@ -594,6 +673,20 @@ def chat():
                 # Pass through search context if available
                 if raw_tool_results and raw_tool_results.get('search_context'):
                     tool_context['search_context'] = raw_tool_results.get('search_context')
+        elif raw_tool_results and raw_tool_results.get('source_type') == 'contact':
+            # For contact tool results, structure the data for prompt building
+            contact_data = raw_tool_results.get('data', {}) if isinstance(raw_tool_results, dict) else {}
+            contacts = contact_data.get('contacts', [])
+            search_term = contact_data.get('search_term', '')
+            
+            tool_context = {
+                'source_type': 'contact',
+                'data': {
+                    'contacts': contacts,
+                    'search_term': search_term,
+                    'total_contacts': len(contacts)
+                }
+            }
         elif raw_tool_results and raw_tool_results.get('source_type') not in ['mail', 'google-calendar']:
             # For other tool results, use the original structure but preserve source_type
             tool_context = {
@@ -739,8 +832,27 @@ def chat():
                 'calendar_events': events
             }
             print(f"[DEBUG] Added {len(events)} calendar events to response")
+        
+        # If we have contact results, add them in the proper format for the frontend
+        elif raw_tool_results and raw_tool_results.get('source_type') == 'contact':
+            print(f"[DEBUG] Processing contact results for frontend")
+            # For contact queries, we let the LLM provide direct responses instead of tiles
+            # contact_data = raw_tool_results.get('data', {})
+            # contacts = contact_data.get('contacts', [])
+            # search_term = contact_data.get('search_term', '')
+            
+            # Convert contacts to proper format and ensure ObjectIds are converted
+            # processed_contacts = [convert_objectid_to_str(contact) for contact in contacts]
+            
+            # response_data['tool_results'] = {
+            #     'contacts': processed_contacts,
+            #     'search_term': search_term,
+            #     'count': len(processed_contacts)
+            # }
+            print(f"[DEBUG] Contact information provided directly in LLM response - no tiles needed")
+        
         else:
-            print(f"[DEBUG] No email or calendar results to add to response")
+            print(f"[DEBUG] No email, calendar, or contact results to add to response")
             # Ensure tool_results is present, even if empty, if a tool was called.
             response_data['tool_results'] = assistant_message.tool_results if assistant_message.tool_results else None
             print(f"[DEBUG] Using assistant_message.tool_results: {assistant_message.tool_results}")

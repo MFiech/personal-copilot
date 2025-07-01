@@ -7,6 +7,7 @@ import os
 import json
 import zoneinfo
 import time
+from bson import ObjectId
 
 class ComposioService:
     def __init__(self, api_key: str):
@@ -48,7 +49,7 @@ class ComposioService:
         
         Returns:
             dict: {
-                "intent": "email" | "calendar" | "general",
+                "intent": "email" | "calendar" | "contact" | "general",
                 "confidence": 0.0-1.0,
                 "reasoning": "explanation",
                 "parameters": {...}
@@ -70,7 +71,7 @@ class ComposioService:
                     context_text += f"{role.capitalize()}: {content}\n"
             
             # Create the classification prompt
-            prompt = f"""You are an expert query classifier for a personal assistant that can access emails and calendar events.
+            prompt = f"""You are an expert query classifier for a personal assistant that can access emails, calendar events, and contacts.
 
 CONVERSATION CONTEXT (recent messages):
 {context_text}
@@ -86,17 +87,23 @@ Analyze the user's query considering the conversation context. Classify the inte
 2. "calendar" - User wants to find, search, or work with calendar events/meetings
    Examples: "what's on my calendar", "meetings today", "schedule for this week", "upcoming events"
 
-3. "general" - General questions, conversation, or non-email/calendar requests
+3. "contact" - User wants to find, search, or get information about contacts/people
+   Examples: "what's the email of John Doe", "contact info for Sarah", "find contact Dawid", "email address of Mike", "all emails of John" (meaning email addresses), "phone number of Sarah"
+
+4. "general" - General questions, conversation, or non-email/calendar/contact requests
    Examples: "how's the weather", "what is AI", "tell me a joke"
 
 IMPORTANT CONTEXT RULES:
-- If previous messages were about emails/calendar and current query is vague ("and this week?", "show me more", "what about tomorrow?"), inherit that context
+- If previous messages were about emails/calendar/contacts and current query is vague ("and this week?", "show me more", "what about tomorrow?"), inherit that context
 - Time-related queries without explicit service ("today", "this week", "tomorrow") should prefer calendar if recent context suggests it
 - Follow-up questions typically maintain the same intent as previous queries
+- Queries asking for "email of [person]" or "emails of [person]" or "contact info" should be classified as "contact", not "email"
+- "Emails from [person]" or "messages from [person]" should be classified as "email" (searching for messages)
+- "Email addresses of [person]" or "all emails of [person]" should be classified as "contact" (contact information)
 
 RESPONSE FORMAT (JSON only):
 {{
-  "intent": "email" | "calendar" | "general",
+  "intent": "email" | "calendar" | "contact" | "general",
   "confidence": 0.95,
   "reasoning": "Brief explanation of why this classification was chosen",
   "parameters": {{
@@ -130,7 +137,7 @@ Respond with ONLY the JSON object, no additional text."""
                     raise ValueError("Invalid classification response structure")
                 
                 intent = classification.get("intent")
-                if intent not in ["email", "calendar", "general"]:
+                if intent not in ["email", "calendar", "contact", "general"]:
                     raise ValueError(f"Invalid intent: {intent}")
                 
                 # Ensure confidence is present and reasonable
@@ -1350,6 +1357,45 @@ Respond with ONLY the JSON object."""
             return "is:unread"
         return ""
 
+    def _extract_contact_search_term(self, user_query):
+        """
+        Extract the contact name or search term from a contact-related query.
+        """
+        query_lower = user_query.lower()
+        
+        # Remove common contact query prefixes and suffixes
+        contact_stopwords = [
+            "what's", "what", "is", "the", "email", "emails", "of", "for", 
+            "contact", "info", "information", "details", "address", "phone",
+            "number", "find", "search", "get", "show", "me", "tell", "about",
+            "are", "all", "give", "provide", "list"
+        ]
+        
+        # Split into words and filter out stopwords
+        words = user_query.split()
+        filtered_words = []
+        
+        for word in words:
+            # Clean punctuation
+            clean_word = word.strip("?.,!:;").lower()
+            if clean_word not in contact_stopwords and len(clean_word) > 1:
+                # Keep the original case for names
+                filtered_words.append(word.strip("?.,!:;"))
+        
+        # Join the remaining words as the search term
+        search_term = " ".join(filtered_words).strip()
+        
+        # Handle cases like "Dawid Tkocz" or "John Doe"
+        if search_term:
+            return search_term
+        
+        # Fallback: look for capitalized words (likely names)
+        capitalized_words = [word for word in words if word and word[0].isupper()]
+        if capitalized_words:
+            return " ".join(capitalized_words)
+        
+        return None
+
     def process_query(self, query, thread_history=None):
         """
         Enhanced process_query that uses LLM-based classification and 2-stage approach for calendar processing.
@@ -1454,6 +1500,55 @@ Respond with ONLY the JSON object."""
                     }
                 else:
                     return {"source_type": "google-calendar", "content": f"I couldn't process your calendar request: {error_msg}", "data": {"items": []}}
+        
+        elif intent == "contact":
+            # Handle contact searches
+            print(f"[DEBUG] Processing contact search query")
+            
+            # Extract contact name/search term from the query
+            search_term = self._extract_contact_search_term(query)
+            print(f"[DEBUG] Extracted contact search term: '{search_term}'")
+            
+            if search_term:
+                # Import ContactSyncService here to avoid circular imports
+                try:
+                    from services.contact_service import ContactSyncService
+                    contact_service = ContactSyncService()
+                    
+                    # Search for contacts
+                    contacts = contact_service.search_contacts(search_term, limit=10)
+                    print(f"[DEBUG] Found {len(contacts)} matching contacts")
+                    
+                    # Convert ObjectIds to strings to prevent JSON serialization errors
+                    def convert_objectid_to_str(obj):
+                        if isinstance(obj, ObjectId):
+                            return str(obj)
+                        elif isinstance(obj, dict):
+                            return {k: convert_objectid_to_str(v) for k, v in obj.items()}
+                        elif isinstance(obj, list):
+                            return [convert_objectid_to_str(item) for item in obj]
+                        return obj
+                    
+                    processed_contacts = [convert_objectid_to_str(contact) for contact in contacts]
+                    
+                    return {
+                        "source_type": "contact",
+                        "content": f"Found {len(processed_contacts)} contact(s) matching '{search_term}'",
+                        "data": {"contacts": processed_contacts, "search_term": search_term}
+                    }
+                except Exception as e:
+                    print(f"[ERROR] Contact search failed: {str(e)}")
+                    return {
+                        "source_type": "contact", 
+                        "content": f"I couldn't search for contacts: {str(e)}", 
+                        "data": {"contacts": []}
+                    }
+            else:
+                return {
+                    "source_type": "contact", 
+                    "content": "I couldn't understand what contact you're looking for. Please specify a name or email address.", 
+                    "data": {"contacts": []}
+                }
         
         # For general queries, return None to let the main system handle it
         print(f"[DEBUG] Query classified as 'general' - no tool processing needed")
