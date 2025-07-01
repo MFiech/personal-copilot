@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import {
   Box,
   CssBaseline,
@@ -15,6 +16,11 @@ import {
   Button,
   IconButton,
   Snackbar,
+  Divider,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  Popover,
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import EditIcon from '@mui/icons-material/Edit';
@@ -34,6 +40,19 @@ import { useSnackbar } from './components/SnackbarProvider';
 import SendIcon from '@mui/icons-material/Send';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import MicIcon from '@mui/icons-material/Mic';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import RepeatIcon from '@mui/icons-material/Repeat';
+import AddIcon from '@mui/icons-material/Add';
+import AccountCircleIcon from '@mui/icons-material/AccountCircle';
+import SettingsIcon from '@mui/icons-material/Settings';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import CameraAltIcon from '@mui/icons-material/CameraAlt';
+import ImageIcon from '@mui/icons-material/Image';
+import CodeIcon from '@mui/icons-material/Code';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import LightbulbIcon from '@mui/icons-material/Lightbulb';
+import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 // import MenuOpenIcon from '@mui/icons-material/MenuOpen'; // Alternative for sidebar toggle
 // import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'; // For model selector dropdown
 
@@ -73,7 +92,120 @@ const theme = createTheme({
 });
 
 const drawerWidth = 240; // Define drawer width as a constant
+const drawerWidthCollapsed = 60; // Width when collapsed
 // Email sidebar will be 60% of main content width, calculated dynamically
+
+// Custom ChatGPT Sidebar Toggle Icon
+const ChatGPTSidebarIcon = ({ collapsed }) => (
+  <svg 
+    width="20" 
+    height="20" 
+    viewBox="0 0 20 20" 
+    fill="currentColor" 
+    xmlns="http://www.w3.org/2000/svg"
+    style={{ 
+      transform: collapsed ? 'scaleX(1)' : 'scaleX(-1)',
+      transition: 'transform 0.2s ease-in-out'
+    }}
+  >
+    <path d="M6.83496 3.99992C6.38353 4.00411 6.01421 4.0122 5.69824 4.03801C5.31232 4.06954 5.03904 4.12266 4.82227 4.20012L4.62207 4.28606C4.18264 4.50996 3.81498 4.85035 3.55859 5.26848L3.45605 5.45207C3.33013 5.69922 3.25006 6.01354 3.20801 6.52824C3.16533 7.05065 3.16504 7.71885 3.16504 8.66301V11.3271C3.16504 12.2712 3.16533 12.9394 3.20801 13.4618C3.25006 13.9766 3.33013 14.2909 3.45605 14.538L3.55859 14.7216C3.81498 15.1397 4.18266 15.4801 4.62207 15.704L4.82227 15.79C5.03904 15.8674 5.31234 15.9205 5.69824 15.9521C6.01398 15.9779 6.383 15.986 6.83398 15.9902L6.83496 3.99992ZM18.165 11.3271C18.165 12.2493 18.1653 12.9811 18.1172 13.5702C18.0745 14.0924 17.9916 14.5472 17.8125 14.9648L17.7295 15.1415C17.394 15.8 16.8834 16.3511 16.2568 16.7353L15.9814 16.8896C15.5157 17.1268 15.0069 17.2285 14.4102 17.2773C13.821 17.3254 13.0893 17.3251 12.167 17.3251H7.83301C6.91071 17.3251 6.17898 17.3254 5.58984 17.2773C5.06757 17.2346 4.61294 17.1508 4.19531 16.9716L4.01855 16.8896C3.36014 16.5541 2.80898 16.0434 2.4248 15.4169L2.27051 15.1415C2.03328 14.6758 1.93158 14.167 1.88281 13.5702C1.83468 12.9811 1.83496 12.2493 1.83496 11.3271V8.66301C1.83496 7.74072 1.83468 7.00898 1.88281 6.41985C1.93157 5.82309 2.03329 5.31432 2.27051 4.84856L2.4248 4.57317C2.80898 3.94666 3.36012 3.436 4.01855 3.10051L4.19531 3.0175C4.61285 2.83843 5.06771 2.75548 5.58984 2.71281C6.17898 2.66468 6.91071 2.66496 7.83301 2.66496H12.167C13.0893 2.66496 13.821 2.66468 14.4102 2.71281C15.0069 2.76157 15.5157 2.86329 15.9814 3.10051L16.2568 3.25481C16.8833 3.63898 17.394 4.19012 17.7295 4.84856L17.8125 5.02531C17.9916 5.44285 18.0745 5.89771 18.1172 6.41985C18.1653 7.00898 18.165 7.74072 18.165 8.66301V11.3271ZM8.16406 15.995H12.167C13.1112 15.995 13.7794 15.9947 14.3018 15.9521C14.8164 15.91 15.1308 15.8299 15.3779 15.704L15.5615 15.6015C15.9797 15.3451 16.32 14.9774 16.5439 14.538L16.6299 14.3378C16.7074 14.121 16.7605 13.8478 16.792 13.4618C16.8347 12.9394 16.835 12.2712 16.835 11.3271V8.66301C16.835 7.71885 16.8347 7.05065 16.792 6.52824C16.7605 6.14232 16.7073 5.86904 16.6299 5.65227L16.5439 5.45207C16.32 5.01264 15.9796 4.64498 15.5615 4.3886L15.3779 4.28606C15.1308 4.16013 14.8165 4.08006 14.3018 4.03801C13.7794 3.99533 13.1112 3.99504 12.167 3.99504H8.16406C8.16407 3.99667 8.16504 3.99829 8.16504 3.99992L8.16406 15.995Z"></path>
+  </svg>
+);
+
+// Reusable Chat Input Component
+const ChatInput = ({ 
+  input, 
+  setInput, 
+  isLoading, 
+  onSubmit, 
+  placeholder = "Ask about anything...",
+  showSuggestions = false,
+  onSuggestionClick,
+  theme,
+  isWelcome = false,
+  onAttachmentClick
+}) => {
+  return (
+    <Box 
+      sx={{ 
+        p: '12px 16px',
+        mt: 'auto',
+        backgroundColor: 'transparent', // Remove grey background for all screens
+        boxShadow: 'none', // Remove shadow for all screens
+      }}
+    >
+      {/* Input area */}
+      <Box 
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          backgroundColor: theme.palette.background.paper,
+          borderRadius: '24px',
+          p: '4px 8px',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+          border: '1px solid',
+          borderColor: 'rgba(0,0,0,0.2)',
+          maxWidth: isWelcome ? '800px' : 'none',
+          mx: isWelcome ? 'auto' : 'inherit',
+          '&:hover': {
+            borderColor: 'rgba(0,0,0,0.3)',
+          },
+          '&:focus-within': {
+            borderColor: theme.palette.primary.main,
+            boxShadow: `0 0 0 2px ${theme.palette.primary.main}25`,
+          }
+        }}
+      >
+        <IconButton 
+          onClick={onAttachmentClick}
+          sx={{ p: '8px' }} 
+          size="small" 
+          color="secondary"
+        >
+          <AttachFileIcon />
+        </IconButton>
+        <form onSubmit={onSubmit} style={{ flexGrow: 1, display: 'flex' }}>
+          <TextField
+            fullWidth
+            variant="standard"
+            placeholder={placeholder}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            disabled={isLoading}
+            multiline
+            maxRows={5}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && !isLoading && input.trim()) {
+                e.preventDefault();
+                onSubmit(e);
+              }
+            }}
+            InputProps={{
+              disableUnderline: true,
+              sx: { 
+                p: '8px 12px', 
+                fontSize: '0.95rem',
+                lineHeight: '1.4',
+                maxHeight: '120px',
+                overflowY: 'auto',
+              }
+            }}
+            sx={{ flexGrow: 1 }}
+          />
+          <IconButton 
+            type="submit" 
+            disabled={isLoading || !input.trim()} 
+            sx={{ p: '8px' }} 
+            size="small"
+            color="primary"
+          >
+            <SendIcon />
+          </IconButton>
+        </form>
+      </Box>
+    </Box>
+  );
+};
 
 function App() {
   const { threadId } = useParams();
@@ -89,12 +221,16 @@ function App() {
   const initialIsMobile = window.innerWidth < 768; // Using 768 as the breakpoint
   const [isMobile, setIsMobile] = useState(initialIsMobile);
   const [drawerOpen, setDrawerOpen] = useState(!initialIsMobile); // Open on desktop, closed on mobile by default
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false); // New state for collapsed sidebar
   
   const [pendingConfirmation, setPendingConfirmation] = useState(null);
   const [editingThreadId, setEditingThreadId] = useState(null);
   const [editTitle, setEditTitle] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [threadToDelete, setThreadToDelete] = useState(null);
+  const [menuAnchorEl, setMenuAnchorEl] = useState(null);
+  const [selectedThreadId, setSelectedThreadId] = useState(null);
+  const [hoveredThreadId, setHoveredThreadId] = useState(null);
 
   // Email sidebar state
   const [emailSidebar, setEmailSidebar] = useState({
@@ -137,6 +273,20 @@ function App() {
       setMessages([]);
     }
   }, [threadId]);
+
+  // Handle clicking outside menu to close it
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuAnchorEl && !event.target.closest('[data-menu-container]')) {
+        handleThreadMenuClose();
+      }
+    };
+
+    if (menuAnchorEl) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [menuAnchorEl]);
 
   // Fetch threads from backend
   const fetchThreads = async () => {
@@ -427,6 +577,75 @@ function App() {
     if (isMobile) setDrawerOpen(false);
   };
 
+  // Toggle sidebar collapsed state
+  const toggleSidebarCollapse = () => {
+    setSidebarCollapsed(!sidebarCollapsed);
+  };
+
+  // Handle menu actions
+  const handleNewChat = () => {
+    startNewThread();
+  };
+
+  const handleMyAccount = () => {
+    // Placeholder for account functionality
+    showSnackbar('My Account clicked', 'info');
+  };
+
+  const handleSettings = () => {
+    // Placeholder for settings functionality
+    showSnackbar('Settings clicked', 'info');
+  };
+
+  // Handle suggestion clicks
+  const handleSuggestionClick = (suggestionText) => {
+    setInput(suggestionText);
+    // Auto-focus the input field
+    setTimeout(() => {
+      const inputElement = document.querySelector('input[placeholder="Ask about anything..."]');
+      if (inputElement) {
+        inputElement.focus();
+      }
+    }, 100);
+  };
+
+  // Handle attachment click
+  const handleAttachmentClick = () => {
+    showSnackbar('File attachment feature is in development', 'info');
+  };
+
+  // Handle thread menu
+  const handleThreadMenuOpen = (event, threadId) => {
+    event.stopPropagation();
+    const buttonRect = event.currentTarget.getBoundingClientRect();
+    setMenuAnchorEl({
+      top: buttonRect.bottom,
+      left: buttonRect.left,
+      element: event.currentTarget
+    });
+    setSelectedThreadId(threadId);
+  };
+
+  const handleThreadMenuClose = () => {
+    setMenuAnchorEl(null);
+    setSelectedThreadId(null);
+  };
+
+  const handleMenuRename = () => {
+    const thread = threads.find(t => t.thread_id === selectedThreadId);
+    if (thread) {
+      setEditingThreadId(selectedThreadId);
+      setEditTitle(thread.title);
+    }
+    handleThreadMenuClose();
+  };
+
+  const handleMenuDelete = () => {
+    setThreadToDelete(selectedThreadId);
+    setDeleteDialogOpen(true);
+    handleThreadMenuClose();
+  };
+
   // Function to add a new assistant message to the state
   const handleNewAssistantMessage = (newMessageData) => {
     // Ensure the message has the minimum required fields
@@ -632,6 +851,29 @@ function App() {
     });
   };
 
+  // Copy message content to clipboard
+  const copyToClipboard = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      showSnackbar('Message copied to clipboard', 'success');
+    } catch (error) {
+      console.error('Failed to copy text:', error);
+      showSnackbar('Failed to copy message', 'error');
+    }
+  };
+
+  // Repeat user message (for testing)
+  const repeatMessage = (messageContent) => {
+    setInput(messageContent);
+    // Auto-focus the input field
+    setTimeout(() => {
+      const inputElement = document.querySelector('input[placeholder="Ask about anything..."]');
+      if (inputElement) {
+        inputElement.focus();
+      }
+    }, 100);
+  };
+
   const DeleteConfirmationDialog = () => (
     <Dialog
       open={deleteDialogOpen}
@@ -670,123 +912,249 @@ function App() {
           sx={{
             // Conditionally set display to none to remove from layout when closed on desktop
             display: (isMobile || drawerOpen) ? 'flex' : 'none', 
-            width: drawerWidth, // This width applies when display is not 'none'
+            width: sidebarCollapsed ? drawerWidthCollapsed : drawerWidth, // Dynamic width based on collapsed state
             flexShrink: 0,
             '& .MuiDrawer-paper': { 
-              width: drawerWidth, 
+              width: sidebarCollapsed ? drawerWidthCollapsed : drawerWidth, 
               boxSizing: 'border-box',
               backgroundColor: '#f8f9fa',
-              borderRight: '1px solid #dee2e6'
+              borderRight: '1px solid #dee2e6',
+              transition: 'width 0.2s ease-in-out', // Smooth transition
+              overflow: 'visible',
             },
           }}
         >
-          <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%' }}>
-            <Button 
-              onClick={startNewThread} 
-              variant="outlined" 
-              fullWidth 
-              sx={{ 
-                mb: 2, 
-                borderColor: theme.palette.primary.main, 
-                color: theme.palette.primary.main,
-                '&:hover': {
-                  backgroundColor: theme.palette.action.hover,
-                  borderColor: theme.palette.primary.dark,
-                }
-              }}
-            >
-              New Thread
-            </Button>
-            <List sx={{ overflowY: 'auto', flexGrow: 1 }}>
-              {threads.map((thread) => (
-                <ListItem 
-                  button 
-                  key={thread.thread_id}
-                  onClick={() => navigate(`/${thread.thread_id}`)}
-                  selected={threadId === thread.thread_id}
-                  sx={{
-                    borderRadius: '4px',
-                    marginBottom: '4px',
-                    '&.Mui-selected': {
-                      backgroundColor: theme.palette.action.selected,
-                      '&:hover': {
-                        backgroundColor: theme.palette.action.selected,
-                      }
-                    },
-                    '&:hover': {
-                      backgroundColor: theme.palette.action.hover,
-                    },
-                    maxHeight: '48px', // Keep this for consistency
-                    '& .MuiListItemText-primary': {
-                      fontSize: '0.875rem',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      maxWidth: '200px'
-                    }
+          <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'visible' }}>
+            {/* Top section with header and menu items */}
+            <Box sx={{ p: 1 }}>
+              {/* Header and collapse button */}
+              <Box sx={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'space-between', 
+                mb: 1,
+                px: 1 
+              }}>
+                {!sidebarCollapsed && (
+                  <Typography 
+                    variant="h6" 
+                    sx={{ 
+                      fontWeight: 600, 
+                      background: 'linear-gradient(45deg, #1976d2, #42a5f5)',
+                      backgroundClip: 'text',
+                      WebkitBackgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent',
+                    }}
+                  >
+                    Hi Fiechu!
+                  </Typography>
+                )}
+                <IconButton 
+                  onClick={toggleSidebarCollapse} 
+                  size="small"
+                  sx={{ 
+                    ml: sidebarCollapsed ? 0 : 'auto',
+                    color: 'text.secondary',
+                    '&:hover': { bgcolor: 'action.hover' },
+                    cursor: sidebarCollapsed ? 'e-resize' : 'w-resize', // Right arrow when collapsed, left arrow when expanded
                   }}
                 >
-                  {editingThreadId === thread.thread_id ? (
-                    // Edit mode
-                    <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-                      <TextField
-                        autoFocus
-                        value={editTitle}
-                        onChange={(e) => setEditTitle(e.target.value)}
-                        size="small"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            handleRenameThread(thread.thread_id, editTitle);
-                          } else if (e.key === 'Escape') {
-                            setEditingThreadId(null);
-                          }
-                        }}
-                        sx={{ width: '85%' }}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                      <IconButton 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRenameThread(thread.thread_id, editTitle);
-                        }}
-                        size="small"
-                      >
-                        <CheckIcon fontSize="small" />
-                      </IconButton>
-                    </Box>
-                  ) : (
-                    // Display mode
-                    <>
-                      <ListItemText 
-                        primary={thread.title.length > 60 ? `${thread.title.substring(0, 60)}...` : thread.title} 
-                      />
-                      <Box sx={{ display: 'flex', gap: 1 }}>
-                        <IconButton 
-                          size="small"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingThreadId(thread.thread_id);
-                            setEditTitle(thread.title);
-                          }}
-                        >
-                          <EditIcon fontSize="small" />
-                        </IconButton>
-                        <IconButton
-                          size="small"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setThreadToDelete(thread.thread_id);
-                            setDeleteDialogOpen(true);
-                          }}
-                        >
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      </Box>
-                    </>
+                  <ChatGPTSidebarIcon collapsed={sidebarCollapsed} />
+                </IconButton>
+              </Box>
+
+              {/* Menu items */}
+              <List sx={{ p: 0 }}>
+                {/* New Chat */}
+                <ListItem 
+                  button 
+                  onClick={handleNewChat}
+                  sx={{
+                    borderRadius: '8px',
+                    mb: 0.5,
+                    px: 1,
+                    py: 0.75,
+                    '&:hover': { bgcolor: 'action.hover' },
+                    justifyContent: sidebarCollapsed ? 'center' : 'flex-start'
+                  }}
+                >
+                  <AddIcon sx={{ 
+                    fontSize: 20, 
+                    color: 'text.secondary',
+                    mr: sidebarCollapsed ? 0 : 1.5 
+                  }} />
+                  {!sidebarCollapsed && (
+                    <ListItemText 
+                      primary="New chat" 
+                      primaryTypographyProps={{ fontSize: '0.875rem', fontWeight: 500 }}
+                    />
                   )}
                 </ListItem>
-              ))}
-            </List>
+
+                {/* My Account */}
+                <ListItem 
+                  button 
+                  onClick={handleMyAccount}
+                  sx={{
+                    borderRadius: '8px',
+                    mb: 0.5,
+                    px: 1,
+                    py: 0.75,
+                    '&:hover': { bgcolor: 'action.hover' },
+                    justifyContent: sidebarCollapsed ? 'center' : 'flex-start'
+                  }}
+                >
+                  <AccountCircleIcon sx={{ 
+                    fontSize: 20, 
+                    color: 'text.secondary',
+                    mr: sidebarCollapsed ? 0 : 1.5 
+                  }} />
+                  {!sidebarCollapsed && (
+                    <ListItemText 
+                      primary="My account" 
+                      primaryTypographyProps={{ fontSize: '0.875rem', fontWeight: 500 }}
+                    />
+                  )}
+                </ListItem>
+
+                {/* Settings */}
+                <ListItem 
+                  button 
+                  onClick={handleSettings}
+                  sx={{
+                    borderRadius: '8px',
+                    mb: 0.5,
+                    px: 1,
+                    py: 0.75,
+                    '&:hover': { bgcolor: 'action.hover' },
+                    justifyContent: sidebarCollapsed ? 'center' : 'flex-start'
+                  }}
+                >
+                  <SettingsIcon sx={{ 
+                    fontSize: 20, 
+                    color: 'text.secondary',
+                    mr: sidebarCollapsed ? 0 : 1.5 
+                  }} />
+                  {!sidebarCollapsed && (
+                    <ListItemText 
+                      primary="Settings" 
+                      primaryTypographyProps={{ fontSize: '0.875rem', fontWeight: 500 }}
+                    />
+                  )}
+                </ListItem>
+              </List>
+
+              {/* Divider */}
+              {!sidebarCollapsed && (
+                <>
+                  <Divider sx={{ my: 2 }} />
+                  <Typography 
+                    variant="body2" 
+                    sx={{ 
+                      px: 1, 
+                      mb: 1, 
+                      color: 'text.secondary', 
+                      fontWeight: 600,
+                      fontSize: '0.75rem',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px'
+                    }}
+                  >
+                    Past conversations
+                  </Typography>
+                </>
+              )}
+            </Box>
+
+            {/* Past conversations list */}
+            {!sidebarCollapsed && (
+              <List sx={{ overflowY: 'auto', overflowX: 'visible', flexGrow: 1, px: 1 }}>
+                {threads.map((thread) => (
+                  <ListItem 
+                    button 
+                    key={thread.thread_id}
+                    onClick={() => navigate(`/${thread.thread_id}`)}
+                    selected={threadId === thread.thread_id}
+                    onMouseEnter={() => setHoveredThreadId(thread.thread_id)}
+                    onMouseLeave={() => setHoveredThreadId(null)}
+                    sx={{
+                      borderRadius: '8px',
+                      marginBottom: '2px',
+                      px: 1,
+                      py: 0.75,
+                      '&.Mui-selected': {
+                        backgroundColor: theme.palette.action.selected,
+                        '&:hover': {
+                          backgroundColor: theme.palette.action.selected,
+                        }
+                      },
+                      '&:hover': {
+                        backgroundColor: theme.palette.action.hover,
+                      },
+                      maxHeight: '48px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}
+                  >
+                    {editingThreadId === thread.thread_id ? (
+                      // Edit mode
+                      <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                        <TextField
+                          autoFocus
+                          value={editTitle}
+                          onChange={(e) => setEditTitle(e.target.value)}
+                          size="small"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              handleRenameThread(thread.thread_id, editTitle);
+                            } else if (e.key === 'Escape') {
+                              setEditingThreadId(null);
+                            }
+                          }}
+                          sx={{ width: '100%' }}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </Box>
+                    ) : (
+                      // Display mode
+                      <>
+                        <ListItemText 
+                          primary={thread.title}
+                          primaryTypographyProps={{
+                            fontSize: '0.875rem',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            maxWidth: hoveredThreadId === thread.thread_id ? '140px' : '180px',
+                            transition: 'max-width 0.2s ease'
+                          }}
+                        />
+                        {hoveredThreadId === thread.thread_id && (
+                          <Box sx={{ position: 'relative' }} data-menu-container>
+                            <IconButton 
+                              size="small"
+                              onClick={(e) => handleThreadMenuOpen(e, thread.thread_id)}
+                              sx={{ 
+                                p: 0.5,
+                                opacity: 0.7,
+                                '&:hover': { opacity: 1 }
+                              }}
+                            >
+                              <MoreHorizIcon fontSize="small" />
+                            </IconButton>
+                            
+
+                          </Box>
+                        )}
+                      </>
+                    )}
+                  </ListItem>
+                ))}
+              </List>
+            )}
+            
+
           </Box>
         </Drawer>
 
@@ -802,52 +1170,144 @@ function App() {
             position: 'relative', // For overlay positioning
           }}
         >
-          {/* Header for Toggle and Title */}
-          <Box sx={{ p: 2, display: 'flex', alignItems: 'center', borderBottom: `1px solid ${theme.palette.divider}` }}>
-            <IconButton 
-              onClick={() => setDrawerOpen(!drawerOpen)} 
-              sx={{ mr: 1 }}
-              // Use MenuOpenIcon or a custom SVG for the specific toggle icon if available
-            >
-              <MenuIcon /> 
-            </IconButton>
-            <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-              {currentThreadTitle}
-            </Typography>
-             {/* Placeholder for other header items like Upgrade button if they move here */}
-          </Box>
+          {/* Header for Toggle and Title - only show when there are messages */}
+          {messages.length > 0 && (
+            <Box sx={{ p: 2, display: 'flex', alignItems: 'center', borderBottom: `1px solid ${theme.palette.divider}` }}>
+              <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+                {currentThreadTitle}
+              </Typography>
+               {/* Placeholder for other header items like Upgrade button if they move here */}
+            </Box>
+          )}
 
           {/* Messages area */}
-          <Box sx={{ flexGrow: 1, overflowY: 'auto', p: 2, display: 'flex', flexDirection: 'column' }}>
-            {messages.map((message, index) => (
-              <Box
-                key={index}
-                sx={{
-                  display: 'flex',
-                  justifyContent: message.role === 'user' ? 'flex-end' : 'flex-start',
-                  mb: 1.5, // Adjusted margin between bubbles
-                  maxWidth: '100%', // Ensure bubbles don't overflow container
-                }}
-              >
-                <Paper
-                  elevation={1} // Subtle shadow
-                  sx={{
-                    p: '10px 15px', // Padding inside bubbles
-                    maxWidth: 'calc(80% - 16px)', // Max width of bubbles, account for padding/margin
-                    borderRadius: '20px', // Rounded corners
-                    bgcolor: message.role === 'user' ? theme.palette.background.userMessage : theme.palette.background.assistantMessage,
-                    color: message.role === 'user' ? theme.palette.text.userMessage : theme.palette.text.primary,
-                    wordBreak: 'break-word', // Ensure long words break
+          <Box sx={{ 
+            flexGrow: 1, 
+            overflowY: 'auto', 
+            p: messages.length > 0 ? 2 : 0, 
+            display: 'flex', 
+            flexDirection: 'column' 
+          }}>
+            {messages.length === 0 ? (
+              // Welcome screen
+              <Box sx={{ 
+                display: 'flex', 
+                flexDirection: 'column', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                height: '100%',
+                textAlign: 'center',
+                px: 2,
+                gap: 4
+              }}>
+                <Typography 
+                  variant="h3" 
+                  sx={{ 
+                    fontWeight: 600, 
+                    background: 'linear-gradient(45deg, #1976d2, #42a5f5)',
+                    backgroundClip: 'text',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    fontSize: { xs: '2rem', sm: '2.5rem', md: '3rem' }
                   }}
-                  {...(message.role === 'assistant' && message.id && { 'data-message-id': message.id })}
                 >
-                  {renderMessage(
-                    message, 
-                    handleNewAssistantMessage
-                  )}
-                </Paper>
+                  What can I help you with, Fiechu?
+                </Typography>
+                
+                {/* Input area positioned directly below title */}
+                <Box sx={{ width: '100%', maxWidth: '800px', px: 2 }}>
+                  <ChatInput
+                    input={input}
+                    setInput={setInput}
+                    isLoading={isLoading}
+                    onSubmit={sendMessage}
+                    onSuggestionClick={handleSuggestionClick}
+                    theme={theme}
+                    isWelcome={true}
+                    onAttachmentClick={handleAttachmentClick}
+                  />
+                </Box>
               </Box>
-            ))}
+            ) : (
+              // Chat messages
+              messages.map((message, index) => (
+                <Box
+                  key={index}
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: message.role === 'user' ? 'flex-end' : 'flex-start',
+                    mb: 1.5, // Adjusted margin between message groups
+                    maxWidth: '100%', // Ensure bubbles don't overflow container
+                  }}
+                >
+                  {/* Message bubble */}
+                  <Paper
+                    elevation={1} // Subtle shadow
+                    sx={{
+                      p: '10px 15px', // Padding inside bubbles
+                      maxWidth: 'calc(80% - 16px)', // Max width of bubbles, account for padding/margin
+                      borderRadius: '20px', // Rounded corners
+                      bgcolor: message.role === 'user' ? theme.palette.background.userMessage : theme.palette.background.assistantMessage,
+                      color: message.role === 'user' ? theme.palette.text.userMessage : theme.palette.text.primary,
+                      wordBreak: 'break-word', // Ensure long words break
+                    }}
+                    {...(message.role === 'assistant' && message.id && { 'data-message-id': message.id })}
+                  >
+                    {renderMessage(
+                      message, 
+                      handleNewAssistantMessage
+                    )}
+                  </Paper>
+                  
+                  {/* Action buttons below message bubble */}
+                  <Box sx={{ 
+                    display: 'flex', 
+                    gap: 0.5, 
+                    mt: 0.5,
+                    ml: message.role === 'user' ? 0 : 1, // Align with message bubble
+                    mr: message.role === 'user' ? 1 : 0, // Align with message bubble
+                    opacity: 0.6,
+                    '&:hover': { opacity: 1 },
+                    transition: 'opacity 0.2s ease'
+                  }}>
+                    {/* Copy button - for both user and assistant messages */}
+                    <IconButton 
+                      size="small" 
+                      onClick={() => copyToClipboard(message.content)}
+                      sx={{ 
+                        p: 0.5,
+                        color: 'text.secondary',
+                        '&:hover': { 
+                          color: 'primary.main',
+                          bgcolor: 'action.hover'
+                        }
+                      }}
+                    >
+                      <ContentCopyIcon fontSize="inherit" />
+                    </IconButton>
+                    
+                    {/* Repeat button - only for user messages */}
+                    {message.role === 'user' && (
+                      <IconButton 
+                        size="small" 
+                        onClick={() => repeatMessage(message.content)}
+                        sx={{ 
+                          p: 0.5,
+                          color: 'text.secondary',
+                          '&:hover': { 
+                            color: 'primary.main',
+                            bgcolor: 'action.hover'
+                          }
+                        }}
+                      >
+                        <RepeatIcon fontSize="inherit" />
+                      </IconButton>
+                    )}
+                  </Box>
+                </Box>
+              ))
+            )}
             {isLoading && (
               <Box sx={{ display: 'flex', justifyContent: 'flex-start', mb: 2, pl:1 /* Align with assistant messages */ }}>
                 <Paper 
@@ -865,94 +1325,19 @@ function App() {
             )}
           </Box>
 
-          {/* Input area */}
-          <Box 
-            sx={{ 
-              p: '12px 16px', // Padding around the entire input container
-              mt: 'auto', // Pushes to the bottom
-              backgroundColor: theme.palette.background.inputArea,
-              // borderRadius: '28px 28px 0 0', // Rounded top corners if desired
-              boxShadow: '0 -2px 10px rgba(0,0,0,0.05)', // Shadow for separation
-            }}
-          >
-            <Box 
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                backgroundColor: theme.palette.background.paper, // White background for the input row itself
-                borderRadius: '24px', // Rounded corners for the input row
-                p: '4px 8px', // Padding inside the white row
-                boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-              }}
-            >
-              <IconButton sx={{ p: '8px' }} size="small" color="secondary">
-                <AttachFileIcon />
-              </IconButton>
-              <form onSubmit={sendMessage} style={{ flexGrow: 1, display: 'flex' }}>
-                <TextField
-                  fullWidth
-                  variant="standard" // Use standard variant for cleaner look
-                  placeholder="Ask about anything..."
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  disabled={isLoading}
-                  multiline
-                  maxRows={5}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey && !isLoading && input.trim()) {
-                      e.preventDefault();
-                      sendMessage(e);
-                    }
-                  }}
-                  InputProps={{
-                    disableUnderline: true,
-                    sx: { 
-                      p: '8px 12px', 
-                      fontSize: '0.95rem',
-                      lineHeight: '1.4',
-                      maxHeight: '120px', // Limit height for multiline
-                      overflowY: 'auto',
-                    }
-                  }}
-                  sx={{ flexGrow: 1 }}
-                />
-                <IconButton 
-                  type="submit" 
-                  disabled={isLoading || !input.trim()} 
-                  sx={{ p: '8px' }} 
-                  size="small"
-                  color="primary"
-                >
-                  <SendIcon />
-                </IconButton>
-              </form>
-            </Box>
-            <Box 
-              sx={{ 
-                display: 'flex', 
-                justifyContent: 'center', // Center items or space-between
-                alignItems: 'center', 
-                pt: '10px', 
-                pb: '2px',
-                // borderTop: `1px solid ${theme.palette.divider}`, // Optional separator line
-                // mt: '8px'
-              }}
-            >
-              <Box sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer', mr: 2 }}>
-                {/* Basic SVG Placeholder for OpenAI logo - replace with actual SVG or Icon */}
-                <svg width="18" height="18" viewBox="0 0 32 32" fill="currentColor" xmlns="http://www.w3.org/2000/svg" style={{ color: theme.palette.text.secondary }}>
-                  <path fillRule="evenodd" clipRule="evenodd" d="M16 0C24.8366 0 32 7.16344 32 16C32 24.8366 24.8366 32 16 32C7.16344 32 0 24.8366 0 16C0 7.16344 7.16344 0 16 0ZM5.34879 19.9149C5.00347 20.2997 5.29828 20.9141 5.82033 20.9141H10.9163C11.3028 20.9141 11.6137 20.6442 11.6609 20.2656L12.6697 12.5H19.3303L20.3391 20.2656C20.3863 20.6442 20.6972 20.9141 21.0837 20.9141H26.1797C26.7017 20.9141 26.9965 20.2997 26.6512 19.9149L23.0984 15.9172L26.6512 11.9194C26.9965 11.5347 26.7017 10.9141 26.1797 10.9141H21.0837C20.6972 10.9141 20.3863 11.184 20.3391 11.5625L19.3303 19.3281H12.6697L11.6609 11.5625C11.6137 11.184 11.3028 10.9141 10.9163 10.9141H5.82033C5.29828 10.9141 5.00347 11.5347 5.34879 11.9194L8.90159 15.9172L5.34879 19.9149Z" />
-                </svg>
-                <Typography variant="body2" sx={{ ml: 0.8, color: theme.palette.text.secondary, fontWeight: 500 }}>
-                  GPT-4.1 Mini
-                </Typography>
-                {/* <KeyboardArrowDownIcon sx={{ color: theme.palette.text.secondary, fontSize: '1.2rem' }} /> */}
-              </Box>
-              <IconButton size="small" sx={{ color: theme.palette.text.secondary }}>
-                <MicIcon />
-              </IconButton>
-            </Box>
-          </Box>
+          {/* Input area - only show for chat conversations */}
+          {messages.length > 0 && (
+            <ChatInput
+              input={input}
+              setInput={setInput}
+              isLoading={isLoading}
+              onSubmit={sendMessage}
+              onSuggestionClick={handleSuggestionClick}
+              theme={theme}
+              isWelcome={false}
+              onAttachmentClick={handleAttachmentClick}
+            />
+          )}
         </Box>
 
         {/* Email Sidebar */}
@@ -965,12 +1350,76 @@ function App() {
         />
 
         <DeleteConfirmationDialog />
+        
         <Snackbar
           open={snackbarOpen}
           autoHideDuration={3000}
           onClose={() => setSnackbarOpen(false)}
           message={threadToDelete ? "Thread deleted successfully" : "Error deleting thread"}
         />
+
+        {/* Thread menu portal */}
+        {menuAnchorEl && createPortal(
+          <ThemeProvider theme={theme}>
+            <Paper
+              data-menu-container
+              sx={{
+                position: 'fixed',
+                top: menuAnchorEl.top,
+                left: menuAnchorEl.left,
+                zIndex: 9999,
+                borderRadius: '8px',
+                border: '1px solid',
+                borderColor: 'divider',
+                boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
+                minWidth: '160px',
+                py: 0.5
+              }}
+            >
+              <List sx={{ py: 0 }}>
+                <ListItem 
+                  button
+                  onClick={handleMenuRename}
+                  sx={{ 
+                    py: 1,
+                    px: 2,
+                    '&:hover': { bgcolor: 'action.hover' }
+                  }}
+                >
+                  <ListItemIcon sx={{ minWidth: '32px' }}>
+                    <EditIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText 
+                    primary="Rename" 
+                    primaryTypographyProps={{ fontSize: '0.875rem' }}
+                  />
+                </ListItem>
+                <ListItem 
+                  button
+                  onClick={handleMenuDelete}
+                  sx={{ 
+                    py: 1,
+                    px: 2,
+                    color: 'error.main',
+                    '&:hover': { 
+                      bgcolor: 'error.light',
+                      color: 'error.contrastText'
+                    }
+                  }}
+                >
+                  <ListItemIcon sx={{ minWidth: '32px' }}>
+                    <DeleteIcon fontSize="small" sx={{ color: 'inherit' }} />
+                  </ListItemIcon>
+                  <ListItemText 
+                    primary="Delete" 
+                    primaryTypographyProps={{ fontSize: '0.875rem' }}
+                  />
+                </ListItem>
+              </List>
+            </Paper>
+          </ThemeProvider>,
+          document.body
+        )}
       </Box>
     </ThemeProvider>
   );
