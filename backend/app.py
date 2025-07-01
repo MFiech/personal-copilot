@@ -166,9 +166,10 @@ When responding to email-related queries:
 When responding to calendar-related queries:
 
 1. If a calendar EVENT WAS CREATED, provide a helpful summary of the created event with details like title, date, time, location, etc.
-2. If calendar events are found from a SEARCH, ONLY respond with: "Here are your calendar events:"
-3. If no calendar events are found from a search, respond with: "I couldn't find any calendar events matching your query."
+2. If calendar events are found from a SEARCH (when you see "Calendar data available: X events found" where X > 0), ONLY respond with: "Here are your calendar events:"
+3. If no calendar events are found from a search (when you see "Calendar data available: 0 events found"), provide a helpful explanation of why no events were found and what was searched for. Be specific about the search criteria that failed (e.g., date range, keywords, etc.).
 4. For calendar searches, do not list or describe any events - they will be shown as tiles.
+5. IMPORTANT: Always check the "Calendar data available" line to determine if events were found (X > 0) or not found (X = 0) before deciding your response.
 
 For non-email and non-calendar queries, provide a helpful response based on the retrieved context when available. If no relevant context is found, provide a helpful response based on your knowledge.""")
     
@@ -239,8 +240,28 @@ Event Details:
                     # This is a calendar search response  
                     events = data.get("events", [])
                     total_events = len(events)
-                    prompt_parts.append(f"Calendar data available: {total_events} events found")
-                    print(f"[DEBUG] Added to prompt: Calendar data available: {total_events} events found")
+                    
+                    if total_events == 0:
+                        # Provide search context for LLM to generate helpful error message
+                        search_context = tool_context.get("search_context", {})
+                        context_info = f"Calendar search performed with user query: '{query}'"
+                        
+                        if search_context:
+                            if search_context.get("date_range"):
+                                context_info += f", Date range searched: {search_context.get('date_range')}"
+                            if search_context.get("keywords"):
+                                context_info += f", Keywords searched: '{search_context.get('keywords')}'"
+                            if search_context.get("time_min") and search_context.get("time_max"):
+                                context_info += f", Time range: {search_context.get('time_min')} to {search_context.get('time_max')}"
+                            if search_context.get("search_method"):
+                                context_info += f", Search method used: {search_context.get('search_method')}"
+                        
+                        prompt_parts.append(f"Calendar data available: {total_events} events found (NO EVENTS). {context_info}")
+                        print(f"[DEBUG] Added to prompt: Calendar data available: {total_events} events found with search context")
+                    else:
+                        prompt_parts.append(f"Calendar data available: {total_events} events found (EVENTS FOUND - use success message)")
+                        print(f"[DEBUG] Added to prompt: Calendar data available: {total_events} events found")
+                    
                     print(f"[DEBUG] events type: {type(events)}")
                     print(f"[DEBUG] events content: {json.dumps(events, indent=2)[:500] if events else 'None'}")
                     print(f"[DEBUG] events truthy check: {bool(events)}")
@@ -561,6 +582,9 @@ def chat():
                         'total_events': len(events)
                     }
                 }
+                # Pass through search context if available
+                if raw_tool_results and raw_tool_results.get('search_context'):
+                    tool_context['search_context'] = raw_tool_results.get('search_context')
         elif raw_tool_results and raw_tool_results.get('source_type') not in ['mail', 'google-calendar']:
             # For other tool results, use the original structure but preserve source_type
             tool_context = {
