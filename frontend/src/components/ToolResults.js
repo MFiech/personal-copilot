@@ -3,9 +3,10 @@ import ToolTile from './ToolTile';
 import TipsAndUpdatesOutlinedIcon from '@mui/icons-material/TipsAndUpdatesOutlined';
 import OpenInFullOutlinedIcon from '@mui/icons-material/OpenInFullOutlined';
 import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
+import AnchorIcon from '@mui/icons-material/Anchor';
 import './VeyraResults.css'; // Import the original styling
 
-const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageReceived, showSnackbar, onOpenEmail, currentOffset, limitPerPage, totalEmailsAvailable, hasMore, ...paginationProps }) => {
+const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageReceived, showSnackbar, onOpenEmail, currentOffset, limitPerPage, totalEmailsAvailable, hasMore, anchoredItem, onAnchorChange, ...paginationProps }) => {
   const [selectedEmails, setSelectedEmails] = useState([]);
   const [selectedEvents, setSelectedEvents] = useState([]);
   const [hoveredEmailId, setHoveredEmailId] = useState(null);
@@ -289,6 +290,25 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
   // Note: totalSelected removed as it's not currently used
   // const totalSelected = selectedEmails.length + selectedEvents.length;
 
+  // Helper function to handle anchor selection
+  const handleAnchorSelect = (item, type) => {
+    const itemId = type === 'email' ? (item.email_id || item._id || item.id) : item.id;
+    const currentAnchoredId = anchoredItem?.id;
+    
+    if (currentAnchoredId === itemId) {
+      // Deselect current anchor
+      onAnchorChange(null);
+    } else {
+      // Select new anchor
+      const anchorData = {
+        id: itemId,
+        type: type,
+        data: item
+      };
+      onAnchorChange(anchorData);
+    }
+  };
+
   return (
     <>
       <div className="gmail-email-list">
@@ -343,7 +363,7 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
               return (
                 <div 
                   key={uniqueKey}
-                  className={`email-row ${isSelected ? 'selected' : ''}`}
+                  className={`email-row ${isSelected ? 'selected' : ''} ${anchoredItem?.id === emailId ? 'anchored' : ''}`}
                   onClick={() => handleEmailSelection(emailId)}
                   onMouseEnter={() => setHoveredEmailId(emailId)}
                   onMouseLeave={() => setHoveredEmailId(null)}
@@ -367,8 +387,18 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
                     {subject}
                   </div>
                   <div className="email-date-actions">
-                    {isHovered ? (
+                    {(isHovered || anchoredItem?.id === emailId) ? (
                       <div className="email-hover-icons">
+                        <button 
+                          className={`hover-icon-btn anchor-hover-btn ${anchoredItem?.id === emailId ? 'anchored' : ''}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleAnchorSelect(email, 'email');
+                          }}
+                          title={anchoredItem?.id === emailId ? "Remove anchor" : "Anchor this email"}
+                        >
+                          <AnchorIcon />
+                        </button>
                         <button 
                           className="hover-icon-btn summarize-hover-btn"
                           onClick={(e) => {
@@ -433,7 +463,6 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
         
         {calendar_events && calendar_events.length > 0 && (
           <div className="veyra-section">
-            <h2>Calendar Events ({calendar_events.length})</h2>
             <div className="veyra-grid">
               {calendar_events.map((event, index) => (
                 <ToolTile 
@@ -451,7 +480,8 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
                         : [...prev, eventId]
                     );
                   }}
-                  showCheckbox={true}
+                  isAnchored={anchoredItem?.id === event.id}
+                  onAnchor={() => handleAnchorSelect(event, 'calendar_event')}
                 />
               ))}
             </div>

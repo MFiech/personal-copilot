@@ -128,7 +128,7 @@ def convert_objectid_to_str(obj):
         return [convert_objectid_to_str(item) for item in obj]
     return obj
 
-def build_prompt(query, retrieved_docs, thread_history=None, tool_context=None):
+def build_prompt(query, retrieved_docs, thread_history=None, tool_context=None, anchored_item=None):
     print("=== BUILD_PROMPT FUNCTION CALLED ===")
     prompt_parts = []
     insight_id = None
@@ -143,6 +143,46 @@ def build_prompt(query, retrieved_docs, thread_history=None, tool_context=None):
     current_time = datetime.now()
     prompt_parts.append(f"Current date and time: {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
     prompt_parts.append("\n")
+
+    # Add anchored item context if available
+    if anchored_item:
+        prompt_parts.append("IMPORTANT - Anchored Item Context:")
+        item_type = anchored_item.get('type', 'unknown')
+        item_data = anchored_item.get('data', {})
+        
+        if item_type == 'email':
+            email_id = anchored_item.get('id')
+            subject = item_data.get('subject', 'No Subject')
+            from_email = item_data.get('from_email', {})
+            sender_name = from_email.get('name', 'Unknown Sender')
+            sender_email = from_email.get('email', 'unknown@unknown.com')
+            date = item_data.get('date', 'Unknown Date')
+            
+            prompt_parts.append(f"The user has ANCHORED this email for context:")
+            prompt_parts.append(f"- Email ID: {email_id}")
+            prompt_parts.append(f"- Subject: {subject}")
+            prompt_parts.append(f"- From: {sender_name} <{sender_email}>")
+            prompt_parts.append(f"- Date: {date}")
+            prompt_parts.append("When the user refers to 'this email', 'the email', or similar terms, they are referring to this anchored email.")
+            
+        elif item_type == 'calendar_event':
+            event_id = anchored_item.get('id')
+            summary = item_data.get('summary', 'Untitled Event')
+            start_time = item_data.get('start', {}).get('dateTime') or item_data.get('start', {}).get('date', 'Unknown Start')
+            end_time = item_data.get('end', {}).get('dateTime') or item_data.get('end', {}).get('date', 'Unknown End')
+            location = item_data.get('location', '')
+            
+            prompt_parts.append(f"The user has ANCHORED this calendar event for context:")
+            prompt_parts.append(f"- Event ID: {event_id}")
+            prompt_parts.append(f"- Title: {summary}")
+            prompt_parts.append(f"- Start: {start_time}")
+            prompt_parts.append(f"- End: {end_time}")
+            if location:
+                prompt_parts.append(f"- Location: {location}")
+            prompt_parts.append("When the user refers to 'this event', 'the meeting', 'the appointment', or similar terms, they are referring to this anchored event.")
+        
+        prompt_parts.append("Use this anchored item information when processing the user's query. The IDs provided can be used with Composio services for actions like replies, modifications, deletions, etc.")
+        prompt_parts.append("\n")
 
     # Add thread history to the prompt if available
     if thread_history:
@@ -365,9 +405,11 @@ def chat():
         data = request.get_json()
         query = data.get('query')
         thread_id = data.get('thread_id')
+        anchored_item = data.get('anchored_item')
         print(f"\n=== New Chat Request ===")
         print(f"Query: {query}")
         print(f"Thread ID: {thread_id}")
+        print(f"Anchored Item: {anchored_item}")
         if not query:
             return jsonify({"error": "No query provided"}), 400
 
@@ -408,7 +450,7 @@ def chat():
                 print("\n=== Processing Tooling Query ===")
                 print(f"Using Tooling service: {type(tooling_service).__name__}")
                 print(f"[DEBUG] About to call tooling_service.process_query...")
-                raw_tool_results = tooling_service.process_query(query, thread_history)
+                raw_tool_results = tooling_service.process_query(query, thread_history, anchored_item)
                 print(f"[DEBUG] tooling_service.process_query completed successfully")
                 # Safe logging that handles ObjectIds
                 try:
@@ -702,7 +744,7 @@ def chat():
             print(f"Error in QA chain: {str(e)}")
             retrieved_docs = []
         
-        prompt, insight_id = build_prompt(query, retrieved_docs, thread_history, tool_context)
+        prompt, insight_id = build_prompt(query, retrieved_docs, thread_history, tool_context, anchored_item)
         
         try:
             print(f"[DEBUG] Calling LLM with prompt...")

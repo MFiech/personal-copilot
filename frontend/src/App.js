@@ -53,6 +53,8 @@ import CodeIcon from '@mui/icons-material/Code';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
+import AnchorIcon from '@mui/icons-material/Anchor';
+import CloseIcon from '@mui/icons-material/Close';
 // import MenuOpenIcon from '@mui/icons-material/MenuOpen'; // Alternative for sidebar toggle
 // import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'; // For model selector dropdown
 
@@ -240,6 +242,9 @@ function App() {
     error: null
   });
 
+  // Anchor state - thread-level
+  const [anchoredItem, setAnchoredItem] = useState(null);
+
   const { showSnackbar } = useSnackbar();
 
   // Fetch threads on initial mount
@@ -272,6 +277,8 @@ function App() {
       // Clear messages when on root path
       setMessages([]);
     }
+    // Clear anchor when switching threads
+    setAnchoredItem(null);
   }, [threadId]);
 
   // Handle clicking outside menu to close it
@@ -410,9 +417,10 @@ function App() {
     setInput('');
     setIsLoading(true);
 
-    // Build payload including pending confirmation context if present
+    // Build payload including pending confirmation context and anchored item if present
     const payload = { query: input };
     if (threadId) payload.thread_id = threadId;
+    if (anchoredItem) payload.anchored_item = anchoredItem;
     if (pendingConfirmation) {
       payload.confirm_tooling = true;
       payload.tool_context = pendingConfirmation.context;
@@ -512,6 +520,7 @@ function App() {
           confirm_tooling: true,
           tool_context: pendingConfirmation.context,
         };
+        if (anchoredItem) payload.anchored_item = anchoredItem;
         
         console.log("Sending confirmation request with payload:", payload);
         
@@ -722,6 +731,9 @@ function App() {
               limitPerPage={message.tool_limit_per_page}
               totalEmailsAvailable={message.tool_total_emails_available}
               hasMore={message.tool_has_more}
+              // Pass anchor props
+              anchoredItem={anchoredItem}
+              onAnchorChange={handleAnchorChange}
             />
           </Box>
         )}
@@ -849,6 +861,11 @@ function App() {
       loading: false,
       error: null
     });
+  };
+
+  // Handle anchor changes
+  const handleAnchorChange = (anchorData) => {
+    setAnchoredItem(anchorData);
   };
 
   // Copy message content to clipboard
@@ -1180,6 +1197,8 @@ function App() {
             </Box>
           )}
 
+
+
           {/* Messages area */}
           <Box sx={{ 
             flexGrow: 1, 
@@ -1324,6 +1343,57 @@ function App() {
               </Box>
             )}
           </Box>
+
+          {/* Anchor Information Bar - positioned just above text area */}
+          {anchoredItem && messages.length > 0 && (
+            <Box sx={{ 
+              p: 2, 
+              backgroundColor: '#fff3e0',
+              borderTop: '1px solid #ffcc02',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1
+            }}>
+              <AnchorIcon sx={{ color: '#ff9800' }} />
+              <Box sx={{ flexGrow: 1 }}>
+                <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#ef6c00' }}>
+                  Anchored {anchoredItem.type === 'email' ? 'Email' : 'Calendar Event'}:
+                </Typography>
+                {anchoredItem.type === 'email' ? (
+                  <Box>
+                    <Typography variant="body2">
+                      <strong>Subject:</strong> {anchoredItem.data.subject || 'No Subject'}
+                    </Typography>
+                    <Typography variant="body2">
+                      <strong>From:</strong> {anchoredItem.data.from_email?.name || anchoredItem.data.from?.name || 'Unknown Sender'}
+                    </Typography>
+                    <Typography variant="body2">
+                      <strong>Date:</strong> {new Date(anchoredItem.data.date).toLocaleDateString()}
+                    </Typography>
+                  </Box>
+                ) : (
+                  <Box>
+                    <Typography variant="body2">
+                      <strong>Name:</strong> {anchoredItem.data.summary || 'Untitled Event'}
+                    </Typography>
+                    <Typography variant="body2">
+                      <strong>Start:</strong> {new Date(anchoredItem.data.start?.dateTime || anchoredItem.data.start?.date).toLocaleString()}
+                    </Typography>
+                    <Typography variant="body2">
+                      <strong>End:</strong> {new Date(anchoredItem.data.end?.dateTime || anchoredItem.data.end?.date).toLocaleString()}
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
+              <IconButton 
+                size="small" 
+                onClick={() => setAnchoredItem(null)}
+                sx={{ color: '#ef6c00' }}
+              >
+                <CloseIcon />
+              </IconButton>
+            </Box>
+          )}
 
           {/* Input area - only show for chat conversations */}
           {messages.length > 0 && (
