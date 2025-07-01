@@ -1,4 +1,5 @@
 import React from 'react';
+import AnchorIcon from '@mui/icons-material/Anchor';
 import './ToolTile.css';
 
 const ToolTile = ({ 
@@ -7,13 +8,15 @@ const ToolTile = ({
   isSelected = false, 
   onSelect, 
   onDelete, 
-  showCheckbox = false 
+  showCheckbox = false,
+  isAnchored = false,
+  onAnchor
 }) => {
   console.log('ToolTile received:', { type, data, isSelected });
 
   const handleTileClick = (e) => {
     // Don't trigger selection if clicking on action buttons
-    if (e.target.closest('.tile-actions') || e.target.closest('.tile-checkbox')) {
+    if (e.target.closest('.tile-actions') || e.target.closest('.tile-checkbox') || e.target.closest('.tile-anchor')) {
       return;
     }
     if (onSelect) {
@@ -31,6 +34,13 @@ const ToolTile = ({
     }
   };
 
+  const handleAnchorClick = (e) => {
+    e.stopPropagation();
+    if (onAnchor) {
+      onAnchor();
+    }
+  };
+
   const renderEmailContent = () => {
     const subject = data.subject || 'No Subject';
     const sender = data.from?.name || data.from_email?.name || 'Unknown Sender';
@@ -44,13 +54,46 @@ const ToolTile = ({
 
   const renderCalendarContent = () => {
     const title = data.summary || 'Untitled Event';
-    const start = data.start?.dateTime || data.start?.date || 'No Date';
-    const date = new Date(start);
-    const formattedDate = date.toLocaleDateString();
+    const startDateTime = data.start?.dateTime || data.start?.date;
+    const endDateTime = data.end?.dateTime || data.end?.date;
+    
+    let timeDisplay = 'No Date';
+    if (startDateTime && endDateTime) {
+      const startDate = new Date(startDateTime);
+      const endDate = new Date(endDateTime);
+      const startTime = startDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false });
+      const endTime = endDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false });
+      const dateStr = startDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      timeDisplay = `${startTime}-${endTime}, ${dateStr}`;
+    }
+    
     return (
       <>
-        <div className="tile-subject" title={title}>{title}</div>
-        <div className="tile-date">{formattedDate}</div>
+        <div className="calendar-top-row">
+          <div className="calendar-time" title={timeDisplay}>{timeDisplay}</div>
+          <div className="calendar-actions">
+            {onAnchor && (
+              <button 
+                className={`calendar-anchor-btn ${isAnchored ? 'anchored' : ''}`}
+                onClick={handleAnchorClick}
+                title={isAnchored ? "Remove anchor" : "Anchor this event"}
+              >
+                <AnchorIcon />
+              </button>
+            )}
+                         <input
+               type="checkbox"
+               className="calendar-checkbox"
+               checked={isSelected}
+               onChange={(e) => {
+                 e.stopPropagation();
+                 if (onSelect) onSelect();
+               }}
+               onClick={(e) => e.stopPropagation()}
+             />
+          </div>
+        </div>
+        <div className="calendar-title" title={title}>{title}</div>
       </>
     );
   };
@@ -60,31 +103,47 @@ const ToolTile = ({
       className={`veyra-tile ${type}-tile ${isSelected ? 'selected' : ''}`}
       onClick={handleTileClick}
     >
-      {showCheckbox && (
-        <div 
-          className={`tile-checkbox ${isSelected ? 'selected' : ''}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (onSelect) onSelect();
-          }}
-        >
-          {isSelected && <span>✓</span>}
-        </div>
-      )}
-      
-      <div style={{ paddingLeft: showCheckbox ? '30px' : '0px' }}>
-        {type === 'email' ? renderEmailContent() : renderCalendarContent()}
-      </div>
+      {type === 'email' ? (
+        <>
+          {showCheckbox && (
+            <div 
+              className={`tile-checkbox ${isSelected ? 'selected' : ''}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onSelect) onSelect();
+              }}
+            >
+              {isSelected && <span>✓</span>}
+            </div>
+          )}
+          
+          <div style={{ paddingLeft: showCheckbox ? '30px' : '0px' }}>
+            {renderEmailContent()}
+          </div>
 
-      {onDelete && (
-        <div className="tile-actions">
-          <button 
-            onClick={handleDeleteClick}
-            title="Delete"
-          >
-            🗑️
-          </button>
-        </div>
+          <div className="tile-actions">
+            {onAnchor && (
+              <button 
+                className={`tile-anchor-btn ${isAnchored ? 'anchored' : ''}`}
+                onClick={handleAnchorClick}
+                title={isAnchored ? "Remove anchor" : "Anchor this item"}
+              >
+                <AnchorIcon />
+              </button>
+            )}
+            {onDelete && (
+              <button 
+                onClick={handleDeleteClick}
+                title="Delete"
+              >
+                🗑️
+              </button>
+            )}
+          </div>
+        </>
+      ) : (
+        // Calendar tile layout - no external checkbox or actions
+        renderCalendarContent()
       )}
     </div>
   );

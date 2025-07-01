@@ -1396,7 +1396,7 @@ Respond with ONLY the JSON object."""
         
         return None
 
-    def process_query(self, query, thread_history=None):
+    def process_query(self, query, thread_history=None, anchored_item=None):
         """
         Enhanced process_query that uses LLM-based classification and 2-stage approach for calendar processing.
         
@@ -1404,6 +1404,11 @@ Respond with ONLY the JSON object."""
         Stage 2: For calendar intent, use _process_calendar_intent for create vs search + parameter extraction
         """
         print(f"[DEBUG] Processing query with LLM classification: '{query}'")
+        print(f"[DEBUG] Anchored item: {anchored_item}")
+        
+        # Check if this is an action on an anchored item
+        if anchored_item and self._is_anchored_item_action(query, anchored_item):
+            return self._handle_anchored_item_action(query, anchored_item)
         
         # Stage 1: Use LLM to classify the query with conversation context
         classification = self.classify_query_with_llm(query, thread_history)
@@ -1552,4 +1557,138 @@ Respond with ONLY the JSON object."""
         
         # For general queries, return None to let the main system handle it
         print(f"[DEBUG] Query classified as 'general' - no tool processing needed")
-        return None 
+        return None
+
+    def _is_anchored_item_action(self, query, anchored_item):
+        """
+        Determine if the query is an action on the anchored item.
+        """
+        query_lower = query.lower()
+        
+        # Email actions
+        email_actions = [
+            "reply", "reply to", "respond", "respond to", "forward", "delete",
+            "archive", "mark as read", "mark as unread", "star", "unstar"
+        ]
+        
+        # Calendar actions  
+        calendar_actions = [
+            "modify", "update", "change", "edit", "reschedule", "move",
+            "cancel", "delete", "add attendee", "remove attendee"
+        ]
+        
+        # Generic actions that work on both
+        generic_actions = ["this", "it", "that"]
+        
+        # Check for specific action words
+        for action in email_actions + calendar_actions + generic_actions:
+            if action in query_lower:
+                return True
+                
+        return False
+
+    def _handle_anchored_item_action(self, query, anchored_item):
+        """
+        Handle actions on anchored items like "Reply to this email" or "Modify the date of this event"
+        """
+        query_lower = query.lower()
+        item_type = anchored_item.get('type')
+        item_id = anchored_item.get('id')
+        item_data = anchored_item.get('data', {})
+        
+        print(f"[DEBUG] Handling anchored item action: {query_lower}")
+        print(f"[DEBUG] Item type: {item_type}, ID: {item_id}")
+        
+        if item_type == 'email':
+            # Handle email actions
+            if any(word in query_lower for word in ["reply", "respond"]):
+                # Prepare reply action - return information for LLM to handle
+                return {
+                    "source_type": "mail",
+                    "action": "reply",
+                    "content": f"I understand you want to reply to the email '{item_data.get('subject', 'Unknown Subject')}' from {item_data.get('from_email', {}).get('name', 'Unknown Sender')}. Please let me know what you'd like to say in your reply.",
+                    "data": {
+                        "email_id": item_id,
+                        "original_subject": item_data.get('subject'),
+                        "original_from": item_data.get('from_email'),
+                        "action_type": "compose_reply"
+                    }
+                }
+            elif any(word in query_lower for word in ["delete", "remove"]):
+                # Handle email deletion
+                try:
+                    result = self.delete_email(item_id)
+                    if result and not result.get("error"):
+                        return {
+                            "source_type": "mail",
+                            "action": "delete",
+                            "content": f"Successfully deleted the email '{item_data.get('subject', 'Unknown Subject')}'",
+                            "data": {"email_id": item_id, "action_type": "delete", "success": True}
+                        }
+                    else:
+                        error_msg = result.get("error") if result else "Unknown error"
+                        return {
+                            "source_type": "mail",
+                            "action": "delete",
+                            "content": f"Failed to delete the email: {error_msg}",
+                            "data": {"email_id": item_id, "action_type": "delete", "success": False, "error": error_msg}
+                        }
+                except Exception as e:
+                    return {
+                        "source_type": "mail", 
+                        "action": "delete",
+                        "content": f"Error deleting email: {str(e)}",
+                        "data": {"email_id": item_id, "action_type": "delete", "success": False, "error": str(e)}
+                    }
+        
+        elif item_type == 'calendar_event':
+            # Handle calendar event actions
+            if any(word in query_lower for word in ["modify", "update", "change", "edit", "reschedule"]):
+                # For calendar modifications, we need to understand what to change
+                return {
+                    "source_type": "google-calendar",
+                    "action": "modify",
+                    "content": f"I understand you want to modify the event '{item_data.get('summary', 'Untitled Event')}'. What would you like to change? (e.g., date, time, location, title)",
+                    "data": {
+                        "event_id": item_id,
+                        "current_summary": item_data.get('summary'),
+                        "current_start": item_data.get('start'),
+                        "current_end": item_data.get('end'),
+                        "current_location": item_data.get('location'),
+                        "action_type": "modify_event"
+                    }
+                }
+            elif any(word in query_lower for word in ["delete", "cancel", "remove"]):
+                # Handle calendar event deletion
+                try:
+                    result = self.delete_calendar_event(item_id)
+                    if result and not result.get("error"):
+                        return {
+                            "source_type": "google-calendar",
+                            "action": "delete",
+                            "content": f"Successfully deleted the event '{item_data.get('summary', 'Untitled Event')}'",
+                            "data": {"event_id": item_id, "action_type": "delete", "success": True}
+                        }
+                    else:
+                        error_msg = result.get("error") if result else "Unknown error"
+                        return {
+                            "source_type": "google-calendar",
+                            "action": "delete", 
+                            "content": f"Failed to delete the event: {error_msg}",
+                            "data": {"event_id": item_id, "action_type": "delete", "success": False, "error": error_msg}
+                        }
+                except Exception as e:
+                    return {
+                        "source_type": "google-calendar",
+                        "action": "delete",
+                        "content": f"Error deleting event: {str(e)}",
+                        "data": {"event_id": item_id, "action_type": "delete", "success": False, "error": str(e)}
+                    }
+        
+        # If we can't handle the specific action, return a helpful message
+        return {
+            "source_type": item_type,
+            "action": "unknown",
+            "content": f"I understand you want to perform an action on the anchored {item_type.replace('_', ' ')}, but I'm not sure what specific action you'd like to take. Could you be more specific?",
+            "data": {"item_id": item_id, "item_type": item_type, "query": query}
+        } 
