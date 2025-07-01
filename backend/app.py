@@ -28,6 +28,7 @@ from bson import ObjectId
 from models.email import Email
 from utils.date_parser import parse_email_date
 from pydantic import SecretStr
+from services.contact_service import ContactSyncService
 
 app = Flask(__name__)
 CORS(app, resources={
@@ -64,6 +65,14 @@ try:
 except Exception as e:
     print(f"FATAL: Failed to initialize Composio service: {e}")
     tooling_service = None
+
+# Initialize Contact service
+try:
+    contact_service = ContactSyncService()
+    print("Contact service initialized successfully")
+except Exception as e:
+    print(f"Warning: Failed to initialize Contact service: {e}")
+    contact_service = None
 
 pc = Pinecone(api_key=pinecone_api_key)
 index_name = "personal"  # Changed from "alohacamp" to "personal"
@@ -1727,6 +1736,214 @@ def test_pagination():
             "success": False,
             "error": str(e)
         }), 500
+
+# ===========================================
+# CONTACT MANAGEMENT ENDPOINTS  
+# ===========================================
+
+@app.route('/contacts/sync', methods=['POST', 'OPTIONS'])
+def sync_contacts():
+    """Sync contacts from Gmail"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    if not contact_service:
+        return jsonify({'error': 'Contact service not available'}), 500
+    
+    try:
+        data = request.get_json() or {}
+        full_sync = data.get('full_sync', True)
+        
+        result = contact_service.sync_gmail_contacts(full_sync=full_sync)
+        
+        if result['success']:
+            return jsonify({
+                'success': True,
+                'message': 'Contact sync completed successfully',
+                'sync_id': result['sync_id'],
+                'stats': result['stats']
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': result['error'],
+                'sync_id': result['sync_id']
+            }), 500
+            
+    except Exception as e:
+        print(f"[ERROR] Contact sync error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/contacts', methods=['GET'])
+def get_contacts():
+    """Get all contacts with pagination"""
+    if not contact_service:
+        return jsonify({'error': 'Contact service not available'}), 500
+    
+    try:
+        limit = int(request.args.get('limit', 100))
+        offset = int(request.args.get('offset', 0))
+        
+        contacts = contact_service.get_all_contacts(limit=limit, offset=offset)
+        stats = contact_service.get_contact_stats()
+        
+        return jsonify({
+            'success': True,
+            'contacts': convert_objectid_to_str(contacts),
+            'pagination': {
+                'limit': limit,
+                'offset': offset,
+                'total': stats.get('total_contacts', 0)
+            },
+            'stats': stats
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] Get contacts error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/contacts/search', methods=['POST', 'OPTIONS'])
+def search_contacts():
+    """Search contacts by name or email"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    if not contact_service:
+        return jsonify({'error': 'Contact service not available'}), 500
+    
+    try:
+        data = request.get_json()
+        query = data.get('query', '').strip()
+        limit = data.get('limit', 20)
+        
+        if not query:
+            return jsonify({'error': 'Search query is required'}), 400
+        
+        results = contact_service.search_contacts(query, limit)
+        
+        return jsonify({
+            'success': True,
+            'query': query,
+            'contacts': convert_objectid_to_str(results),
+            'count': len(results)
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] Search contacts error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/contacts/sync/status', methods=['GET'])
+def get_sync_status():
+    """Get status of contact sync operations"""
+    if not contact_service:
+        return jsonify({'error': 'Contact service not available'}), 500
+    
+    try:
+        sync_id = request.args.get('sync_id')
+        
+        if sync_id:
+            status = contact_service.get_sync_status(sync_id)
+        else:
+            status = contact_service.get_sync_status()
+        
+        if 'error' in status:
+            return jsonify({'success': False, 'error': status['error']}), 404
+        
+        return jsonify({
+            'success': True,
+            'sync_status': convert_objectid_to_str(status)
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] Get sync status error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/contacts/sync/history', methods=['GET'])
+def get_sync_history():
+    """Get history of contact sync operations"""
+    if not contact_service:
+        return jsonify({'error': 'Contact service not available'}), 500
+    
+    try:
+        limit = int(request.args.get('limit', 10))
+        
+        history = contact_service.get_sync_history(limit)
+        
+        return jsonify({
+            'success': True,
+            'sync_history': convert_objectid_to_str(history),
+            'count': len(history)
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] Get sync history error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/contacts/stats', methods=['GET'])
+def get_contact_stats():
+    """Get contact statistics"""
+    if not contact_service:
+        return jsonify({'error': 'Contact service not available'}), 500
+    
+    try:
+        stats = contact_service.get_contact_stats()
+        
+        return jsonify({
+            'success': True,
+            'stats': stats
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] Get contact stats error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/contacts/cleanup', methods=['POST', 'OPTIONS'])
+def cleanup_contact_logs():
+    """Clean up old contact sync logs"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    if not contact_service:
+        return jsonify({'error': 'Contact service not available'}), 500
+    
+    try:
+        data = request.get_json() or {}
+        days_to_keep = data.get('days_to_keep', 30)
+        
+        deleted_count = contact_service.cleanup_old_sync_logs(days_to_keep)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Cleaned up {deleted_count} old sync logs',
+            'deleted_count': deleted_count
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] Cleanup contact logs error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# Test/Debug endpoints (remove in production)
+@app.route('/contacts/debug/delete_all', methods=['POST', 'OPTIONS'])
+def debug_delete_all_contacts():
+    """Delete all contacts - DEBUG ONLY"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    if not contact_service:
+        return jsonify({'error': 'Contact service not available'}), 500
+    
+    try:
+        deleted_count = contact_service.delete_all_contacts()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Deleted {deleted_count} contacts',
+            'deleted_count': deleted_count
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] Debug delete all contacts error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(port=5001, debug=True)

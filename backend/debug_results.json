@@ -1,0 +1,28 @@
+{
+  "get_contacts": {
+    "total_items": 1135,
+    "fetched_count": 100,
+    "sample_names": [
+      "Marcin Malik",
+      "P&G Talent Supply",
+      "Argus Hamilton",
+      "Iza Gryga",
+      "Grzegorz Minimob"
+    ]
+  },
+  "search_False": {
+    "count": 4,
+    "found_names": [
+      "Aneta Giza",
+      "Ewa Giza",
+      "Anna Giza",
+      "Marek Giza"
+    ]
+  },
+  "search_True": {
+    "error": "Invalid person_fields for other_contacts=True: metadata. Allowed values are: emailAddresses, names, phoneNumbers"
+  },
+  "search_aneta": {
+    "error": "Invalid person_fields for other_contacts=True: metadata. Allowed values are: emailAddresses, names, phoneNumbers"
+  }
+}

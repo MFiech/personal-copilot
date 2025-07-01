@@ -491,4 +491,218 @@ EMAILS_INDEXES = [
         "keys": [("metadata.is_read", 1)],
         "name": "is_read_idx"
     }
+]
+
+# Schema for contacts collection
+CONTACTS_SCHEMA = {
+    "validator": {
+        "$jsonSchema": {
+            "bsonType": "object",
+            "required": ["contact_id", "primary_email", "emails", "name", "source"],
+            "properties": {
+                "contact_id": {
+                    "bsonType": "string",
+                    "description": "Unique identifier for the contact"
+                },
+                "primary_email": {
+                    "bsonType": "string",
+                    "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$",
+                    "description": "Contact's primary email address (main identifier)"
+                },
+                "emails": {
+                    "bsonType": "array",
+                    "minItems": 1,
+                    "items": {
+                        "bsonType": "object",
+                        "required": ["email", "is_primary"],
+                        "properties": {
+                            "email": {
+                                "bsonType": "string",
+                                "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$",
+                                "description": "Email address"
+                            },
+                            "is_primary": {
+                                "bsonType": "bool",
+                                "description": "Whether this is the primary email"
+                            },
+                            "is_obsolete": {
+                                "bsonType": ["bool", "null"],
+                                "description": "Whether this email is marked as obsolete in Google Contacts"
+                            },
+                            "metadata": {
+                                "bsonType": ["object", "null"],
+                                "description": "Email-specific metadata from external sources"
+                            }
+                        }
+                    },
+                    "description": "Array of all contact email addresses"
+                },
+                "name": {
+                    "bsonType": "string",
+                    "description": "Contact's display name"
+                },
+                "phone": {
+                    "bsonType": ["string", "null"],
+                    "description": "Contact's phone number"
+                },
+                "source": {
+                    "bsonType": "string",
+                    "enum": ["gmail_contacts", "calendar_attendees", "manual"],
+                    "description": "Source of the contact data"
+                },
+                "metadata": {
+                    "bsonType": "object",
+                    "description": "Additional contact metadata from source APIs",
+                    "properties": {
+                        "resourceName": {
+                            "bsonType": ["string", "null"],
+                            "description": "Gmail API resource name"
+                        },
+                        "etag": {
+                            "bsonType": ["string", "null"],
+                            "description": "Gmail API etag"
+                        },
+                        "photoUrl": {
+                            "bsonType": ["string", "null"],
+                            "description": "Contact photo URL"
+                        }
+                    }
+                },
+                "created_at": {
+                    "bsonType": "int",
+                    "description": "Contact creation timestamp"
+                },
+                "updated_at": {
+                    "bsonType": "int",
+                    "description": "Last update timestamp"
+                }
+            }
+        }
+    }
+}
+
+# Schema for contact_sync_log collection
+CONTACT_SYNC_LOG_SCHEMA = {
+    "validator": {
+        "$jsonSchema": {
+            "bsonType": "object",
+            "required": ["sync_id", "sync_type", "started_at", "status"],
+            "properties": {
+                "sync_id": {
+                    "bsonType": "string",
+                    "description": "Unique identifier for the sync operation"
+                },
+                "sync_type": {
+                    "bsonType": "string",
+                    "enum": ["gmail_contacts", "calendar_attendees", "manual"],
+                    "description": "Type of contact sync operation"
+                },
+                "started_at": {
+                    "bsonType": "int",
+                    "description": "Sync start timestamp"
+                },
+                "completed_at": {
+                    "bsonType": ["int", "null"],
+                    "description": "Sync completion timestamp"
+                },
+                "status": {
+                    "bsonType": "string",
+                    "enum": ["running", "success", "failed", "partial"],
+                    "description": "Sync operation status"
+                },
+                "total_fetched": {
+                    "bsonType": ["int", "null"],
+                    "description": "Total contacts fetched from source"
+                },
+                "total_processed": {
+                    "bsonType": ["int", "null"],
+                    "description": "Total contacts processed successfully"
+                },
+                "new_contacts": {
+                    "bsonType": ["int", "null"],
+                    "description": "Number of new contacts created"
+                },
+                "updated_contacts": {
+                    "bsonType": ["int", "null"],
+                    "description": "Number of existing contacts updated"
+                },
+                "error_count": {
+                    "bsonType": ["int", "null"],
+                    "description": "Number of errors encountered"
+                },
+                "errors": {
+                    "bsonType": "array",
+                    "description": "List of errors encountered during sync",
+                    "items": {
+                        "bsonType": "object",
+                        "properties": {
+                            "error": {
+                                "bsonType": "string",
+                                "description": "Error message"
+                            },
+                            "contact_data": {
+                                "bsonType": ["object", "null"],
+                                "description": "Contact data that caused the error"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+# Index configurations for contacts collection
+CONTACTS_INDEXES = [
+    {
+        "keys": [("contact_id", 1)],
+        "name": "contact_id_idx",
+        "unique": True
+    },
+    {
+        "keys": [("primary_email", 1)],
+        "name": "primary_email_idx",
+        "unique": True
+    },
+    {
+        "keys": [("emails.email", 1)],
+        "name": "emails_email_idx"
+    },
+    {
+        "keys": [("name", "text")],
+        "name": "name_text_idx"
+    },
+    {
+        "keys": [("source", 1)],
+        "name": "source_idx"
+    },
+    {
+        "keys": [("created_at", -1)],
+        "name": "created_at_idx"
+    },
+    {
+        "keys": [("updated_at", -1)],
+        "name": "updated_at_idx"
+    }
+]
+
+# Index configurations for contact_sync_log collection
+CONTACT_SYNC_LOG_INDEXES = [
+    {
+        "keys": [("sync_id", 1)],
+        "name": "sync_id_idx",
+        "unique": True
+    },
+    {
+        "keys": [("sync_type", 1)],
+        "name": "sync_type_idx"
+    },
+    {
+        "keys": [("started_at", -1)],
+        "name": "started_at_idx"
+    },
+    {
+        "keys": [("status", 1)],
+        "name": "status_idx"
+    }
 ] 
