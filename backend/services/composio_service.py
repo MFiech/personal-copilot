@@ -1173,13 +1173,34 @@ Respond with ONLY the JSON object."""
         time_min, time_max = None, None
         if date_range:
             time_min, time_max = self._extract_time_range(date_range.lower())
+            print(f"[DEBUG] Date range '{date_range}' converted to time_min='{time_min}', time_max='{time_max}'")
+        
+        # Only use fallback keyword extraction if LLM analysis was incomplete (no date_range AND no keywords)
+        # If LLM provided date_range but no keywords, that's intentional for date-only queries
+        if (not keywords or not keywords.strip()) and (not date_range or not date_range.strip()):
+            fallback_keywords = self._extract_search_terms(original_query)
+            if fallback_keywords and fallback_keywords.strip():
+                keywords = fallback_keywords
+                print(f"[DEBUG] LLM analysis incomplete (no date_range or keywords), using fallback keywords from original query: '{keywords}'")
+        elif date_range and (not keywords or not keywords.strip()):
+            print(f"[DEBUG] LLM provided date_range='{date_range}' but no keywords - this is correct for date-only queries, skipping fallback")
         
         # Determine search method based on parameters
+        search_context = {
+            "date_range": date_range,
+            "keywords": keywords,
+            "time_min": time_min,
+            "time_max": time_max,
+            "original_query": original_query
+        }
+        
         if keywords and keywords.strip():
             # Use find_events for keyword-based search
             search_query = self._extract_search_terms(keywords)
+            search_context["search_method"] = "find_events (keyword-based)"
+            search_context["processed_keywords"] = search_query
             print(f"[DEBUG] Using find_events with query: '{search_query}'")
-            return self.find_events(
+            result = self.find_events(
                 query=search_query,
                 time_min=time_min,
                 time_max=time_max,
@@ -1187,16 +1208,29 @@ Respond with ONLY the JSON object."""
             )
         elif time_min or time_max:
             # Use list_events for time-based search
+            search_context["search_method"] = "list_events (time-based)"
             print(f"[DEBUG] Using list_events with time range: {time_min} to {time_max}")
-            return self.list_events(
+            result = self.list_events(
                 time_min=time_min,
                 time_max=time_max,
                 max_results=15
             )
         else:
-            # Default: show upcoming events
-            print(f"[DEBUG] Using get_upcoming_events as default")
-            return self.get_upcoming_events()
+            # No valid search method could be determined - return error for LLM to explain
+            search_context["search_method"] = "none (unable to determine search criteria)"
+            search_context["error"] = "Could not extract meaningful search criteria from the query"
+            print(f"[DEBUG] No valid search method could be determined - returning error for LLM explanation")
+            result = {
+                "error": "Unable to determine search criteria",
+                "data": {"items": []},
+                "search_context": search_context
+            }
+        
+        # Add search context to the result for error message generation
+        if result and isinstance(result, dict):
+            result["search_context"] = search_context
+        
+        return result
 
     def _process_calendar_query(self, user_query, thread_history=None):
         """
@@ -1246,6 +1280,47 @@ Respond with ONLY the JSON object."""
             next_month = start.replace(month=start.month + 1) if start.month < 12 else start.replace(year=start.year + 1, month=1)
             end = next_month - timedelta(microseconds=1)
             return start.isoformat() + "Z", end.isoformat() + "Z"
+        
+        # Handle specific weekday names
+        weekdays = {
+            'monday': 0, 'tuesday': 1, 'wednesday': 2, 'thursday': 3, 
+            'friday': 4, 'saturday': 5, 'sunday': 6
+        }
+        
+        for weekday_name, weekday_num in weekdays.items():
+            if weekday_name in query_lower:
+                current_weekday = now.weekday()
+                
+                # Calculate days until the target weekday
+                if weekday_num >= current_weekday:
+                    # Target weekday is today or later this week
+                    days_until = weekday_num - current_weekday
+                else:
+                    # Target weekday is next week
+                    days_until = 7 - current_weekday + weekday_num
+                
+                target_date = now + timedelta(days=days_until)
+                start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                end = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+                
+                print(f"[DEBUG] Weekday '{weekday_name}' detected. Current: {current_weekday} ({now.strftime('%A')}), Target: {weekday_num} ({target_date.strftime('%A')}), Days until: {days_until}")
+                return start.isoformat() + "Z", end.isoformat() + "Z"
+        
+        # Handle ISO date format (YYYY-MM-DD)
+        import re
+        iso_date_match = re.match(r'^(\d{4}-\d{2}-\d{2})$', query_lower.strip())
+        if iso_date_match:
+            date_str = iso_date_match.group(1)
+            try:
+                target_date = datetime.strptime(date_str, '%Y-%m-%d')
+                start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                end = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+                
+                print(f"[DEBUG] ISO date '{date_str}' detected. Converting to time range for {target_date.strftime('%A, %B %d, %Y')}")
+                return start.isoformat() + "Z", end.isoformat() + "Z"
+            except ValueError:
+                print(f"[DEBUG] Invalid ISO date format: '{date_str}'")
+                return None, None
             
         return None, None
     
@@ -1351,11 +1426,15 @@ Respond with ONLY the JSON object."""
                         }
                     else:
                         # This is a search response (should have 'items' array)
-                        return {
+                        result_data = {
                             "source_type": "google-calendar", 
                             "content": "Events fetched.",
                             "data": calendar_data
                         }
+                        # Pass through search context if available
+                        if "search_context" in response:
+                            result_data["search_context"] = response["search_context"]
+                        return result_data
                 else:
                     # Response has no data field, treat as error
                     error_msg = "No data in calendar response"
@@ -1364,7 +1443,17 @@ Respond with ONLY the JSON object."""
             else:
                 error_msg = response.get("error") if response and isinstance(response, dict) else "Unknown error"
                 print(f"[ERROR] Calendar processing failed: {error_msg}")
-                return {"source_type": "google-calendar", "content": f"I couldn't process your calendar request: {error_msg}", "data": {"items": []}}
+                
+                # Check if this is a search criteria error that should be explained by LLM
+                if response and response.get("search_context"):
+                    return {
+                        "source_type": "google-calendar", 
+                        "content": "Events fetched.",
+                        "data": {"items": []},
+                        "search_context": response.get("search_context")
+                    }
+                else:
+                    return {"source_type": "google-calendar", "content": f"I couldn't process your calendar request: {error_msg}", "data": {"items": []}}
         
         # For general queries, return None to let the main system handle it
         print(f"[DEBUG] Query classified as 'general' - no tool processing needed")
