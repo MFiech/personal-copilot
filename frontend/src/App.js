@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import {
   Box,
@@ -214,6 +214,7 @@ const ChatInput = ({
 function App() {
   const { threadId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   
   const [threads, setThreads] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -895,17 +896,68 @@ function App() {
     });
   };
 
-  // Handle anchor changes
+  // --- Sync anchor state with URL query params ---
+  // Restore anchor from URL on mount/thread change
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const anchorType = params.get('anchorType');
+    const anchorId = params.get('anchorId');
+    if (anchorType && anchorId) {
+      // Only update if not already set
+      if (!anchoredItem || anchoredItem.type !== anchorType || anchoredItem.id !== anchorId) {
+        if (anchorType === 'draft') {
+          // Try to fetch draft and validate
+          (async () => {
+            try {
+              const response = await DraftService.validateDraft(anchorId);
+              if (response.success) {
+                setAnchoredItem({ id: anchorId, type: 'draft', data: { draft_id: anchorId, ...response.draft } });
+                setDraftValidation(response.validation);
+              } else {
+                setAnchoredItem({ id: anchorId, type: 'draft', data: { draft_id: anchorId } });
+              }
+            } catch {
+              setAnchoredItem({ id: anchorId, type: 'draft', data: { draft_id: anchorId } });
+            }
+          })();
+        } else if (anchorType === 'message') {
+          // Look up the draft for this message and anchor it
+          (async () => {
+            const found = await checkForDraftInMessage(anchorId);
+            if (!found) {
+              setAnchoredItem(null);
+            }
+          })();
+        } else {
+          setAnchoredItem({ id: anchorId, type: anchorType, data: { id: anchorId } });
+        }
+      }
+    } else if (anchoredItem) {
+      // If no anchor in URL, clear anchor
+      setAnchoredItem(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search, threadId]);
+
+  // Update URL when anchor changes
   const handleAnchorChange = (anchorData) => {
     setAnchoredItem(anchorData);
-    
-    // Clear draft validation when anchor changes
     setDraftValidation(null);
-    
     // If anchoring a draft, fetch its validation status
     if (anchorData && anchorData.type === 'draft') {
       fetchDraftValidation(anchorData.id);
     }
+    // Update the URL query params
+    const params = new URLSearchParams(location.search);
+    if (anchorData) {
+      params.set('anchorType', anchorData.type);
+      params.set('anchorId', anchorData.id);
+    } else {
+      params.delete('anchorType');
+      params.delete('anchorId');
+    }
+    // Use navigate to update the URL without reloading
+    navigate({ pathname: location.pathname, search: params.toString() }, { replace: true });
   };
 
   // Fetch draft validation status
@@ -1420,14 +1472,17 @@ function App() {
                         size="small" 
                         onClick={async () => {
                           // Check if this message has a draft
-                          const hasDraft = await checkForDraftInMessage(message.id);
-                          if (!hasDraft) {
+                          const response = await DraftService.getDraftByMessage(message.id);
+                          if (response.success) {
+                            // Anchor by message, not by draft
+                            handleAnchorChange({ id: message.id, type: 'message', data: { message_id: message.id } });
+                          } else {
                             showSnackbar('No draft found for this message', 'info');
                           }
                         }}
                         sx={{ 
                           p: 0.5,
-                          color: anchoredItem?.type === 'draft' && anchoredItem?.data?.message_id === message.id ? '#ff9800' : 'text.secondary',
+                          color: anchoredItem?.type === 'message' && anchoredItem?.id === message.id ? '#ff9800' : 'text.secondary',
                           '&:hover': { 
                             color: '#ff9800',
                             bgcolor: 'action.hover'
@@ -1700,7 +1755,7 @@ function App() {
                 )}
                 <IconButton 
                   size="small" 
-                  onClick={() => setAnchoredItem(null)}
+                  onClick={() => handleAnchorChange(null)}
                   sx={{ color: '#ef6c00' }}
                 >
                   <CloseIcon />
