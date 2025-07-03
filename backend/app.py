@@ -29,6 +29,7 @@ from models.email import Email
 from utils.date_parser import parse_email_date
 from pydantic import SecretStr
 from services.contact_service import ContactSyncService
+from services.draft_service import DraftService
 
 app = Flask(__name__)
 CORS(app, resources={
@@ -128,7 +129,7 @@ def convert_objectid_to_str(obj):
         return [convert_objectid_to_str(item) for item in obj]
     return obj
 
-def build_prompt(query, retrieved_docs, thread_history=None, tool_context=None, anchored_item=None):
+def build_prompt(query, retrieved_docs, thread_history=None, tool_context=None, anchored_item=None, draft_context=None):
     print("=== BUILD_PROMPT FUNCTION CALLED ===")
     prompt_parts = []
     insight_id = None
@@ -138,11 +139,33 @@ def build_prompt(query, retrieved_docs, thread_history=None, tool_context=None, 
     print(f"  - query: {query}")
     # print(f"  - tool_context: {json.dumps(tool_context, indent=2) if tool_context else 'None'}")
     print(f"  - retrieved_docs count: {len(retrieved_docs) if retrieved_docs else 0}")
+    print(f"  - draft_context: {draft_context}")
 
     # Add current date and time
     current_time = datetime.now()
     prompt_parts.append(f"Current date and time: {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
     prompt_parts.append("\n")
+
+    # Add draft context if available
+    if draft_context:
+        prompt_parts.append("IMPORTANT - Active Draft Context:")
+        prompt_parts.append(f"You are currently helping the user with an active {draft_context['draft_type'].replace('_', ' ')} draft.")
+        prompt_parts.append(f"Draft ID: {draft_context['draft_id']}")
+        prompt_parts.append(f"Draft Summary: {draft_context['summary']}")
+        
+        if draft_context['is_complete']:
+            prompt_parts.append("✅ This draft is COMPLETE and ready to send.")
+            prompt_parts.append("If the user is asking for changes, update the existing draft.")
+            prompt_parts.append("If the user wants to send it, direct them to use the Send button in the orange bar.")
+        else:
+            missing_fields_text = ", ".join(draft_context['missing_fields'])
+            prompt_parts.append(f"⚠️ This draft is INCOMPLETE. Missing: {missing_fields_text}")
+            prompt_parts.append("Focus on gathering the missing information from the user.")
+            prompt_parts.append("Ask specific questions to complete the draft.")
+        
+        prompt_parts.append("DO NOT suggest creating a new draft - update the existing one.")
+        prompt_parts.append("Always acknowledge the existing draft in your response.")
+        prompt_parts.append("\n")
 
     # Add anchored item context if available
     if anchored_item:
@@ -444,7 +467,30 @@ def chat():
         assistant_tool_results = None
         raw_email_list = None
 
-        if tooling_service:
+        # Step 0: Pre-check for draft creation intent to avoid calling tooling service
+        print(f"\n=== Checking for Draft Creation Intent ===")
+        should_skip_tooling = False
+        draft_detection_result = None  # Store result to reuse later
+        try:
+            from services.draft_service import DraftService
+            draft_service = DraftService()
+            
+            # Single draft intent detection - reuse this result later
+            draft_detection_result = draft_service.detect_draft_intent(query, thread_history)
+            
+            if draft_detection_result.get("is_draft_intent"):
+                print(f"[DRAFT] Draft intent detected - SKIPPING tooling service to prevent auto-creation")
+                print(f"[DraftService] Draft detection result: {draft_detection_result}")
+                should_skip_tooling = True
+            else:
+                print(f"[DRAFT] No draft intent detected - proceeding with normal tooling flow")
+                
+        except Exception as e:
+            print(f"[DRAFT] Error in draft detection: {e}")
+            # If draft detection fails, proceed with normal flow
+            should_skip_tooling = False
+
+        if tooling_service and not should_skip_tooling:
             print(f"[DEBUG] Tooling service is available, starting processing...")
             try:
                 print("\n=== Processing Tooling Query ===")
@@ -744,7 +790,51 @@ def chat():
             print(f"Error in QA chain: {str(e)}")
             retrieved_docs = []
         
-        prompt, insight_id = build_prompt(query, retrieved_docs, thread_history, tool_context, anchored_item)
+        # Step 1: Build the LLM prompt with context
+        print(f"\n=== Building LLM Prompt ===")
+        
+        # Check for active drafts in this thread for LLM context
+        draft_context = None
+        try:
+            from services.draft_service import DraftService
+            draft_service = DraftService()
+            active_drafts = draft_service.get_active_drafts_by_thread(thread_id)
+            
+            if active_drafts:
+                print(f"[DRAFT] Found {len(active_drafts)} active draft(s) for LLM context")
+                # Create draft context for the most recent active draft
+                latest_draft = active_drafts[0]  # get_active_drafts_by_thread sorts by created_at desc
+                
+                # Validate the draft to get missing fields info
+                validation_result = draft_service.validate_draft_completeness(latest_draft)
+                missing_fields = validation_result.get('missing_fields', []) if validation_result else []
+                
+                # Create draft summary
+                if latest_draft.draft_type == "email":
+                    to_list = [email.get("name", email.get("email", "Unknown")) for email in latest_draft.to_emails] if latest_draft.to_emails else ["Not specified"]
+                    summary = f"Email to {', '.join(to_list[:2])}" + ("..." if len(to_list) > 2 else "")
+                    if latest_draft.subject:
+                        summary += f" - Subject: {latest_draft.subject}"
+                else:  # calendar_event
+                    summary = f"Calendar event: {latest_draft.summary or 'Untitled'}"
+                    if latest_draft.start_time:
+                        summary += f" on {latest_draft.start_time}"
+                
+                draft_context = {
+                    "type": "active_draft",
+                    "draft_id": latest_draft.draft_id,
+                    "draft_type": latest_draft.draft_type,
+                    "summary": summary,
+                    "is_complete": len(missing_fields) == 0,
+                    "missing_fields": missing_fields,
+                    "created_at": latest_draft.created_at.isoformat() if hasattr(latest_draft.created_at, 'isoformat') else str(latest_draft.created_at)
+                }
+                print(f"[DRAFT] Created context for draft {latest_draft.draft_id}: {latest_draft.draft_type}, complete: {draft_context['is_complete']}")
+            
+        except Exception as e:
+            print(f"[DRAFT] Error getting draft context: {e}")
+        
+        prompt, insight_id = build_prompt(query, retrieved_docs, thread_history, raw_tool_results, anchored_item, draft_context)
         
         try:
             print(f"[DEBUG] Calling LLM with prompt...")
@@ -768,6 +858,201 @@ def chat():
         )
         user_message.save()
         print(f"User message saved. message_id: {user_message.message_id}, role: {user_message.role}, content: {user_message.content[:100] if user_message.content else 'None'}...")
+
+        # Step 1.5: Check for draft creation intent
+        print(f"\n=== Processing Draft Operations ===")
+        draft_created = None
+        try:
+            # Reuse the draft service and detection result from earlier
+            if 'draft_service' not in locals():
+                from services.draft_service import DraftService
+                draft_service = DraftService()
+            
+            # First check if there are existing active drafts in this thread
+            existing_drafts = draft_service.get_active_drafts_by_thread(thread_id)
+            
+            # Reuse the detection result from the pre-check (no duplicate call)
+            detection_result = draft_detection_result
+            
+            if detection_result and detection_result.get("is_draft_intent"):
+                print(f"[DRAFT] Draft intent detected: {detection_result}")
+                
+                # Check if we should update an existing draft instead of creating new one
+                draft_data = detection_result.get("draft_data", {})
+                draft_type = draft_data.get("draft_type")
+                
+                # Look for existing active draft of the same type
+                existing_draft = None
+                for draft in existing_drafts:
+                    if draft.draft_type == draft_type and draft.status == "active":
+                        existing_draft = draft
+                        break
+                
+                if existing_draft:
+                    print(f"[DRAFT] Found existing active draft {existing_draft.draft_id}, updating instead of creating new")
+                    
+                    # Extract updates from the detection result
+                    extracted_info = draft_data.get("extracted_info", {})
+                    updates = {}
+                    
+                    if draft_type == "calendar_event":
+                        if "summary" in extracted_info and extracted_info["summary"]:
+                            updates["summary"] = extracted_info["summary"]
+                        if "start_time" in extracted_info and extracted_info["start_time"]:
+                            updates["start_time"] = extracted_info["start_time"]
+                        if "end_time" in extracted_info and extracted_info["end_time"]:
+                            updates["end_time"] = extracted_info["end_time"]
+                        if "attendees" in extracted_info:
+                            # Smart merge attendees - update existing ones with emails when provided
+                            current_attendees = existing_draft.attendees or []
+                            new_contacts = extracted_info["attendees"]
+                            
+                            # Process new contacts to see if they provide emails for existing attendees
+                            updated_contacts = []
+                            for new_contact in new_contacts:
+                                # Check if this is in format "Name (email@domain.com)"
+                                if isinstance(new_contact, str) and "(" in new_contact and "@" in new_contact:
+                                    # Extract name and email
+                                    import re  # Local import to avoid scoping issues
+                                    paren_match = re.search(r'^(.+?)\s*\(([^)]+@[^)]+)\)$', new_contact.strip())
+                                    if paren_match:
+                                        name_part = paren_match.group(1).strip()
+                                        email_part = paren_match.group(2).strip()
+                                        
+                                        # Find existing attendee with this name but no email
+                                        found_existing = False
+                                        for existing_att in current_attendees:
+                                            if (existing_att.get("name", "").lower() == name_part.lower() and 
+                                                (not existing_att.get("email") or existing_att.get("needs_clarification"))):
+                                                # Update this attendee with the email
+                                                existing_att["email"] = email_part
+                                                existing_att["needs_clarification"] = False
+                                                found_existing = True
+                                                print(f"[DRAFT] Updated attendee '{name_part}' with email '{email_part}'")
+                                                break
+                                        
+                                        if not found_existing:
+                                            # Add as new attendee
+                                            updated_contacts.append(name_part + " (" + email_part + ")")
+                                    else:
+                                        # Add as regular contact
+                                        updated_contacts.append(new_contact)
+                                else:
+                                    # Add as regular contact
+                                    updated_contacts.append(new_contact)
+                            
+                            # Only add truly new contacts (not email updates)
+                            if updated_contacts:
+                                current_names = [att.get("name", att.get("email", "")) for att in current_attendees]
+                                all_contacts = list(set(current_names + updated_contacts))
+                                updates["attendee_contacts"] = all_contacts
+                        if "location" in extracted_info and extracted_info["location"]:
+                            updates["location"] = extracted_info["location"]
+                        if "description" in extracted_info and extracted_info["description"]:
+                            updates["description"] = extracted_info["description"]
+                    
+                    elif draft_type == "email":
+                        if "to_contacts" in extracted_info:
+                            # Merge recipients instead of replacing
+                            current_contacts = [email.get("name", email.get("email", "")) for email in existing_draft.to_emails]
+                            new_contacts = extracted_info["to_contacts"]
+                            all_contacts = list(set(current_contacts + new_contacts))  # Remove duplicates
+                            updates["to_contacts"] = all_contacts
+                        if "subject" in extracted_info and extracted_info["subject"]:
+                            updates["subject"] = extracted_info["subject"]
+                        if "body" in extracted_info and extracted_info["body"]:
+                            updates["body"] = extracted_info["body"]
+                    
+                    if updates:
+                        updated_draft = draft_service.update_draft(existing_draft.draft_id, updates)
+                        if updated_draft:
+                            print(f"[DRAFT] Successfully updated existing draft {existing_draft.draft_id}")
+                            draft_created = updated_draft  # Use updated draft as "created" for response
+                        else:
+                            print(f"[DRAFT] Failed to update existing draft, creating new one")
+                            draft_created = draft_service.create_draft_from_detection(
+                                thread_id, 
+                                user_message.message_id, 
+                                detection_result
+                            )
+                    else:
+                        print(f"[DRAFT] No updates to apply to existing draft")
+                        draft_created = existing_draft  # Return existing draft
+                else:
+                    # No existing draft found, create new one
+                    draft_created = draft_service.create_draft_from_detection(
+                        thread_id, 
+                        user_message.message_id, 
+                        detection_result
+                    )
+                
+                # NOW provide draft context to LLM after creation/update
+                if draft_created:
+                    print(f"[DRAFT] Successfully created/updated draft {draft_created.draft_id}")
+                    
+                    # Validate the draft to get missing fields info
+                    validation_result = draft_service.validate_draft_completeness(draft_created.draft_id)
+                    missing_fields = validation_result.get('missing_fields', []) if validation_result else []
+                    
+                    # Create draft summary
+                    if draft_created.draft_type == "email":
+                        to_list = [email.get("name", email.get("email", "Unknown")) for email in draft_created.to_emails] if draft_created.to_emails else ["Not specified"]
+                        summary = f"Email to {', '.join(to_list[:2])}" + ("..." if len(to_list) > 2 else "")
+                        if draft_created.subject:
+                            summary += f" - Subject: {draft_created.subject}"
+                    else:  # calendar_event
+                        summary = f"Calendar event: {draft_created.summary or 'Untitled'}"
+                        if draft_created.start_time:
+                            summary += f" on {draft_created.start_time}"
+                    
+                    # Create draft context for the LLM
+                    draft_context = {
+                        "type": "active_draft",
+                        "draft_id": draft_created.draft_id,
+                        "draft_type": draft_created.draft_type,
+                        "summary": summary,
+                        "is_complete": len(missing_fields) == 0,
+                        "missing_fields": missing_fields,
+                        "created_at": draft_created.created_at.isoformat() if hasattr(draft_created.created_at, 'isoformat') else str(draft_created.created_at)
+                    }
+                    print(f"[DRAFT] Created context for LLM: {draft_created.draft_type}, complete: {draft_context['is_complete']}")
+                    
+                    # Rebuild the prompt with draft context
+                    prompt, insight_id = build_prompt(query, retrieved_docs, thread_history, raw_tool_results, anchored_item, draft_context)
+                    
+                    # Call LLM again with draft context
+                    try:
+                        print(f"[DEBUG] Calling LLM again with draft context...")
+                        response = llm.invoke(prompt)
+                        response_text = response.content[0] if isinstance(response.content, list) else response.content
+                        response_text = response_text.strip() if isinstance(response_text, str) else str(response_text)
+                        print(f"[DEBUG] LLM response with draft context: {response_text[:200]}...")
+                    except Exception as e:
+                        print(f"[DEBUG] LLM call failed: {e}")
+                        response_text = f"I've created a draft for you, but there was an error generating the response. Please check the orange anchor bar for details."
+                else:
+                    print(f"[DRAFT] Failed to create/update draft from detection")
+            else:
+                print(f"[DRAFT] No draft intent detected")
+                
+        except Exception as e:
+            print(f"[DRAFT] Error in draft detection: {e}")
+            import traceback
+            print(f"[DRAFT] Traceback: {traceback.format_exc()}")
+
+        # If no draft was created, use the original response
+        if not draft_created:
+            prompt, insight_id = build_prompt(query, retrieved_docs, thread_history, raw_tool_results, anchored_item)
+            
+            try:
+                print(f"[DEBUG] Calling LLM with original prompt...")
+                response = llm.invoke(prompt)
+                response_text = response.content[0] if isinstance(response.content, list) else response.content
+                response_text = response_text.strip() if isinstance(response_text, str) else str(response_text)
+                print(f"[DEBUG] LLM response: {response_text[:200]}...")
+            except Exception as e:
+                print(f"[DEBUG] LLM call failed: {e}")
+                response_text = "Sorry, I couldn't process your request at this time."
 
         # Step 2: Save the assistant's message with the PROCESSED tool results
         print(f"\n=== Saving Assistant Message ===")
@@ -803,6 +1088,15 @@ def chat():
             "thread_id": thread_id,
             "message_id": assistant_message.message_id,
         }
+        
+        # Add draft information if a draft was created
+        if draft_created:
+            response_data["draft_created"] = {
+                "draft_id": draft_created.draft_id,
+                "draft_type": draft_created.draft_type,
+                "user_message_id": user_message.message_id,
+                "status": "created"
+            }
         
         # If we have email results, add them in the proper tile format for the frontend
         if raw_email_list is not None:
@@ -2097,6 +2391,301 @@ def debug_delete_all_contacts():
         
     except Exception as e:
         print(f"[ERROR] Debug delete all contacts error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# ===========================================
+# DRAFT MANAGEMENT ENDPOINTS  
+# ===========================================
+
+@app.route('/drafts', methods=['POST', 'OPTIONS'])
+def create_draft():
+    """Create a new draft"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        data = request.get_json()
+        draft_type = data.get('draft_type')
+        thread_id = data.get('thread_id')
+        message_id = data.get('message_id')
+        initial_data = data.get('initial_data', {})
+        
+        if not all([draft_type, thread_id, message_id]):
+            return jsonify({'error': 'Missing required parameters: draft_type, thread_id, message_id'}), 400
+        
+        if draft_type not in ['email', 'calendar_event']:
+            return jsonify({'error': 'draft_type must be "email" or "calendar_event"'}), 400
+        
+        # Initialize draft service
+        draft_service = DraftService()
+        
+        # Create draft
+        draft = draft_service.create_draft(draft_type, thread_id, message_id, initial_data)
+        
+        return jsonify({
+            'success': True,
+            'draft': convert_objectid_to_str(draft.to_dict()),
+            'message': f'Created {draft_type} draft successfully'
+        }), 201
+        
+    except Exception as e:
+        print(f"[ERROR] Create draft error: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/drafts/<draft_id>', methods=['GET'])
+def get_draft(draft_id):
+    """Get a draft by its ID"""
+    try:
+        from services.draft_service import DraftService
+        draft_service = DraftService()
+        
+        draft = draft_service.get_draft_by_id(draft_id)
+        
+        if not draft:
+            return jsonify({'error': 'Draft not found'}), 404
+        
+        return jsonify({
+            'success': True,
+            'draft': convert_objectid_to_str(draft.to_dict())
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] Get draft error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/drafts/<draft_id>', methods=['PUT', 'OPTIONS'])
+def update_draft(draft_id):
+    """Update a draft"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        data = request.get_json()
+        updates = data.get('updates', {})
+        
+        if not updates:
+            return jsonify({'error': 'No updates provided'}), 400
+        
+        from services.draft_service import DraftService
+        draft_service = DraftService()
+        
+        success = draft_service.update_draft(draft_id, updates)
+        
+        if not success:
+            return jsonify({'error': 'Failed to update draft or draft not found'}), 404
+        
+        # Get updated draft
+        updated_draft = draft_service.get_draft_by_id(draft_id)
+        
+        return jsonify({
+            'success': True,
+            'draft': convert_objectid_to_str(updated_draft.to_dict()),
+            'message': 'Draft updated successfully'
+        })
+        
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        print(f"[ERROR] Update draft error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/drafts/<draft_id>/validate', methods=['GET'])
+def validate_draft(draft_id):
+    """Check if draft has all required fields for execution"""
+    try:
+        from services.draft_service import DraftService
+        draft_service = DraftService()
+        
+        validation = draft_service.validate_draft_completeness(draft_id)
+        
+        return jsonify({
+            'success': True,
+            'validation': validation
+        })
+        
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 404
+    except Exception as e:
+        print(f"[ERROR] Validate draft error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/drafts/<draft_id>/send', methods=['POST', 'OPTIONS'])
+def send_draft(draft_id):
+    """Execute draft via Composio (send email or create calendar event)"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        from services.draft_service import DraftService
+        draft_service = DraftService()
+        
+        # Validate completeness first
+        validation = draft_service.validate_draft_completeness(draft_id)
+        if not validation['is_complete']:
+            return jsonify({
+                'success': False,
+                'error': f'Draft is incomplete. Missing fields: {validation["missing_fields"]}'
+            }), 400
+        
+        # Get draft details
+        draft = draft_service.get_draft_by_id(draft_id)
+        if not draft:
+            return jsonify({'error': 'Draft not found'}), 404
+        
+        # Convert to Composio parameters
+        composio_params = draft_service.convert_draft_to_composio_params(draft_id)
+        
+        # Execute via Composio
+        if not tooling_service:
+            return jsonify({'error': 'Composio service not available'}), 500
+        
+        try:
+            if draft.draft_type == 'email':
+                # Send email via Composio
+                # Note: This is a placeholder - you'll need to implement send_email in ComposioService
+                result = {"error": "Email sending not yet implemented in ComposioService"}
+                
+            elif draft.draft_type == 'calendar_event':
+                # Create calendar event via Composio
+                result = tooling_service.create_calendar_event(
+                    summary=composio_params['summary'],
+                    start_time=composio_params['start_time'],
+                    end_time=composio_params['end_time'],
+                    location=composio_params.get('location'),
+                    description=composio_params.get('description'),
+                    attendees=composio_params.get('attendees', [])
+                )
+            else:
+                return jsonify({'error': f'Unknown draft type: {draft.draft_type}'}), 400
+            
+            # Check result and update draft status
+            if 'error' in result:
+                # Mark draft as error
+                draft_service.close_draft(draft_id, 'composio_error')
+                return jsonify({
+                    'success': False,
+                    'error': f'Composio execution failed: {result["error"]}'
+                }), 500
+            else:
+                # Mark draft as completed
+                draft_service.close_draft(draft_id, 'closed')
+                return jsonify({
+                    'success': True,
+                    'result': result,
+                    'message': f'{draft.draft_type.replace("_", " ").title()} executed successfully'
+                })
+                
+        except Exception as composio_error:
+            # Mark draft as error
+            draft_service.close_draft(draft_id, 'composio_error')
+            raise composio_error
+        
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        print(f"[ERROR] Send draft error: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/drafts/<draft_id>/close', methods=['POST', 'OPTIONS'])
+def close_draft(draft_id):
+    """Close a draft with specified status"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        data = request.get_json()
+        status = data.get('status', 'closed')
+        
+        if status not in ['closed', 'composio_error']:
+            return jsonify({'error': 'Status must be "closed" or "composio_error"'}), 400
+        
+        from services.draft_service import DraftService
+        draft_service = DraftService()
+        
+        success = draft_service.close_draft(draft_id, status)
+        
+        if not success:
+            return jsonify({'error': 'Failed to close draft or draft not found'}), 404
+        
+        return jsonify({
+            'success': True,
+            'message': f'Draft closed with status: {status}'
+        })
+        
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 404
+    except Exception as e:
+        print(f"[ERROR] Close draft error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/drafts/thread/<thread_id>', methods=['GET'])
+def get_drafts_by_thread(thread_id):
+    """Get all drafts for a thread"""
+    try:
+        active_only = request.args.get('active_only', 'false').lower() == 'true'
+        
+        from services.draft_service import DraftService
+        draft_service = DraftService()
+        
+        if active_only:
+            drafts = draft_service.get_active_drafts_by_thread(thread_id)
+        else:
+            drafts = draft_service.get_all_drafts_by_thread(thread_id)
+        
+        return jsonify({
+            'success': True,
+            'drafts': [convert_objectid_to_str(draft.to_dict()) for draft in drafts],
+            'count': len(drafts)
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] Get drafts by thread error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/drafts/message/<message_id>', methods=['GET'])
+def get_draft_by_message(message_id):
+    """Get draft by the message ID that created it"""
+    try:
+        from services.draft_service import DraftService
+        draft_service = DraftService()
+        
+        draft = draft_service.get_draft_by_message_id(message_id)
+        
+        if not draft:
+            return jsonify({'error': 'No draft found for this message'}), 404
+        
+        return jsonify({
+            'success': True,
+            'draft': convert_objectid_to_str(draft.to_dict())
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] Get draft by message error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/drafts/<draft_id>/summary', methods=['GET'])
+def get_draft_summary(draft_id):
+    """Get a human-readable summary of a draft for UI display"""
+    try:
+        from services.draft_service import DraftService
+        draft_service = DraftService()
+        
+        summary = draft_service.get_draft_summary(draft_id)
+        
+        if not summary:
+            return jsonify({'error': 'Draft not found'}), 404
+        
+        return jsonify({
+            'success': True,
+            'summary': summary
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] Get draft summary error: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':

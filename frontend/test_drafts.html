@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Draft System Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; }
+        button { margin: 5px; padding: 10px; }
+        .result { margin-top: 10px; padding: 10px; background: #f0f0f0; border-radius: 4px; }
+        .error { background: #ffebee; color: #d32f2f; }
+        .success { background: #e8f5e8; color: #2e7d32; }
+    </style>
+</head>
+<body>
+    <h1>Draft System Test</h1>
+    
+    <div class="test-section">
+        <h3>Test 1: Create Email Draft</h3>
+        <button onclick="testCreateEmailDraft()">Create Email Draft</button>
+        <div id="result1" class="result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h3>Test 2: Get Draft by Message ID</h3>
+        <button onclick="testGetDraftByMessage()">Get Draft by Message</button>
+        <div id="result2" class="result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h3>Test 3: Validate Draft</h3>
+        <button onclick="testValidateDraft()">Validate Draft</button>
+        <div id="result3" class="result"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:5001';
+        let testDraftId = null;
+        let testMessageId = 'test_message_' + Date.now();
+        
+        async function testCreateEmailDraft() {
+            try {
+                const response = await fetch(`${API_BASE}/drafts`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        draft_type: 'email',
+                        thread_id: 'test_thread_123',
+                        message_id: testMessageId,
+                        initial_data: {
+                            to_emails: [{ email: 'test@example.com', name: 'Test User' }],
+                            subject: 'Test Email Subject'
+                        }
+                    })
+                });
+                
+                const result = await response.json();
+                testDraftId = result.draft?.draft_id;
+                
+                document.getElementById('result1').innerHTML = 
+                    `<div class="${response.ok ? 'success' : 'error'}">
+                        Status: ${response.status}<br>
+                        Result: ${JSON.stringify(result, null, 2)}
+                    </div>`;
+            } catch (error) {
+                document.getElementById('result1').innerHTML = 
+                    `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+        
+        async function testGetDraftByMessage() {
+            try {
+                const response = await fetch(`${API_BASE}/drafts/message/${testMessageId}`);
+                const result = await response.json();
+                
+                document.getElementById('result2').innerHTML = 
+                    `<div class="${response.ok ? 'success' : 'error'}">
+                        Status: ${response.status}<br>
+                        Result: ${JSON.stringify(result, null, 2)}
+                    </div>`;
+            } catch (error) {
+                document.getElementById('result2').innerHTML = 
+                    `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+        
+        async function testValidateDraft() {
+            if (!testDraftId) {
+                document.getElementById('result3').innerHTML = 
+                    `<div class="error">No draft ID available. Create a draft first.</div>`;
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/drafts/${testDraftId}/validate`);
+                const result = await response.json();
+                
+                document.getElementById('result3').innerHTML = 
+                    `<div class="${response.ok ? 'success' : 'error'}">
+                        Status: ${response.status}<br>
+                        Result: ${JSON.stringify(result, null, 2)}
+                    </div>`;
+            } catch (error) {
+                document.getElementById('result3').innerHTML = 
+                    `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+    </script>
+</body>
+</html> 

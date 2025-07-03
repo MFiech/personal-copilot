@@ -4,9 +4,11 @@ from .mongo_schema import (
     CONVERSATIONS_SCHEMA,
     INSIGHTS_SCHEMA,
     EMAILS_SCHEMA,
+    DRAFTS_SCHEMA,
     CONVERSATIONS_INDEXES,
     INSIGHTS_INDEXES,
-    EMAILS_INDEXES
+    EMAILS_INDEXES,
+    DRAFTS_INDEXES
 )
 
 # Load environment variables
@@ -23,6 +25,7 @@ INSIGHTS_COLLECTION = 'insights'
 EMAILS_COLLECTION = 'emails'
 CONTACTS_COLLECTION = 'contacts'
 CONTACT_SYNC_LOG_COLLECTION = 'contact_sync_log'
+DRAFTS_COLLECTION = 'drafts'
 
 # MongoDB connection options
 MONGO_OPTIONS = {
@@ -59,10 +62,19 @@ def init_collections(db):
         )
         print(f"Created collection: {EMAILS_COLLECTION}")
     
+    # Initialize drafts collection
+    if DRAFTS_COLLECTION not in db.list_collection_names():
+        db.create_collection(
+            DRAFTS_COLLECTION,
+            **DRAFTS_SCHEMA
+        )
+        print(f"Created collection: {DRAFTS_COLLECTION}")
+    
     # Create indexes
     conversations = db[CONVERSATIONS_COLLECTION]
     insights = db[INSIGHTS_COLLECTION]
     emails = db[EMAILS_COLLECTION]
+    drafts = db[DRAFTS_COLLECTION]
     
     for index_config in CONVERSATIONS_INDEXES:
         conversations.create_index(**index_config)
@@ -71,4 +83,7 @@ def init_collections(db):
         insights.create_index(**index_config)
         
     for index_config in EMAILS_INDEXES:
-        emails.create_index(**index_config) 
+        emails.create_index(**index_config)
+    
+    for index_config in DRAFTS_INDEXES:
+        drafts.create_index(**index_config) 
