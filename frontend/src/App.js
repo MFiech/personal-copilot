@@ -35,6 +35,7 @@ import ToolResults from './components/ToolResults';
 import EmailSidebar from './components/EmailSidebar';
 import './App.css';
 import { useSnackbar } from './components/SnackbarProvider';
+import { DraftService, formatDraftDisplayText, getMissingFieldsText } from './utils/draftService';
 
 // Import new icons
 import SendIcon from '@mui/icons-material/Send';
@@ -55,6 +56,7 @@ import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import AnchorIcon from '@mui/icons-material/Anchor';
 import CloseIcon from '@mui/icons-material/Close';
+import CreateIcon from '@mui/icons-material/Create';
 // import MenuOpenIcon from '@mui/icons-material/MenuOpen'; // Alternative for sidebar toggle
 // import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'; // For model selector dropdown
 
@@ -245,6 +247,10 @@ function App() {
   // Anchor state - thread-level
   const [anchoredItem, setAnchoredItem] = useState(null);
 
+  // Draft state
+  const [draftValidation, setDraftValidation] = useState(null);
+  const [isSendingDraft, setIsSendingDraft] = useState(false);
+
   const { showSnackbar } = useSnackbar();
 
   // Fetch threads on initial mount
@@ -413,7 +419,9 @@ function App() {
     if (!input.trim()) return;
 
     const userMessage = { role: 'user', content: input };
-    setMessages([...messages, userMessage]);
+    const userMessageId = `user-${Date.now()}`;
+    const userMessageWithId = { ...userMessage, id: userMessageId };
+    setMessages([...messages, userMessageWithId]);
     setInput('');
     setIsLoading(true);
 
@@ -495,6 +503,30 @@ function App() {
 
       setMessages(prevMessages => [...prevMessages, assistantMessageData]);
       fetchThreads();
+      
+      // Auto-refresh draft display if there's an anchored draft
+      if (anchoredItem && anchoredItem.type === 'draft') {
+        console.log('[DEBUG] Auto-refreshing draft display after message');
+        setTimeout(() => {
+          fetchDraftValidation(anchoredItem.data.draft_id);
+        }, 500); // Small delay to ensure backend processing is complete
+      }
+      
+      // Check if a draft was created and auto-anchor it
+      if (data.draft_created) {
+        console.log('[App.js] Draft created detected:', data.draft_created);
+        
+        // Immediately check for and anchor the draft
+        setTimeout(() => {
+          checkForDraftInMessage(data.draft_created.user_message_id);
+        }, 100); // Small delay to ensure database update
+      } else {
+        // Fallback: Check if a draft was created for the user message
+        setTimeout(() => {
+          checkForDraftInMessage(userMessageId);
+        }, 500); // Longer delay for fallback detection
+      }
+      
     } catch (error) {
       setMessages((prev) => [...prev, { role: 'assistant', content: `Error: ${error.message}` }]);
     } finally {
@@ -866,6 +898,82 @@ function App() {
   // Handle anchor changes
   const handleAnchorChange = (anchorData) => {
     setAnchoredItem(anchorData);
+    
+    // Clear draft validation when anchor changes
+    setDraftValidation(null);
+    
+    // If anchoring a draft, fetch its validation status
+    if (anchorData && anchorData.type === 'draft') {
+      fetchDraftValidation(anchorData.id);
+    }
+  };
+
+  // Fetch draft validation status
+  const fetchDraftValidation = async (draftId) => {
+    try {
+      const response = await DraftService.validateDraft(draftId);
+      if (response.success) {
+        setDraftValidation(response.validation);
+      }
+    } catch (error) {
+      console.error('Error fetching draft validation:', error);
+    }
+  };
+
+  // Check for draft associated with user message
+  const checkForDraftInMessage = async (messageId) => {
+    try {
+      const response = await DraftService.getDraftByMessage(messageId);
+      if (response.success) {
+        const draft = response.draft;
+        
+        // Auto-anchor this draft
+        const anchorData = {
+          id: draft.draft_id,
+          type: 'draft',
+          data: draft
+        };
+        
+        setAnchoredItem(anchorData);
+        await fetchDraftValidation(draft.draft_id);
+        
+        console.log('[App.js] Auto-anchored draft:', draft.draft_id);
+        return true;
+      }
+    } catch (error) {
+      // Draft not found - this is normal for most messages
+      console.log('[App.js] No draft found for message:', messageId);
+    }
+    return false;
+  };
+
+  // Send draft via Composio
+  const handleSendDraft = async () => {
+    if (!anchoredItem || anchoredItem.type !== 'draft') return;
+    
+    setIsSendingDraft(true);
+    try {
+      const response = await DraftService.sendDraft(anchoredItem.id);
+      if (response.success) {
+        showSnackbar(response.message || 'Draft sent successfully!', 'success');
+        
+        // Clear the anchored draft
+        setAnchoredItem(null);
+        setDraftValidation(null);
+        
+        // Refresh the thread to show any new messages
+        if (threadId) {
+          loadThread(threadId);
+        }
+      } else {
+        showSnackbar(response.error || 'Failed to send draft', 'error');
+      }
+    } catch (error) {
+      console.error('Error sending draft:', error);
+      showSnackbar(`Failed to send draft: ${error.message}`, 'error');
+    } finally {
+      setIsSendingDraft(false);
+    }
   };
 
   // Copy message content to clipboard
@@ -1306,6 +1414,30 @@ function App() {
                       <ContentCopyIcon fontSize="inherit" />
                     </IconButton>
                     
+                    {/* Anchor button - only for user messages */}
+                    {message.role === 'user' && (
+                      <IconButton 
+                        size="small" 
+                        onClick={async () => {
+                          // Check if this message has a draft
+                          const hasDraft = await checkForDraftInMessage(message.id);
+                          if (!hasDraft) {
+                            showSnackbar('No draft found for this message', 'info');
+                          }
+                        }}
+                        sx={{ 
+                          p: 0.5,
+                          color: anchoredItem?.type === 'draft' && anchoredItem?.data?.message_id === message.id ? '#ff9800' : 'text.secondary',
+                          '&:hover': { 
+                            color: '#ff9800',
+                            bgcolor: 'action.hover'
+                          }
+                        }}
+                      >
+                        <AnchorIcon fontSize="inherit" />
+                      </IconButton>
+                    )}
+                    
                     {/* Repeat button - only for user messages */}
                     {message.role === 'user' && (
                       <IconButton 
@@ -1356,42 +1488,224 @@ function App() {
             }}>
               <AnchorIcon sx={{ color: '#ff9800' }} />
               <Box sx={{ flexGrow: 1 }}>
-                <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#ef6c00' }}>
-                  Anchored {anchoredItem.type === 'email' ? 'Email' : 'Calendar Event'}:
-                </Typography>
-                {anchoredItem.type === 'email' ? (
+                {anchoredItem.type === 'draft' ? (
                   <Box>
-                    <Typography variant="body2">
-                      <strong>Subject:</strong> {anchoredItem.data.subject || 'No Subject'}
+                    <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#ef6c00', mb: 1 }}>
+                      Draft {anchoredItem.data.draft_type === 'email' ? 'Email' : 'Calendar Event'}
                     </Typography>
-                    <Typography variant="body2">
-                      <strong>From:</strong> {anchoredItem.data.from_email?.name || anchoredItem.data.from?.name || 'Unknown Sender'}
-                    </Typography>
-                    <Typography variant="body2">
-                      <strong>Date:</strong> {new Date(anchoredItem.data.date).toLocaleDateString()}
-                    </Typography>
+                    
+                    {/* Email Draft Details */}
+                    {anchoredItem.data.draft_type === 'email' && (
+                      <Box sx={{ pl: 1 }}>
+                        <Typography variant="body2" sx={{ mb: 0.5 }}>
+                          <strong>To:</strong> {
+                            anchoredItem.data.to_emails && anchoredItem.data.to_emails.length > 0 
+                              ? anchoredItem.data.to_emails.map(email => {
+                                  if (email.name && email.email) {
+                                    return `${email.name} (${email.email})`;
+                                  } else if (email.email) {
+                                    return email.email;
+                                  } else if (email.name) {
+                                    return email.name;
+                                  } else {
+                                    return 'Unknown recipient';
+                                  }
+                                }).join(', ')
+                              : <span style={{ color: '#d32f2f', fontStyle: 'italic' }}>Not specified</span>
+                          }
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 0.5 }}>
+                          <strong>Subject:</strong> {
+                            anchoredItem.data.subject 
+                              ? anchoredItem.data.subject
+                              : <span style={{ color: '#d32f2f', fontStyle: 'italic' }}>Not specified</span>
+                          }
+                        </Typography>
+                        {anchoredItem.data.cc_emails && anchoredItem.data.cc_emails.length > 0 && (
+                          <Typography variant="body2" sx={{ mb: 0.5 }}>
+                            <strong>CC:</strong> {anchoredItem.data.cc_emails.map(email => {
+                              if (email.name && email.email) {
+                                return `${email.name} (${email.email})`;
+                              } else if (email.email) {
+                                return email.email;
+                              } else if (email.name) {
+                                return email.name;
+                              } else {
+                                return 'Unknown recipient';
+                              }
+                            }).join(', ')}
+                          </Typography>
+                        )}
+                        {anchoredItem.data.bcc_emails && anchoredItem.data.bcc_emails.length > 0 && (
+                          <Typography variant="body2" sx={{ mb: 0.5 }}>
+                            <strong>BCC:</strong> {anchoredItem.data.bcc_emails.map(email => {
+                              if (email.name && email.email) {
+                                return `${email.name} (${email.email})`;
+                              } else if (email.email) {
+                                return email.email;
+                              } else if (email.name) {
+                                return email.name;
+                              } else {
+                                return 'Unknown recipient';
+                              }
+                            }).join(', ')}
+                          </Typography>
+                        )}
+                        {anchoredItem.data.body && (
+                          <Typography variant="body2" sx={{ mb: 0.5 }}>
+                            <strong>Body:</strong> {
+                              anchoredItem.data.body.length > 80 
+                                ? anchoredItem.data.body.substring(0, 80) + '...'
+                                : anchoredItem.data.body
+                            }
+                          </Typography>
+                        )}
+                      </Box>
+                    )}
+
+                    {/* Calendar Event Draft Details */}
+                    {anchoredItem.data.draft_type === 'calendar_event' && (
+                      <Box sx={{ pl: 1 }}>
+                        <Typography variant="body2" sx={{ mb: 0.5 }}>
+                          <strong>Title:</strong> {
+                            anchoredItem.data.summary 
+                              ? anchoredItem.data.summary
+                              : <span style={{ color: '#d32f2f', fontStyle: 'italic' }}>Not specified</span>
+                          }
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 0.5 }}>
+                          <strong>Start:</strong> {
+                            anchoredItem.data.start_time 
+                              ? (() => {
+                                  try {
+                                    const date = new Date(anchoredItem.data.start_time);
+                                    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                                  } catch (e) {
+                                    return anchoredItem.data.start_time;
+                                  }
+                                })()
+                              : <span style={{ color: '#d32f2f', fontStyle: 'italic' }}>Not specified</span>
+                          }
+                        </Typography>
+                        <Typography variant="body2" sx={{ mb: 0.5 }}>
+                          <strong>End:</strong> {
+                            anchoredItem.data.end_time 
+                              ? (() => {
+                                  try {
+                                    const date = new Date(anchoredItem.data.end_time);
+                                    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                                  } catch (e) {
+                                    return anchoredItem.data.end_time;
+                                  }
+                                })()
+                              : <span style={{ color: '#d32f2f', fontStyle: 'italic' }}>Not specified</span>
+                          }
+                        </Typography>
+                        {anchoredItem.data.location && (
+                          <Typography variant="body2" sx={{ mb: 0.5 }}>
+                            <strong>Location:</strong> {anchoredItem.data.location}
+                          </Typography>
+                        )}
+                        {anchoredItem.data.attendees && anchoredItem.data.attendees.length > 0 && (
+                          <Typography variant="body2" sx={{ mb: 0.5 }}>
+                            <strong>Attendees:</strong> {anchoredItem.data.attendees.map((attendee, index) => {
+                              console.log(`Attendee ${index}:`, attendee, `name: "${attendee.name}", email: "${attendee.email}"`);
+                              if (attendee.name && attendee.email) {
+                                return `${attendee.name} (${attendee.email})`;
+                              } else if (attendee.email) {
+                                return attendee.email;
+                              } else if (attendee.name) {
+                                return `${attendee.name} (no email)`;
+                              } else {
+                                return 'Unknown attendee';
+                              }
+                            }).join(', ')}
+                          </Typography>
+                        )}
+                        {anchoredItem.data.description && (
+                          <Typography variant="body2" sx={{ mb: 0.5 }}>
+                            <strong>Description:</strong> {
+                              anchoredItem.data.description.length > 80 
+                                ? anchoredItem.data.description.substring(0, 80) + '...'
+                                : anchoredItem.data.description
+                            }
+                          </Typography>
+                        )}
+                      </Box>
+                    )}
+                    
+                    {/* Missing fields warning */}
+                    {draftValidation && !draftValidation.is_complete && (
+                      <Typography variant="caption" sx={{ color: '#d32f2f', fontStyle: 'italic', mt: 1, display: 'block' }}>
+                        ⚠️ {getMissingFieldsText(draftValidation)}
+                      </Typography>
+                    )}
                   </Box>
                 ) : (
                   <Box>
-                    <Typography variant="body2">
-                      <strong>Name:</strong> {anchoredItem.data.summary || 'Untitled Event'}
+                    <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#ef6c00' }}>
+                      Anchored {anchoredItem.type === 'email' ? 'Email' : 'Calendar Event'}:
                     </Typography>
-                    <Typography variant="body2">
-                      <strong>Start:</strong> {new Date(anchoredItem.data.start?.dateTime || anchoredItem.data.start?.date).toLocaleString()}
-                    </Typography>
-                    <Typography variant="body2">
-                      <strong>End:</strong> {new Date(anchoredItem.data.end?.dateTime || anchoredItem.data.end?.date).toLocaleString()}
-                    </Typography>
+                    {anchoredItem.type === 'email' ? (
+                      <Box>
+                        <Typography variant="body2">
+                          <strong>Subject:</strong> {anchoredItem.data.subject || 'No Subject'}
+                        </Typography>
+                        <Typography variant="body2">
+                          <strong>From:</strong> {anchoredItem.data.from_email?.name || anchoredItem.data.from?.name || 'Unknown Sender'}
+                        </Typography>
+                        <Typography variant="body2">
+                          <strong>Date:</strong> {new Date(anchoredItem.data.date).toLocaleDateString()}
+                        </Typography>
+                      </Box>
+                    ) : (
+                      <Box>
+                        <Typography variant="body2">
+                          <strong>Name:</strong> {anchoredItem.data.summary || 'Untitled Event'}
+                        </Typography>
+                        <Typography variant="body2">
+                          <strong>Start:</strong> {new Date(anchoredItem.data.start?.dateTime || anchoredItem.data.start?.date).toLocaleString()}
+                        </Typography>
+                        <Typography variant="body2">
+                          <strong>End:</strong> {new Date(anchoredItem.data.end?.dateTime || anchoredItem.data.end?.date).toLocaleString()}
+                        </Typography>
+                      </Box>
+                    )}
                   </Box>
                 )}
               </Box>
-              <IconButton 
-                size="small" 
-                onClick={() => setAnchoredItem(null)}
-                sx={{ color: '#ef6c00' }}
-              >
-                <CloseIcon />
-              </IconButton>
+              
+              {/* Action buttons */}
+              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                {anchoredItem.type === 'draft' && (
+                  <Button
+                    variant="contained"
+                    size="small"
+                    startIcon={draftValidation?.is_complete ? <SendIcon /> : <CreateIcon />}
+                    onClick={handleSendDraft}
+                    disabled={isSendingDraft}
+                    sx={{
+                      backgroundColor: draftValidation?.is_complete ? '#4caf50' : '#ff9800',
+                      '&:hover': {
+                        backgroundColor: draftValidation?.is_complete ? '#388e3c' : '#f57c00'
+                      },
+                      '&:disabled': {
+                        backgroundColor: '#ccc'
+                      }
+                    }}
+                  >
+                    {isSendingDraft ? 'Sending...' : 
+                     draftValidation?.is_complete ? 'Send' : 'Needs Info'}
+                  </Button>
+                )}
+                <IconButton 
+                  size="small" 
+                  onClick={() => setAnchoredItem(null)}
+                  sx={{ color: '#ef6c00' }}
+                >
+                  <CloseIcon />
+                </IconButton>
+              </Box>
             </Box>
           )}
 

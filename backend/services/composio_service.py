@@ -588,7 +588,8 @@ Respond with ONLY the JSON object, no additional text."""
         if location:
             params["location"] = location
         if attendee_emails:
-            params["attendees"] = [{"email": email} for email in attendee_emails]
+            # Try just email strings first - if this fails, we know Composio expects objects
+            params["attendees"] = attendee_emails
         
         print(f"[DEBUG] Composio API call parameters: {params}")
         

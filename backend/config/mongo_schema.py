@@ -705,4 +705,151 @@ CONTACT_SYNC_LOG_INDEXES = [
         "keys": [("status", 1)],
         "name": "status_idx"
     }
+]
+
+# Schema for drafts collection
+DRAFTS_SCHEMA = {
+    "validator": {
+        "$jsonSchema": {
+            "bsonType": "object",
+            "required": ["draft_id", "thread_id", "message_id", "draft_type", "status"],
+            "properties": {
+                "draft_id": {
+                    "bsonType": "string",
+                    "description": "Unique identifier for the draft"
+                },
+                "thread_id": {
+                    "bsonType": "string",
+                    "description": "Reference to the conversation thread"
+                },
+                "message_id": {
+                    "bsonType": "string",
+                    "description": "Reference to the conversation message that created this draft"
+                },
+                "draft_type": {
+                    "bsonType": "string",
+                    "enum": ["email", "calendar_event"],
+                    "description": "Type of draft - email or calendar event"
+                },
+                "status": {
+                    "bsonType": "string",
+                    "enum": ["active", "closed", "composio_error"],
+                    "description": "Draft status"
+                },
+                # Email-specific fields
+                "to_emails": {
+                    "bsonType": "array",
+                    "description": "List of email recipients",
+                    "items": {
+                        "bsonType": "object",
+                        "properties": {
+                            "email": {
+                                "bsonType": "string",
+                                "description": "Recipient's email address"
+                            },
+                            "name": {
+                                "bsonType": ["string", "null"],
+                                "description": "Recipient's name"
+                            }
+                        }
+                    }
+                },
+                "subject": {
+                    "bsonType": ["string", "null"],
+                    "description": "Email subject"
+                },
+                "body": {
+                    "bsonType": ["string", "null"],
+                    "description": "Email body content"
+                },
+                "attachments": {
+                    "bsonType": "array",
+                    "description": "Email attachments",
+                    "items": {
+                        "bsonType": "object"
+                    }
+                },
+                # Calendar-specific fields
+                "summary": {
+                    "bsonType": ["string", "null"],
+                    "description": "Calendar event title/summary"
+                },
+                "start_time": {
+                    "bsonType": ["string", "null"],
+                    "description": "Calendar event start time (ISO format)"
+                },
+                "end_time": {
+                    "bsonType": ["string", "null"],
+                    "description": "Calendar event end time (ISO format)"
+                },
+                "attendees": {
+                    "bsonType": "array",
+                    "description": "List of calendar event attendees",
+                    "items": {
+                        "bsonType": "object",
+                        "properties": {
+                            "email": {
+                                "bsonType": "string",
+                                "description": "Attendee's email address"
+                            },
+                            "name": {
+                                "bsonType": ["string", "null"],
+                                "description": "Attendee's name"
+                            }
+                        }
+                    }
+                },
+                "location": {
+                    "bsonType": ["string", "null"],
+                    "description": "Calendar event location"
+                },
+                "description": {
+                    "bsonType": ["string", "null"],
+                    "description": "Calendar event description"
+                },
+                # Timestamps
+                "created_at": {
+                    "bsonType": "int",
+                    "description": "Creation timestamp"
+                },
+                "updated_at": {
+                    "bsonType": "int",
+                    "description": "Last update timestamp"
+                }
+            }
+        }
+    }
+}
+
+# Index configurations for drafts collection
+DRAFTS_INDEXES = [
+    {
+        "keys": [("draft_id", 1)],
+        "name": "draft_id_idx",
+        "unique": True
+    },
+    {
+        "keys": [("thread_id", 1)],
+        "name": "thread_id_idx"
+    },
+    {
+        "keys": [("message_id", 1)],
+        "name": "message_id_idx"
+    },
+    {
+        "keys": [("status", 1)],
+        "name": "status_idx"
+    },
+    {
+        "keys": [("draft_type", 1)],
+        "name": "draft_type_idx"
+    },
+    {
+        "keys": [("created_at", -1)],
+        "name": "created_at_idx"
+    },
+    {
+        "keys": [("updated_at", -1)],
+        "name": "updated_at_idx"
+    }
 ] 

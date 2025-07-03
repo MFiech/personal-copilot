@@ -19,5 +19,5 @@ alwaysApply: false
         main    git@github.com:MFiech/pm-copilot.git (fetch)
         main    git@github.com:MFiech/pm-copilot.git (push)
     5. Checkout back to main.
-    6. In the remote repository, if there are no conflicts, merge the new branch to main.
+    6. Do not summarize wha you have done. Just wait for my confirmation that I have merged the change.
     7. After the remote merge, pull the latest main version to the local main.
