@@ -2688,5 +2688,14 @@ def get_draft_summary(draft_id):
         print(f"[ERROR] Get draft summary error: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint for Docker"""
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.now().isoformat(),
+        'service': 'pm-copilot-backend'
+    }), 200
+
 if __name__ == '__main__':
     app.run(port=5001, debug=True)

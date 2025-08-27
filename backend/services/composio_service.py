@@ -8,6 +8,7 @@ import json
 import zoneinfo
 import time
 from bson import ObjectId
+import signal
 
 class ComposioService:
     def __init__(self, api_key: str):
@@ -115,46 +116,71 @@ RESPONSE FORMAT (JSON only):
 
 Respond with ONLY the JSON object, no additional text."""
 
-            # Call Gemini
-            response = self.gemini_llm.invoke(prompt)
-            response_text = str(response.content).strip()
+            print(f"[DEBUG] About to call Gemini for query classification...")
             
-            print(f"[DEBUG] Gemini classification response: {response_text}")
+            # Add timeout and error handling for Gemini LLM call
+            def timeout_handler(signum, frame):
+                raise TimeoutError("Gemini LLM call timed out")
             
-            # Parse JSON response - strip markdown code blocks if present
+            # Set timeout to 10 seconds for classification
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(10)
+            
             try:
-                # Remove markdown code block formatting if present
-                json_text = response_text
-                if json_text.startswith('```json'):
-                    json_text = json_text.replace('```json', '').replace('```', '').strip()
-                elif json_text.startswith('```'):
-                    json_text = json_text.replace('```', '').strip()
+                # Call Gemini with timeout protection
+                response = self.gemini_llm.invoke(prompt)
+                response_text = str(response.content).strip()
                 
-                classification = json.loads(json_text)
+                # Cancel the timeout
+                signal.alarm(0)
                 
-                # Validate the response structure
-                if not isinstance(classification, dict) or "intent" not in classification:
-                    raise ValueError("Invalid classification response structure")
+                print(f"[DEBUG] Gemini classification response: {response_text}")
                 
-                intent = classification.get("intent")
-                if intent not in ["email", "calendar", "contact", "general"]:
-                    raise ValueError(f"Invalid intent: {intent}")
-                
-                # Ensure confidence is present and reasonable
-                confidence = classification.get("confidence", 0.8)
-                if not isinstance(confidence, (int, float)) or confidence < 0 or confidence > 1:
-                    confidence = 0.8
-                    classification["confidence"] = confidence
-                
-                print(f"[DEBUG] Successfully classified query as '{intent}' with confidence {confidence}")
-                return classification
-                
-            except (json.JSONDecodeError, ValueError) as e:
-                print(f"[WARNING] Failed to parse Gemini classification response: {e}")
-                print(f"[WARNING] Raw response: {response_text}")
+                # Parse JSON response - strip markdown code blocks if present
+                try:
+                    # Remove markdown code block formatting if present
+                    json_text = response_text
+                    if json_text.startswith('```json'):
+                        json_text = json_text.replace('```json', '').replace('```', '').strip()
+                    elif json_text.startswith('```'):
+                        json_text = json_text.replace('```', '').strip()
+                    
+                    classification = json.loads(json_text)
+                    
+                    # Validate the response structure
+                    if not isinstance(classification, dict) or "intent" not in classification:
+                        raise ValueError("Invalid classification response structure")
+                    
+                    intent = classification.get("intent")
+                    if intent not in ["email", "calendar", "contact", "general"]:
+                        raise ValueError(f"Invalid intent: {intent}")
+                    
+                    # Ensure confidence is present and reasonable
+                    confidence = classification.get("confidence", 0.8)
+                    if not isinstance(confidence, (int, float)) or confidence < 0 or confidence > 1:
+                        confidence = 0.8
+                        classification["confidence"] = confidence
+                    
+                    print(f"[DEBUG] Successfully classified query as '{intent}' with confidence {confidence}")
+                    return classification
+                    
+                except (json.JSONDecodeError, ValueError) as e:
+                    print(f"[WARNING] Failed to parse Gemini classification response: {e}")
+                    print(f"[WARNING] Raw response: {response_text}")
+                    return self._fallback_keyword_classification(user_query)
+                    
+            except TimeoutError:
+                # Cancel the timeout
+                signal.alarm(0)
+                print(f"[ERROR] Gemini LLM call timed out after 10 seconds for query classification")
                 return self._fallback_keyword_classification(user_query)
                 
         except Exception as e:
+            # Make sure to cancel any pending alarm
+            try:
+                signal.alarm(0)
+            except:
+                pass
             print(f"[ERROR] Error during Gemini query classification: {e}")
             return self._fallback_keyword_classification(user_query)
 
@@ -193,17 +219,45 @@ Respond with ONLY the JSON object, no additional text."""
         }
 
     def _execute_action(self, action: Action, params: dict | None = None):
-        """Helper to execute an action."""
+        """Helper to execute an action with timeout protection."""
         try:
-            response = self.toolset.execute_action(
-                action=action,
-                entity_id="default",
-                params=params or {}
-            )
-            return response
+            # Add timeout protection for Composio API calls
+            def timeout_handler(signum, frame):
+                raise TimeoutError("Composio API call timed out")
+            
+            # Set timeout to 30 seconds for API calls
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(30)
+            
+            try:
+                print(f"[DEBUG] Executing Composio action: {str(action)} with params: {params}")
+                response = self.toolset.execute_action(
+                    action=action,
+                    entity_id="default",
+                    params=params or {}
+                )
+                
+                # Cancel the timeout
+                signal.alarm(0)
+                print(f"[DEBUG] Composio action completed successfully")
+                return response
+                
+            except TimeoutError:
+                # Cancel the timeout
+                signal.alarm(0)
+                error_msg = f"Composio API call timed out after 30 seconds for action {str(action)}"
+                print(f"[ERROR] {error_msg}")
+                return {"successful": False, "error": error_msg}
+                
         except Exception as e:
+            # Make sure to cancel any pending alarm
+            try:
+                signal.alarm(0)
+            except:
+                pass
             # Correctly handle printing the action enum
-            print(f"Error executing action {str(action)}: {e}")
+            error_msg = f"Error executing action {str(action)}: {e}"
+            print(f"[ERROR] {error_msg}")
             return {"successful": False, "error": str(e)}
 
     def get_recent_emails(self, count=10, query=None, page_token=None, **kwargs):
@@ -835,7 +889,7 @@ Respond with ONLY the JSON object, no additional text."""
                     context_text += f"{role.capitalize()}: {content}\n"
             
             current_date = datetime.now()
-            current_weekday = current_date.strftime('%A')  # Monday, Tuesday, etc.
+            current_weekday = current_date.strftime('%A')
             
             prompt = f"""You are an expert calendar assistant. Analyze the user's query to determine if they want to CREATE a new calendar event or SEARCH for existing events.
 
@@ -851,15 +905,28 @@ USER QUERY: "{user_query}"
 TASK: Determine the operation type and extract parameters.
 
 OPERATIONS:
-1. "create" - User wants to create/schedule/add a new calendar event
-   - Keywords: create, schedule, add, book, set up, plan, new, make
-   - Extract: title, date, time, location, description, attendees
-
-2. "search" - User wants to find/view existing calendar events  
-   - Keywords: show, find, what's, check, list, view, see
+1. "search" - User wants to find/view/check existing calendar events  
+   - Keywords: show, find, what's, check, list, view, see, what, do I have, my schedule, what's on, agenda
+   - Examples: "What do I have today?", "Show my schedule", "What's on my calendar?", "Do I have meetings?"
    - Extract: date_range, keywords, attendee_filter
 
+2. "create" - User wants to create/schedule/add a new calendar event
+   - Keywords: create, schedule, add, book, set up, plan, new, make, remind me
+   - Examples: "Schedule a meeting", "Create an event", "Book lunch tomorrow", "Set up a call"
+   - Extract: title, date, time, location, description, attendees
+
+IMPORTANT CLASSIFICATION RULES:
+- Questions starting with "What", "Do I have", "Show me" are almost always SEARCH
+- Commands starting with "Schedule", "Create", "Book", "Add" are almost always CREATE  
+- If user is asking about existing events/schedule → SEARCH
+- If user is giving details for a new event → CREATE
+
 PARAMETER EXTRACTION RULES:
+For SEARCH operations:
+- date_range: today/tomorrow/this week/next week/etc (REQUIRED)
+- keywords: Search terms for event content (optional)
+- time_range: morning/afternoon/evening (optional)
+
 For CREATE operations:
 - title: Event title/summary (required)
 - date: Event date in YYYY-MM-DD format (required) 
@@ -868,11 +935,6 @@ For CREATE operations:
 - location: Event location (optional)
 - description: Event description (optional)
 - attendees: List of email addresses (optional)
-
-For SEARCH operations:
-- date_range: today/tomorrow/this week/next week/etc
-- keywords: Search terms for event content
-- time_range: morning/afternoon/evening
 
 DATE/TIME PARSING:
 - "Friday" = next Friday if today is not Friday, today if today is Friday
@@ -884,9 +946,14 @@ DATE/TIME PARSING:
 
 RESPONSE FORMAT (JSON only):
 {{
-  "operation": "create" | "search",
+  "operation": "search" | "create",
   "confidence": 0.95,
   "parameters": {{
+    // For search:
+    "date_range": "today|tomorrow|this week",
+    "keywords": "search terms",
+    "time_range": "morning|afternoon|evening"
+    
     // For create:
     "title": "Event title",
     "date": "YYYY-MM-DD", 
@@ -895,56 +962,76 @@ RESPONSE FORMAT (JSON only):
     "location": "location",
     "description": "description",
     "attendees": ["email1@domain.com"]
-    
-    // For search:
-    "date_range": "today|tomorrow|this week",
-    "keywords": "search terms",
-    "time_range": "morning|afternoon|evening"
   }}
 }}
 
 Respond with ONLY the JSON object."""
 
-            # Call Gemini
-            response = self.gemini_llm.invoke(prompt)
-            response_text = str(response.content).strip()
+            print(f"[DEBUG] About to call Gemini for calendar intent analysis...")
             
-            print(f"[DEBUG] Calendar intent analysis response: {response_text}")
+            # Add timeout and error handling for Gemini LLM call
+            def timeout_handler(signum, frame):
+                raise TimeoutError("Gemini LLM call timed out")
             
-            # Parse JSON response
+            # Set timeout to 15 seconds
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(15)
+            
             try:
-                # Remove markdown code blocks if present
-                json_text = response_text
-                if json_text.startswith('```json'):
-                    json_text = json_text.replace('```json', '').replace('```', '').strip()
-                elif json_text.startswith('```'):
-                    json_text = json_text.replace('```', '').strip()
+                # Call Gemini with timeout protection
+                response = self.gemini_llm.invoke(prompt)
+                response_text = str(response.content).strip()
                 
-                analysis = json.loads(json_text)
+                # Cancel the timeout
+                signal.alarm(0)
                 
-                # Validate response structure
-                if not isinstance(analysis, dict) or "operation" not in analysis:
-                    raise ValueError("Invalid analysis response structure")
+                print(f"[DEBUG] Calendar intent analysis response: {response_text}")
                 
-                operation = analysis.get("operation")
-                if operation not in ["create", "search"]:
-                    raise ValueError(f"Invalid operation: {operation}")
-                
-                # Ensure confidence is present and reasonable
-                confidence = analysis.get("confidence", 0.8)
-                if not isinstance(confidence, (int, float)) or confidence < 0 or confidence > 1:
-                    confidence = 0.8
-                    analysis["confidence"] = confidence
-                
-                print(f"[DEBUG] Successfully analyzed calendar intent: {operation} (confidence: {confidence})")
-                return analysis
-                
-            except (json.JSONDecodeError, ValueError) as e:
-                print(f"[WARNING] Failed to parse calendar intent analysis: {e}")
-                print(f"[WARNING] Raw response: {response_text}")
+                # Parse JSON response
+                try:
+                    # Remove markdown code blocks if present
+                    json_text = response_text
+                    if json_text.startswith('```json'):
+                        json_text = json_text.replace('```json', '').replace('```', '').strip()
+                    elif json_text.startswith('```'):
+                        json_text = json_text.replace('```', '').strip()
+                    
+                    analysis = json.loads(json_text)
+                    
+                    # Validate response structure
+                    if not isinstance(analysis, dict) or "operation" not in analysis:
+                        raise ValueError("Invalid analysis response structure")
+                    
+                    operation = analysis.get("operation")
+                    if operation not in ["create", "search"]:
+                        raise ValueError(f"Invalid operation: {operation}")
+                    
+                    # Ensure confidence is present and reasonable
+                    confidence = analysis.get("confidence", 0.8)
+                    if not isinstance(confidence, (int, float)) or confidence < 0 or confidence > 1:
+                        confidence = 0.8
+                        analysis["confidence"] = confidence
+                    
+                    print(f"[DEBUG] Successfully analyzed calendar intent: {operation} (confidence: {confidence})")
+                    return analysis
+                    
+                except (json.JSONDecodeError, ValueError) as e:
+                    print(f"[WARNING] Failed to parse calendar intent analysis: {e}")
+                    print(f"[WARNING] Raw response: {response_text}")
+                    return self._fallback_calendar_intent_analysis(user_query)
+                    
+            except TimeoutError:
+                # Cancel the timeout
+                signal.alarm(0)
+                print(f"[ERROR] Gemini LLM call timed out after 15 seconds for calendar intent analysis")
                 return self._fallback_calendar_intent_analysis(user_query)
                 
         except Exception as e:
+            # Make sure to cancel any pending alarm
+            try:
+                signal.alarm(0)
+            except:
+                pass
             print(f"[ERROR] Error during calendar intent analysis: {e}")
             return self._fallback_calendar_intent_analysis(user_query)
 
@@ -955,9 +1042,9 @@ Respond with ONLY the JSON object."""
         query_lower = user_query.lower()
         
         # Keywords for creation
-        create_keywords = ["create", "schedule", "add", "book", "set up", "plan", "new", "make"]
+        create_keywords = ["create", "schedule", "add", "book", "set up", "plan", "new", "make", "remind me"]
         # Keywords for searching  
-        search_keywords = ["show", "find", "what's", "check", "list", "view", "see"]
+        search_keywords = ["show", "find", "what's", "check", "list", "view", "see", "what", "do I have", "my schedule", "what's on", "agenda"]
         
         create_score = sum(1 for keyword in create_keywords if keyword in query_lower)
         search_score = sum(1 for keyword in search_keywords if keyword in query_lower)
@@ -1354,8 +1441,14 @@ Respond with ONLY the JSON object."""
         Fallback method for simple query building when LLM is unavailable.
         """
         query_lower = user_query.lower()
-        if "unread" in query_lower:
+        
+        # Only add specific filters if explicitly mentioned
+        # For general queries like "last email", "recent emails", return empty string
+        if "unread" in query_lower and ("show" in query_lower or "find" in query_lower):
             return "is:unread"
+        elif "important" in query_lower:
+            return "is:important"
+        # For general email queries, return empty to show all recent emails
         return ""
 
     def _extract_contact_search_term(self, user_query):
