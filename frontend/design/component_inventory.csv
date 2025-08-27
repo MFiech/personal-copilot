@@ -1,0 +1,27 @@
+Component,Variant,Props/State,Sub-elements,Interactions,Accessibility,Notes,Code Ref
+App Shell,Default,,Left Drawer | Main Content | Right Drawer | Snackbar,,Add page regions/landmarks (role="navigation"/"main"),Global MUI theme & layout,src/App.js
+Left Drawer,Expanded,sidebarCollapsed=false,"Top Actions, Threads List",Hover on thread reveals menu (⋯); Click items,Ensure focus states on icons/buttons,Persistent on desktop,src/App.js
+Left Drawer,Collapsed,sidebarCollapsed=true,Icons only,Toggle button hover/focus,Tooltip on icons when collapsed,60px width,src/App.js
+Thread Item,Default,selected=false|true,"Title, ⋯ menu (hover)",Hover: show ⋯; Click: open thread; Selected: highlighted,aria-current for selected thread?,Inline menu via portal,src/App.js
+Thread Item,Edit,editing=true,"TextField",Enter=save; Esc=cancel; Click outside closes,Label TextField for a11y,Inline rename mode,src/App.js
+Thread Menu,Portal,open=true,"Rename, Delete",Click outside to close,Ensure menu items are reachable by Tab,Positioned via createPortal,src/App.js
+Welcome Screen,Default,,Title,Input focus ring on focus,Heading level H1 semantics,Shown when no messages,src/App.js
+User Message,Bubble,role=user,"Text, actions row","Hover: show actions; Copy; Anchor (if draft exists); Repeat",Buttons need aria-labels,Right aligned dark bubble,src/App.js
+Assistant Message,Bubble,role=assistant,"Text, ToolResults","Hover: show Copy; ToolResults may render tables/tiles",Buttons need aria-labels,Left aligned light bubble,src/App.js
+Message Actions,Inline,for user/assistant,"Copy, Anchor (user), Repeat (user)",Hover: color change; Click actions,Use focus-visible styles,Appears beneath bubble,src/App.js
+ToolResults,Emails,hasMore=true|false,"Action Row, Email Rows, Load More","Row hover: show icons; Select; Bulk summarize/delete",Checkbox labels + row announce,Table-like list,src/components/ToolResults.js
+Email Action Row,Default,selectedCount>0 shows actions,"Master checkbox, Actions (SUMMARIZE, DELETE)",Master toggles all; Buttons click,Associate label to master checkbox,Gmail-like control row,src/components/VeyraResults.css
+Email Row,Default,selected=false anchored=false,"From, Subject, Date","Hover: show Anchor/Summarize/Open/Delete","Checkbox focus/labels; Action buttons with aria-label",Click row toggles selection,src/components/VeyraResults.css
+Email Row,Selected,selected=true,,Bulk actions visible in header,Announce selection state,Blue selection background,src/components/VeyraResults.css
+Email Row,Anchored,anchored=true,,Anchor icon highlighted; subject reserves space,Convey anchored state to SR,Orange anchor state,src/components/VeyraResults.css
+Load More Row,Default,loading=false,,Hover style; Click to fetch more,Button is actual <button>,Appends emails & updates pagination,src/components/ToolResults.js
+ToolResults,Calendar,,Event tiles grid,"Hover: show anchor; Checkbox selects",Checkbox needs label,Responsive grid,src/components/ToolResults.js
+Event Tile,Default,isAnchored=false isSelected=false,"Time, Title, Anchor, Checkbox","Hover: anchor visible; Checkbox toggles",Ensure target sizes >= 44px,Card hover elevation,src/components/ToolTile.js
+Event Tile,Anchored,isAnchored=true,,Anchor orange state,Readable contrast for orange,Anchored persists visible,src/components/ToolTile.css
+Anchor Info Bar,Draft,is_complete=true|false,"Fields, Missing fields, Send/Needs Info, Close","Send POST; Close clears",Buttons labeled; status text,Appears above input,src/App.js
+Anchor Info Bar,Item,email|calendar,"Compact meta (subject/from/date or summary/times)",Close clears anchor,Ensure time is readable,Compact presentation,src/App.js
+Chat Input,Default,isLoading=false,"Attach icon, Textarea, Send","Hover border; Focus ring; Enter submit; Disabled when loading",Textarea has label/aria-placeholder,Multiline up to 5 rows,src/App.js
+EmailSidebar,Loading,open=true loading=true,,Spinner; Close icon,Drawer has role=dialog/title,Temporary right drawer,src/components/EmailSidebar.js
+EmailSidebar,Content,open=true email loaded,"Subject, From, Date, Body",Close icon; Links styled,Sanitize HTML & ensure link contrast,Responsive images/tables,src/components/EmailSidebar.js
+Snackbar,Variants,severity=info|success|warning|error,,Auto-hide after 5s; Dismiss action?,Announce via role=alert,Top-right toasts,src/components/SnackbarProvider.js
+

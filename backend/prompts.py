@@ -186,8 +186,10 @@ INSTRUCTIONS:
 3. Handle relative dates (today, yesterday, last week, etc.) by converting to YYYY/MM/DD format
 4. Use quotes for exact phrases and multi-word subjects
 5. Combine operators with AND/OR as needed
-6. If no specific criteria mentioned, return empty string for general recent emails
-7. Be conservative - only add operators you're confident about from the user's request
+6. **IMPORTANT: For queries about "recent emails", "latest emails", "last email", or general email requests without specific criteria, return empty string to show all recent emails**
+7. Only add date filters when user explicitly mentions specific timeframes
+8. Only add read/unread filters when user explicitly mentions email status
+9. Be conservative - only add operators you're confident about from the user's request
 
 EXAMPLES:
 - "show me emails from john about the meeting" → from:john subject:meeting
@@ -196,12 +198,16 @@ EXAMPLES:
 - "important emails about project alpha" → is:important subject:"project alpha"
 - "emails from gmail.com domain yesterday" → from:gmail.com after:{yesterday_date} before:{today_date}
 - "show my emails" → (empty string)
+- "what's the last email I received?" → (empty string)
+- "latest emails" → (empty string)
+- "recent emails" → (empty string)
+- "and what's the last e-mail I received?" → (empty string)
 
 RESPONSE FORMAT:
 Return ONLY the Gmail search query string. Do not include explanations, quotes around the entire response, or additional text.
 If no specific search criteria can be identified, return an empty string.
 
-GMAIL QUERY:""" 
+GMAIL QUERY:"""
 
 def draft_detection_prompt(user_query, conversation_history=None, existing_draft=None):
     """

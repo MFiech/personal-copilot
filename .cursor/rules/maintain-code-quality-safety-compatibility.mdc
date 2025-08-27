@@ -1,0 +1,53 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+Ensure any generated code…
+
+1. **Matches existing error-handling & security patterns**  
+   - Use `try/except` blocks as in current services  
+   - Validate inputs against models’ schemas  
+   - Log exceptions with tracebacks  
+   - Never remove or weaken existing graceful-degradation logic  
+
+2. **Cleans up one-off test artifacts**  
+   - If you create any throwaway scripts or mock files (e.g. for quick checks), delete them before finalizing the PR  
+
+3. **Generates/updates documentation & comments**  
+   - Add or update docstrings on any new functions or classes, following PEP-257 style (one-line summary + parameter/return details)  
+   - Add inline comments for non-obvious logic  
+   - If a public API surface changes, update the project’s README usage examples  
+3.a **Documentation currency policy (README + Notion)**  
+   - When code, endpoints, models, configs, or integrations change, update:
+     - `README.md` (setup, env vars, run/build steps, usage examples, key endpoints)
+     - Notion "Documentation" pages (PRD Outline, AI & Automation Strategy, Technical Architecture, API & Integrations, Testing & QA, Dependencies / Edge Cases / Logged Issues)
+   - If a Notion section becomes stale or ambiguous, update it or add an entry to "Dependencies / Edge Cases / Logged Issues" with a link.
+   - Every PR must include a "Docs updated?" checklist item; if no changes needed, mark "N/A".
+   - Reference updated Notion page URLs in the PR description when applicable.
+
+4. **Follows dependency-management best practices**  
+   - Pin any new Python dependencies in `requirements.txt` (exact version)  
+   - If you introduce or upgrade a package, update the frontend’s `package-lock.json` or generate a Python lockfile (e.g. via `pip-compile` or Poetry)  
+
+5. **Applies performance & architecture guidelines**  
+   - Prefer efficient data-access patterns (e.g. index-aware queries, pagination)  
+   - For potentially blocking operations, insert a `# TODO: asyncize if performance issues arise` comment rather than converting to async immediately  
+   - Maintain existing synchronous code paths to avoid breaking compatibility  
+
+6. **Surfaces refactor & deletion proposals (but proceeds)**  
+   - If you identify code that should be refactored or removed (e.g. duplicate modules, obsolete artifacts), **flag a Refactor Proposal** in your output:  
+     > ⚠️ **Refactor Proposal:** The `legacy_x` module duplicates functionality in `new_x`. Recommend deleting `legacy_x` and migrating any remaining callers.  
+   - Then proceed with generating the updated code; do not wait for manual approval  
+
+7. **Respects backward-compatibility disclaimer**  
+   - Do not refactor existing interfaces without flagging it as a Refactor Proposal  
+   - Structural changes that might break the app must include an explicit `# BREAKING CHANGE` comment in the diff  
+
+8. **Clarify ambiguities proactively**  
+   - If a user request or code context is unclear, **flag a Clarification Needed** in your output:  
+     > ⚠️ **Clarification Needed:** The behavior of `process_data()` on empty inputs isn’t specified. Should it raise an error or return an empty list?  
+
+9. **Use structured output markers**  
+   - Wrap all generated code in explicit code fences (e.g. ```python … ```) and keep explanatory text outside of those fences  
+   - Present proposals and clarification requests as clearly labeled JSON or tagged blocks so they can be parsed reliably  
