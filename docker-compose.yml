@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  pm-copilot-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: pm-copilot-backend
+    image: pm-copilot/backend:latest
+    ports:
+      - "5001:5001"
+    env_file:
+      - ./backend/.env
+    environment:
+      # MongoDB connection - Using host.docker.internal for Docker to access host MongoDB
+      - MONGO_URI=mongodb://host.docker.internal:27017
+      - MONGO_DB_NAME=pm_copilot
+      # Flask Configuration
+      - FLASK_ENV=development
+      - FLASK_APP=app.py
+      - FLASK_DEBUG=true
+      # API Keys - Use values from backend/.env or environment variables
+      - PINECONE_API_TOKEN=${PINECONE_API_TOKEN}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - COMPOSIO_API_KEY=${COMPOSIO_API_KEY}
+    volumes:
+      # Mount source code for development hot-reload - THIS IS THE KEY FIX
+      - ./backend:/app:rw
+      # Create named volumes for cache directories to improve performance
+      - backend_pycache:/app/__pycache__
+      - backend_models_cache:/app/models/__pycache__
+      - backend_services_cache:/app/services/__pycache__
+      - backend_utils_cache:/app/utils/__pycache__
+      - backend_config_cache:/app/config/__pycache__
+    restart: unless-stopped
+    networks:
+      - pm-copilot-network
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # Labels for better Docker Desktop experience
+    labels:
+      - "com.docker.compose.project=pm-copilot"
+      - "com.docker.compose.service=backend"
+      - "description=PM Co-Pilot Backend API Server"
+
+networks:
+  pm-copilot-network:
+    driver: bridge
+
+volumes:
+  backend_pycache:
+  backend_models_cache:
+  backend_services_cache:
+  backend_utils_cache:
+  backend_config_cache:
