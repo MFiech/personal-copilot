@@ -518,12 +518,20 @@ Respond with ONLY the JSON object, no additional text."""
                 email_data = {}
             print(f"[DEBUG] get_email_details - Full email data keys: {list(email_data.keys()) if email_data else 'None'}")
             
+            # The actual email data is nested inside the 'data' field
+            actual_email_data = email_data.get("data", {})
+            if not actual_email_data:
+                print(f"[DEBUG] get_email_details - No nested data field found")
+                return None
+                
+            print(f"[DEBUG] get_email_details - Actual email data keys: {list(actual_email_data.keys())}")
+            
             # Try to extract content from the response
             # The response structure may vary, so we'll try multiple approaches
             content = ""
             
             # Try to get payload data (Gmail API format)
-            payload = email_data.get("payload", {})
+            payload = actual_email_data.get("payload", {})
             if payload:
                 print(f"[DEBUG] get_email_details - Payload mimeType: {payload.get('mimeType')}")
                 
@@ -545,14 +553,14 @@ Respond with ONLY the JSON object, no additional text."""
             # Fallback to other fields if no content found in payload
             if not content:
                 # Try messageText field (Composio specific)
-                message_text = email_data.get("messageText", "")
+                message_text = actual_email_data.get("messageText", "")
                 if message_text:
                     content = message_text
                     print(f"[DEBUG] get_email_details - Using messageText fallback, length: {len(content)}")
                 
                 # Final fallback to snippet
                 if not content:
-                    content = email_data.get("snippet", "")
+                    content = actual_email_data.get("snippet", "")
                     print(f"[DEBUG] get_email_details - Using snippet fallback, length: {len(content)}")
             
             return content if content else None

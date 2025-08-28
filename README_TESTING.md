@@ -36,6 +36,24 @@ The email flow was breaking because:
   - `test_email_flow_error_handling()` - Graceful error handling
   - `test_performance_large_email_batch_integration()` - Performance testing
 
+#### `test_email_endpoints.py`
+- **Purpose**: Specific testing of email-related API endpoints
+- **Critical Tests**:
+  - **`/get_email_content` endpoint tests**:
+    - New email content retrieval and processing
+    - Existing email content retrieval from database
+    - HTML content processing and conversion
+    - Error handling (missing parameters, service failures)
+    - Fallback mechanisms and edge cases
+  - **`/summarize_single_email` endpoint tests**:
+    - Email summarization with Gemini LLM
+    - Fallback to Claude LLM when Gemini unavailable
+    - Rate limit handling and error scenarios
+    - Conversation integration and database persistence
+  - **Integration workflow tests**:
+    - Complete email content → summarization pipeline
+    - Database persistence verification
+
 ## 🚀 Running Tests Locally
 
 ### Quick Start
@@ -66,6 +84,9 @@ pytest tests/test_email_count_verification.py -v
 # Integration tests
 pytest tests/test_email_integration_flow.py -v
 
+# Endpoint tests
+pytest tests/test_email_endpoints.py -v
+
 # All email tests with coverage
 pytest tests/test_email_*.py --cov=models --cov=services --cov-report=html
 ```
@@ -91,6 +112,9 @@ The tests cover:
 - ✅ **Email Count Accuracy**: Prevents count mismatches
 - ✅ **MongoDB Persistence**: Ensures emails are actually saved
 - ✅ **Conversation Integration**: Tests email references in conversations
+- ✅ **API Endpoint Testing**: `/get_email_content` and `/summarize_single_email` endpoints
+- ✅ **Content Processing**: HTML-to-text conversion, content format handling
+- ✅ **Summarization**: LLM integration (Gemini/Claude), rate limiting, error handling
 - ✅ **Error Handling**: Graceful failure scenarios
 - ✅ **Performance**: Large email batch processing
 - ✅ **Edge Cases**: Empty responses, malformed data, duplicates
@@ -101,8 +125,11 @@ The tests cover:
 1. **The Exact Bug We Fixed**: Data structure processing regression
 2. **Silent Database Failures**: Count mismatches between retrieval and saving
 3. **API Changes**: Breaking changes in Composio response format
-4. **Performance Degradation**: Slow processing of large email batches
-5. **Data Corruption**: Duplicate or malformed email saves
+4. **Endpoint Failures**: Breaking changes in `/get_email_content` and `/summarize_single_email`
+5. **Content Processing Issues**: HTML-to-text conversion failures, content format problems
+6. **Summarization Failures**: LLM integration issues, rate limiting problems
+7. **Performance Degradation**: Slow processing of large email batches
+8. **Data Corruption**: Duplicate or malformed email saves
 
 ### Development Workflow:
 1. **Before Pushing**: Run `python run_tests.py --critical`
