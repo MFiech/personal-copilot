@@ -237,8 +237,11 @@ class TestEmailIntegrationFlow:
             raw_tool_results = mock_composio_service.process_query("test query")
             tool_output = raw_tool_results.get('data', {}) if isinstance(raw_tool_results, dict) else {}
             
-            # Should handle gracefully
-            messages_data = tool_output.get("messages") or tool_output.get("data", {}).get("messages")
+            # Should handle gracefully with proper null checking
+            if tool_output is None:
+                messages_data = None
+            else:
+                messages_data = tool_output.get("messages") or tool_output.get("data", {}).get("messages")
             
             # Should not crash, should result in no emails
             assert messages_data is None, "Should handle malformed data gracefully"

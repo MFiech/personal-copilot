@@ -1,0 +1,4 @@
+---
+description: Anytime you need to debug some backend issue, use the below information to speed up things:\n - Docker Container is called "pm-copilot-backend", \n - Check the MongoDB "conversations" collection and the last couple of documents to see what was saved in the DB and what has not. \n - If you need any FE logs you can't extract on your own, ask for them explicitly.
+alwaysApply: false
+---
