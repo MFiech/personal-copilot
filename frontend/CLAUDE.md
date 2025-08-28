@@ -1,0 +1,1 @@
+- when pushing new changes to the the remote repo ('main' branch), always push them on a feautre branch. I'll merge it manually in GitHub. Follow the development workflow rules in .cursor directory.
