@@ -1,5 +1,5 @@
+from composio import Composio
 from composio.client.enums import Action
-from composio.tools import ComposioToolSet
 from datetime import datetime, timedelta
 import base64
 import openai
@@ -8,23 +8,117 @@ import json
 import zoneinfo
 import time
 from bson import ObjectId
-import signal
 
 class ComposioService:
     def __init__(self, api_key: str):
         """
-        Initializes the ComposioToolSet client.
+        Initializes the new Composio client with MCP (Model Context Protocol) support.
         """
         if not api_key:
             raise ValueError("Composio API key is required for ComposioService.")
-        self.toolset = ComposioToolSet(api_key=api_key)
-        # Note: Integration IDs are not used in execute calls, but are kept here for reference
-        self.google_calendar_integration_id = "ac_ew6S2XYd__tb"
-        self.gmail_integration_id = "ac_JyTGY5W15_eM" # Updated ID
+        
+        # New Composio configuration
+        self.user_id = "michal.fiech@gmail.com"
+        self.mcp_config_id = "a06cbb3a-cc69-4ee6-8bb3-be7bb30a6cb3"
+        self.mcp_url = f"https://apollo-dwobt5e6g-composio.vercel.app/v3/mcp/{self.mcp_config_id}/mcp?user_id=michal.fiech%40gmail.com"
+        
+        # Auth config IDs from new setup
+        self.gmail_auth_config_id = "ac_iAjd2trEsUx4"
+        self.google_calendar_auth_config_id = "ac_RojXkl42zm7s"
+        
+        # Try to initialize new Composio client
+        try:
+            self.composio = Composio(api_key=api_key)
+            print("[SUCCESS] New Composio client initialized successfully!")
+            self.client_available = True
+        except Exception as e:
+            error_msg = str(e)
+            print(f"[ERROR] Failed to initialize new Composio client: {error_msg}")
+            self.composio = None
+            self.client_available = False
+            print("[WARNING] Composio client initialization failed. Email/calendar features will be limited.")
         
         # Initialize Gemini LLM for query classification
         self.gemini_llm = None
         self._init_gemini_llm()
+        
+        # Check and set up connected accounts if available
+        if self.client_available:
+            self._check_connected_accounts()
+
+    def _check_connected_accounts(self):
+        """Check if connected accounts are available and log their status."""
+        try:
+            # Get all connected accounts
+            connected_accounts = self.composio.connected_accounts.get()
+            
+            if connected_accounts:
+                print(f"[INFO] Found {len(connected_accounts)} connected accounts")
+                
+                gmail_account = None
+                calendar_account = None
+                
+                for account in connected_accounts:
+                    print(f"[INFO] - {account.appName}: {account.id} (status: {account.status})")
+                    if account.appName == 'gmail' and account.status == 'ACTIVE':
+                        gmail_account = account
+                    elif account.appName == 'googlecalendar' and account.status == 'ACTIVE':
+                        calendar_account = account
+                
+                # Store account IDs for later use
+                self.gmail_account_id = gmail_account.id if gmail_account else None
+                self.calendar_account_id = calendar_account.id if calendar_account else None
+                
+                if gmail_account:
+                    print(f"[SUCCESS] Gmail connected and ready (ID: {gmail_account.id})")
+                else:
+                    print(f"[WARNING] No active Gmail connection found")
+                    
+                if calendar_account:
+                    print(f"[SUCCESS] Google Calendar connected and ready (ID: {calendar_account.id})")
+                else:
+                    print(f"[WARNING] No active Google Calendar connection found")
+                    
+            else:
+                print(f"[WARNING] No connected accounts found")
+                self.gmail_account_id = None
+                self.calendar_account_id = None
+                
+        except Exception as e:
+            print(f"[ERROR] Failed to check connected accounts: {e}")
+            self.gmail_account_id = None
+            self.calendar_account_id = None
+
+    def initiate_connection(self, service: str = "gmail"):
+        """
+        Initiate a connection for Gmail or Google Calendar using new toolkit authorization.
+        Returns the redirect URL for user authentication.
+        """
+        if not self.client_available:
+            return {"error": "Composio client not available"}
+        
+        try:
+            if service.lower() == "gmail":
+                toolkit = "gmail"
+            elif service.lower() == "calendar":
+                toolkit = "googlecalendar"
+            else:
+                return {"error": f"Unsupported service: {service}"}
+            
+            # Use the new toolkit authorization approach
+            auth_result = self.composio.toolkits.authorize(
+                user_id=self.user_id,
+                toolkit=toolkit
+            )
+            
+            return {
+                "redirect_url": auth_result.redirect_url if hasattr(auth_result, 'redirect_url') else str(auth_result),
+                "message": f"Please visit the URL to authorize {service}",
+                "service": service
+            }
+            
+        except Exception as e:
+            return {"error": f"Failed to initiate {service} authorization: {str(e)}"}
 
     def _init_gemini_llm(self):
         """Initialize Gemini LLM for query classification if available."""
@@ -116,71 +210,46 @@ RESPONSE FORMAT (JSON only):
 
 Respond with ONLY the JSON object, no additional text."""
 
-            print(f"[DEBUG] About to call Gemini for query classification...")
+            # Call Gemini
+            response = self.gemini_llm.invoke(prompt)
+            response_text = str(response.content).strip()
             
-            # Add timeout and error handling for Gemini LLM call
-            def timeout_handler(signum, frame):
-                raise TimeoutError("Gemini LLM call timed out")
+            print(f"[DEBUG] Gemini classification response: {response_text}")
             
-            # Set timeout to 10 seconds for classification
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(10)
-            
+            # Parse JSON response - strip markdown code blocks if present
             try:
-                # Call Gemini with timeout protection
-                response = self.gemini_llm.invoke(prompt)
-                response_text = str(response.content).strip()
+                # Remove markdown code block formatting if present
+                json_text = response_text
+                if json_text.startswith('```json'):
+                    json_text = json_text.replace('```json', '').replace('```', '').strip()
+                elif json_text.startswith('```'):
+                    json_text = json_text.replace('```', '').strip()
                 
-                # Cancel the timeout
-                signal.alarm(0)
+                classification = json.loads(json_text)
                 
-                print(f"[DEBUG] Gemini classification response: {response_text}")
+                # Validate the response structure
+                if not isinstance(classification, dict) or "intent" not in classification:
+                    raise ValueError("Invalid classification response structure")
                 
-                # Parse JSON response - strip markdown code blocks if present
-                try:
-                    # Remove markdown code block formatting if present
-                    json_text = response_text
-                    if json_text.startswith('```json'):
-                        json_text = json_text.replace('```json', '').replace('```', '').strip()
-                    elif json_text.startswith('```'):
-                        json_text = json_text.replace('```', '').strip()
-                    
-                    classification = json.loads(json_text)
-                    
-                    # Validate the response structure
-                    if not isinstance(classification, dict) or "intent" not in classification:
-                        raise ValueError("Invalid classification response structure")
-                    
-                    intent = classification.get("intent")
-                    if intent not in ["email", "calendar", "contact", "general"]:
-                        raise ValueError(f"Invalid intent: {intent}")
-                    
-                    # Ensure confidence is present and reasonable
-                    confidence = classification.get("confidence", 0.8)
-                    if not isinstance(confidence, (int, float)) or confidence < 0 or confidence > 1:
-                        confidence = 0.8
-                        classification["confidence"] = confidence
-                    
-                    print(f"[DEBUG] Successfully classified query as '{intent}' with confidence {confidence}")
-                    return classification
-                    
-                except (json.JSONDecodeError, ValueError) as e:
-                    print(f"[WARNING] Failed to parse Gemini classification response: {e}")
-                    print(f"[WARNING] Raw response: {response_text}")
-                    return self._fallback_keyword_classification(user_query)
-                    
-            except TimeoutError:
-                # Cancel the timeout
-                signal.alarm(0)
-                print(f"[ERROR] Gemini LLM call timed out after 10 seconds for query classification")
+                intent = classification.get("intent")
+                if intent not in ["email", "calendar", "contact", "general"]:
+                    raise ValueError(f"Invalid intent: {intent}")
+                
+                # Ensure confidence is present and reasonable
+                confidence = classification.get("confidence", 0.8)
+                if not isinstance(confidence, (int, float)) or confidence < 0 or confidence > 1:
+                    confidence = 0.8
+                    classification["confidence"] = confidence
+                
+                print(f"[DEBUG] Successfully classified query as '{intent}' with confidence {confidence}")
+                return classification
+                
+            except (json.JSONDecodeError, ValueError) as e:
+                print(f"[WARNING] Failed to parse Gemini classification response: {e}")
+                print(f"[WARNING] Raw response: {response_text}")
                 return self._fallback_keyword_classification(user_query)
                 
         except Exception as e:
-            # Make sure to cancel any pending alarm
-            try:
-                signal.alarm(0)
-            except:
-                pass
             print(f"[ERROR] Error during Gemini query classification: {e}")
             return self._fallback_keyword_classification(user_query)
 
@@ -219,45 +288,54 @@ Respond with ONLY the JSON object, no additional text."""
         }
 
     def _execute_action(self, action: Action, params: dict | None = None):
-        """Helper to execute an action with timeout protection."""
+        """Execute an action using the new Composio API."""
+        if not self.client_available or self.composio is None:
+            error_msg = "Composio client is not available due to initialization failure"
+            print(f"[ERROR] {error_msg}")
+            return {"successful": False, "error": error_msg}
+            
         try:
-            # Add timeout protection for Composio API calls
-            def timeout_handler(signum, frame):
-                raise TimeoutError("Composio API call timed out")
+            action_str = str(action)
+            print(f"[DEBUG] Executing action: {action_str} with params: {params}")
             
-            # Set timeout to 30 seconds for API calls
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(30)
-            
-            try:
-                print(f"[DEBUG] Executing Composio action: {str(action)} with params: {params}")
-                response = self.toolset.execute_action(
-                    action=action,
-                    entity_id="default",
-                    params=params or {}
-                )
-                
-                # Cancel the timeout
-                signal.alarm(0)
-                print(f"[DEBUG] Composio action completed successfully")
-                return response
-                
-            except TimeoutError:
-                # Cancel the timeout
-                signal.alarm(0)
-                error_msg = f"Composio API call timed out after 30 seconds for action {str(action)}"
+            # Determine connected account ID based on action
+            connected_account_id = None
+            if "GMAIL" in action_str:
+                connected_account_id = self.gmail_account_id
+                if not connected_account_id:
+                    error_msg = "Gmail account not connected"
+                    print(f"[ERROR] {error_msg}")
+                    return {"successful": False, "error": error_msg}
+            elif "GOOGLECALENDAR" in action_str:
+                connected_account_id = self.calendar_account_id
+                if not connected_account_id:
+                    error_msg = "Google Calendar account not connected"
+                    print(f"[ERROR] {error_msg}")
+                    return {"successful": False, "error": error_msg}
+            else:
+                error_msg = f"Unknown action type: {action_str}"
                 print(f"[ERROR] {error_msg}")
                 return {"successful": False, "error": error_msg}
-                
+            
+            # Execute the action using the new API
+            response = self.composio.actions.execute(
+                action=action,
+                params=params or {},
+                connected_account=connected_account_id
+            )
+            
+            print(f"[DEBUG] Action execution response type: {type(response)}")
+            print(f"[DEBUG] Action execution response: {response}")
+            
+            # The response format might be different, so let's handle it properly
+            if hasattr(response, 'successful'):
+                return {"successful": response.successful, "data": response.data if hasattr(response, 'data') else response}
+            else:
+                # Assume success if no error was thrown
+                return {"successful": True, "data": response}
+            
         except Exception as e:
-            # Make sure to cancel any pending alarm
-            try:
-                signal.alarm(0)
-            except:
-                pass
-            # Correctly handle printing the action enum
-            error_msg = f"Error executing action {str(action)}: {e}"
-            print(f"[ERROR] {error_msg}")
+            print(f"Error executing action {str(action)}: {e}")
             return {"successful": False, "error": str(e)}
 
     def get_recent_emails(self, count=10, query=None, page_token=None, **kwargs):
@@ -889,7 +967,7 @@ Respond with ONLY the JSON object, no additional text."""
                     context_text += f"{role.capitalize()}: {content}\n"
             
             current_date = datetime.now()
-            current_weekday = current_date.strftime('%A')
+            current_weekday = current_date.strftime('%A')  # Monday, Tuesday, etc.
             
             prompt = f"""You are an expert calendar assistant. Analyze the user's query to determine if they want to CREATE a new calendar event or SEARCH for existing events.
 
@@ -905,28 +983,15 @@ USER QUERY: "{user_query}"
 TASK: Determine the operation type and extract parameters.
 
 OPERATIONS:
-1. "search" - User wants to find/view/check existing calendar events  
-   - Keywords: show, find, what's, check, list, view, see, what, do I have, my schedule, what's on, agenda
-   - Examples: "What do I have today?", "Show my schedule", "What's on my calendar?", "Do I have meetings?"
-   - Extract: date_range, keywords, attendee_filter
-
-2. "create" - User wants to create/schedule/add a new calendar event
-   - Keywords: create, schedule, add, book, set up, plan, new, make, remind me
-   - Examples: "Schedule a meeting", "Create an event", "Book lunch tomorrow", "Set up a call"
+1. "create" - User wants to create/schedule/add a new calendar event
+   - Keywords: create, schedule, add, book, set up, plan, new, make
    - Extract: title, date, time, location, description, attendees
 
-IMPORTANT CLASSIFICATION RULES:
-- Questions starting with "What", "Do I have", "Show me" are almost always SEARCH
-- Commands starting with "Schedule", "Create", "Book", "Add" are almost always CREATE  
-- If user is asking about existing events/schedule → SEARCH
-- If user is giving details for a new event → CREATE
+2. "search" - User wants to find/view existing calendar events  
+   - Keywords: show, find, what's, check, list, view, see
+   - Extract: date_range, keywords, attendee_filter
 
 PARAMETER EXTRACTION RULES:
-For SEARCH operations:
-- date_range: today/tomorrow/this week/next week/etc (REQUIRED)
-- keywords: Search terms for event content (optional)
-- time_range: morning/afternoon/evening (optional)
-
 For CREATE operations:
 - title: Event title/summary (required)
 - date: Event date in YYYY-MM-DD format (required) 
@@ -935,6 +1000,11 @@ For CREATE operations:
 - location: Event location (optional)
 - description: Event description (optional)
 - attendees: List of email addresses (optional)
+
+For SEARCH operations:
+- date_range: today/tomorrow/this week/next week/etc
+- keywords: Search terms for event content
+- time_range: morning/afternoon/evening
 
 DATE/TIME PARSING:
 - "Friday" = next Friday if today is not Friday, today if today is Friday
@@ -946,14 +1016,9 @@ DATE/TIME PARSING:
 
 RESPONSE FORMAT (JSON only):
 {{
-  "operation": "search" | "create",
+  "operation": "create" | "search",
   "confidence": 0.95,
   "parameters": {{
-    // For search:
-    "date_range": "today|tomorrow|this week",
-    "keywords": "search terms",
-    "time_range": "morning|afternoon|evening"
-    
     // For create:
     "title": "Event title",
     "date": "YYYY-MM-DD", 
@@ -962,76 +1027,56 @@ RESPONSE FORMAT (JSON only):
     "location": "location",
     "description": "description",
     "attendees": ["email1@domain.com"]
+    
+    // For search:
+    "date_range": "today|tomorrow|this week",
+    "keywords": "search terms",
+    "time_range": "morning|afternoon|evening"
   }}
 }}
 
 Respond with ONLY the JSON object."""
 
-            print(f"[DEBUG] About to call Gemini for calendar intent analysis...")
+            # Call Gemini
+            response = self.gemini_llm.invoke(prompt)
+            response_text = str(response.content).strip()
             
-            # Add timeout and error handling for Gemini LLM call
-            def timeout_handler(signum, frame):
-                raise TimeoutError("Gemini LLM call timed out")
+            print(f"[DEBUG] Calendar intent analysis response: {response_text}")
             
-            # Set timeout to 15 seconds
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(15)
-            
+            # Parse JSON response
             try:
-                # Call Gemini with timeout protection
-                response = self.gemini_llm.invoke(prompt)
-                response_text = str(response.content).strip()
+                # Remove markdown code blocks if present
+                json_text = response_text
+                if json_text.startswith('```json'):
+                    json_text = json_text.replace('```json', '').replace('```', '').strip()
+                elif json_text.startswith('```'):
+                    json_text = json_text.replace('```', '').strip()
                 
-                # Cancel the timeout
-                signal.alarm(0)
+                analysis = json.loads(json_text)
                 
-                print(f"[DEBUG] Calendar intent analysis response: {response_text}")
+                # Validate response structure
+                if not isinstance(analysis, dict) or "operation" not in analysis:
+                    raise ValueError("Invalid analysis response structure")
                 
-                # Parse JSON response
-                try:
-                    # Remove markdown code blocks if present
-                    json_text = response_text
-                    if json_text.startswith('```json'):
-                        json_text = json_text.replace('```json', '').replace('```', '').strip()
-                    elif json_text.startswith('```'):
-                        json_text = json_text.replace('```', '').strip()
-                    
-                    analysis = json.loads(json_text)
-                    
-                    # Validate response structure
-                    if not isinstance(analysis, dict) or "operation" not in analysis:
-                        raise ValueError("Invalid analysis response structure")
-                    
-                    operation = analysis.get("operation")
-                    if operation not in ["create", "search"]:
-                        raise ValueError(f"Invalid operation: {operation}")
-                    
-                    # Ensure confidence is present and reasonable
-                    confidence = analysis.get("confidence", 0.8)
-                    if not isinstance(confidence, (int, float)) or confidence < 0 or confidence > 1:
-                        confidence = 0.8
-                        analysis["confidence"] = confidence
-                    
-                    print(f"[DEBUG] Successfully analyzed calendar intent: {operation} (confidence: {confidence})")
-                    return analysis
-                    
-                except (json.JSONDecodeError, ValueError) as e:
-                    print(f"[WARNING] Failed to parse calendar intent analysis: {e}")
-                    print(f"[WARNING] Raw response: {response_text}")
-                    return self._fallback_calendar_intent_analysis(user_query)
-                    
-            except TimeoutError:
-                # Cancel the timeout
-                signal.alarm(0)
-                print(f"[ERROR] Gemini LLM call timed out after 15 seconds for calendar intent analysis")
+                operation = analysis.get("operation")
+                if operation not in ["create", "search"]:
+                    raise ValueError(f"Invalid operation: {operation}")
+                
+                # Ensure confidence is present and reasonable
+                confidence = analysis.get("confidence", 0.8)
+                if not isinstance(confidence, (int, float)) or confidence < 0 or confidence > 1:
+                    confidence = 0.8
+                    analysis["confidence"] = confidence
+                
+                print(f"[DEBUG] Successfully analyzed calendar intent: {operation} (confidence: {confidence})")
+                return analysis
+                
+            except (json.JSONDecodeError, ValueError) as e:
+                print(f"[WARNING] Failed to parse calendar intent analysis: {e}")
+                print(f"[WARNING] Raw response: {response_text}")
                 return self._fallback_calendar_intent_analysis(user_query)
                 
         except Exception as e:
-            # Make sure to cancel any pending alarm
-            try:
-                signal.alarm(0)
-            except:
-                pass
             print(f"[ERROR] Error during calendar intent analysis: {e}")
             return self._fallback_calendar_intent_analysis(user_query)
 
@@ -1042,9 +1087,9 @@ Respond with ONLY the JSON object."""
         query_lower = user_query.lower()
         
         # Keywords for creation
-        create_keywords = ["create", "schedule", "add", "book", "set up", "plan", "new", "make", "remind me"]
+        create_keywords = ["create", "schedule", "add", "book", "set up", "plan", "new", "make"]
         # Keywords for searching  
-        search_keywords = ["show", "find", "what's", "check", "list", "view", "see", "what", "do I have", "my schedule", "what's on", "agenda"]
+        search_keywords = ["show", "find", "what's", "check", "list", "view", "see"]
         
         create_score = sum(1 for keyword in create_keywords if keyword in query_lower)
         search_score = sum(1 for keyword in search_keywords if keyword in query_lower)
@@ -1441,14 +1486,8 @@ Respond with ONLY the JSON object."""
         Fallback method for simple query building when LLM is unavailable.
         """
         query_lower = user_query.lower()
-        
-        # Only add specific filters if explicitly mentioned
-        # For general queries like "last email", "recent emails", return empty string
-        if "unread" in query_lower and ("show" in query_lower or "find" in query_lower):
+        if "unread" in query_lower:
             return "is:unread"
-        elif "important" in query_lower:
-            return "is:important"
-        # For general email queries, return empty to show all recent emails
         return ""
 
     def _extract_contact_search_term(self, user_query):
