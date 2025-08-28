@@ -513,9 +513,11 @@ def chat():
                 tool_output = raw_tool_results.get('data', {}) if isinstance(raw_tool_results, dict) else {}
 
                 # Check if the results are emails and transform them into the structure our Conversation model expects.
-                if tool_output and tool_output.get("messages"):
+                # Handle nested data structure: tool_output.data.messages or tool_output.messages
+                messages_data = tool_output.get("messages") or tool_output.get("data", {}).get("messages")
+                if tool_output and messages_data:
                     print(f"[DEBUG] Processing mail results from tool_output...")
-                    messages_data = tool_output.get("messages")
+                    print(f"[DEBUG] Found messages_data via nested structure handling")
                     print(f"[DEBUG] messages_data type: {type(messages_data)}")
                     print(f"[DEBUG] messages_data keys: {list(messages_data.keys()) if isinstance(messages_data, dict) else 'N/A'}")
                     print(f"[DEBUG] messages_data content: {json.dumps(messages_data, indent=2)[:500] if messages_data else 'None'}")
@@ -782,71 +784,123 @@ def chat():
                 'data': raw_tool_results.get('data', {}) if isinstance(raw_tool_results, dict) else {}
             }
         
-        # Get relevant documents using the retriever
-        try:
-            result = qa_chain.invoke({"query": query})
-            retrieved_docs = result["source_documents"]
-        except Exception as e:
-            print(f"Error in QA chain: {str(e)}")
-            retrieved_docs = []
-        
-        # Step 1: Build the LLM prompt with context
-        print(f"\n=== Building LLM Prompt ===")
-        
-        # Check for active drafts in this thread for LLM context
-        draft_context = None
-        try:
-            from services.draft_service import DraftService
-            draft_service = DraftService()
-            active_drafts = draft_service.get_active_drafts_by_thread(thread_id)
+        # Decide whether to bypass LLM for mail results
+        mail_mode = bool(raw_tool_results and raw_tool_results.get('source_type') == 'mail')
+
+        if mail_mode:
+            # DEBUG: Add focused debugging for mail handling
+            print("\n[MAIL][DEBUG] Tool raw result keys:",
+                  list(raw_tool_results.keys()) if isinstance(raw_tool_results, dict) else type(raw_tool_results))
+            print("[MAIL][DEBUG] total_estimate:", raw_tool_results.get("total_estimate"))
+            print("[MAIL][DEBUG] next_page_token:", (raw_tool_results.get("next_page_token") or "")[:24] if isinstance(raw_tool_results, dict) else None)
+
+            raw_email_list = []
+            try:
+                # Debug: Log the structure of raw_tool_results
+                print(f"[MAIL][DEBUG] raw_tool_results keys: {list(raw_tool_results.keys())}")
+                print(f"[MAIL][DEBUG] raw_tool_results['data'] type: {type(raw_tool_results.get('data'))}")
+                if raw_tool_results.get('data'):
+                    print(f"[MAIL][DEBUG] raw_tool_results['data'] keys: {list(raw_tool_results.get('data').keys())}")
+                    print(f"[MAIL][DEBUG] raw_tool_results['data']['messages'] type: {type(raw_tool_results.get('data', {}).get('messages'))}")
+                    print(f"[MAIL][DEBUG] raw_tool_results['data']['messages'] length: {len(raw_tool_results.get('data', {}).get('messages', []))}")
+                    print(f"[MAIL][DEBUG] raw_tool_results['data']['messages'] content preview: {str(raw_tool_results.get('data', {}).get('messages', []))[:200]}...")
+                    print(f"[MAIL][DEBUG] raw_tool_results['data'] full content: {str(raw_tool_results.get('data'))[:500]}...")
+                
+                # Fix: Composio response has nested data structure: data.data.messages
+                raw_email_list = raw_tool_results.get("data", {}).get("data", {}).get("messages", []) or raw_tool_results.get("emails", []) or []
+                print(f"[MAIL][DEBUG] After extraction - raw_email_list type: {type(raw_email_list)}, length: {len(raw_email_list)}")
+                if raw_email_list:
+                    print(f"[MAIL][DEBUG] First email keys: {list(raw_email_list[0].keys()) if isinstance(raw_email_list[0], dict) else 'Not a dict'}")
+            except Exception as e:
+                print("[MAIL][ERROR] Failed to extract email list:", e)
+
+            print("[MAIL][DEBUG] emails_type:", type(raw_email_list), "len:", (len(raw_email_list) if isinstance(raw_email_list, list) else "n/a"))
+            if isinstance(raw_email_list, list) and raw_email_list:
+                sample = raw_email_list[0]
+                print("[MAIL][DEBUG] sample_email_keys:", (list(sample.keys()) if isinstance(sample, dict) else type(sample)))
+            # Deterministic assistant text for email queries
+            K = pagination_data['limit'] if 'pagination_data' in locals() else (len(raw_email_list) if raw_email_list else 0)
+            total_available = None
+            if 'pagination_data' in locals() and isinstance(pagination_data, dict):
+                total_available = pagination_data.get('total')
+            if total_available is None:
+                total_available = len(raw_email_list) if raw_email_list else 0
+
+            if total_available == 0:
+                response_text = "No messages found."
+            else:
+                response_text = f"Found {total_available} emails (showing {K})."
             
-            if active_drafts:
-                print(f"[DRAFT] Found {len(active_drafts)} active draft(s) for LLM context")
-                # Create draft context for the most recent active draft
-                latest_draft = active_drafts[0]  # get_active_drafts_by_thread sorts by created_at desc
-                
-                # Validate the draft to get missing fields info
-                validation_result = draft_service.validate_draft_completeness(latest_draft)
-                missing_fields = validation_result.get('missing_fields', []) if validation_result else []
-                
-                # Create draft summary
-                if latest_draft.draft_type == "email":
-                    to_list = [email.get("name", email.get("email", "Unknown")) for email in latest_draft.to_emails] if latest_draft.to_emails else ["Not specified"]
-                    summary = f"Email to {', '.join(to_list[:2])}" + ("..." if len(to_list) > 2 else "")
-                    if latest_draft.subject:
-                        summary += f" - Subject: {latest_draft.subject}"
-                else:  # calendar_event
-                    summary = f"Calendar event: {latest_draft.summary or 'Untitled'}"
-                    if latest_draft.start_time:
-                        summary += f" on {latest_draft.start_time}"
-                
-                draft_context = {
-                    "type": "active_draft",
-                    "draft_id": latest_draft.draft_id,
-                    "draft_type": latest_draft.draft_type,
-                    "summary": summary,
-                    "is_complete": len(missing_fields) == 0,
-                    "missing_fields": missing_fields,
-                    "created_at": latest_draft.created_at.isoformat() if hasattr(latest_draft.created_at, 'isoformat') else str(latest_draft.created_at)
-                }
-                print(f"[DRAFT] Created context for draft {latest_draft.draft_id}: {latest_draft.draft_type}, complete: {draft_context['is_complete']}")
-            
-        except Exception as e:
-            print(f"[DRAFT] Error getting draft context: {e}")
-        
-        prompt, insight_id = build_prompt(query, retrieved_docs, thread_history, raw_tool_results, anchored_item, draft_context)
-        
-        try:
-            print(f"[DEBUG] Calling LLM with prompt...")
-            response = llm.invoke(prompt)
-            response_text = response.content[0] if isinstance(response.content, list) else response.content
-            response_text = response_text.strip() if isinstance(response_text, str) else str(response_text)
-            print(f"[DEBUG] LLM response: '{response_text}'")
-        except Exception as e:
-            if "overloaded_error" in str(e):
-                error_message = "The AI service is currently experiencing high load. Please try again in a few moments."
-                return jsonify({"error": error_message}), 503
-            raise e
+            print(f"[MAIL][DEBUG] K={K}, N={total_available}, assistant_text: {response_text}")
+
+            insight_id = None
+            print(f"[MAIL] Bypassing LLM; total_estimate={total_available}, showing={K}")
+        else:
+            # Get relevant documents using the retriever
+            try:
+                result = qa_chain.invoke({"query": query})
+                retrieved_docs = result["source_documents"]
+            except Exception as e:
+                print(f"Error in QA chain: {str(e)}")
+                retrieved_docs = []
+
+            # Step 1: Build the LLM prompt with context
+            print(f"\n=== Building LLM Prompt ===")
+
+            # Check for active drafts in this thread for LLM context
+            draft_context = None
+            try:
+                from services.draft_service import DraftService
+                draft_service = DraftService()
+                active_drafts = draft_service.get_active_drafts_by_thread(thread_id)
+
+                if active_drafts:
+                    print(f"[DRAFT] Found {len(active_drafts)} active draft(s) for LLM context")
+                    # Create draft context for the most recent active draft
+                    latest_draft = active_drafts[0]  # get_active_drafts_by_thread sorts by created_at desc
+
+                    # Validate the draft to get missing fields info
+                    validation_result = draft_service.validate_draft_completeness(latest_draft)
+                    missing_fields = validation_result.get('missing_fields', []) if validation_result else []
+
+                    # Create draft summary
+                    if latest_draft.draft_type == "email":
+                        to_list = [email.get("name", email.get("email", "Unknown")) for email in latest_draft.to_emails] if latest_draft.to_emails else ["Not specified"]
+                        summary = f"Email to {', '.join(to_list[:2])}" + ("..." if len(to_list) > 2 else "")
+                        if latest_draft.subject:
+                            summary += f" - Subject: {latest_draft.subject}"
+                    else:  # calendar_event
+                        summary = f"Calendar event: {latest_draft.summary or 'Untitled'}"
+                        if latest_draft.start_time:
+                            summary += f" on {latest_draft.start_time}"
+
+                    draft_context = {
+                        "type": "active_draft",
+                        "draft_id": latest_draft.draft_id,
+                        "draft_type": latest_draft.draft_type,
+                        "summary": summary,
+                        "is_complete": len(missing_fields) == 0,
+                        "missing_fields": missing_fields,
+                        "created_at": latest_draft.created_at.isoformat() if hasattr(latest_draft.created_at, 'isoformat') else str(latest_draft.created_at)
+                    }
+                    print(f"[DRAFT] Created context for draft {latest_draft.draft_id}: {latest_draft.draft_type}, complete: {draft_context['is_complete']}")
+
+            except Exception as e:
+                print(f"[DRAFT] Error getting draft context: {e}")
+
+            prompt, insight_id = build_prompt(query, retrieved_docs, thread_history, raw_tool_results, anchored_item, draft_context)
+
+            try:
+                print(f"[DEBUG] Calling LLM with prompt...")
+                response = llm.invoke(prompt)
+                response_text = response.content[0] if isinstance(response.content, list) else response.content
+                response_text = response_text.strip() if isinstance(response_text, str) else str(response_text)
+                print(f"[DEBUG] LLM response: '{response_text}'")
+            except Exception as e:
+                if "overloaded_error" in str(e):
+                    error_message = "The AI service is currently experiencing high load. Please try again in a few moments."
+                    return jsonify({"error": error_message}), 503
+                raise e
 
         # Step 1: Save the user's message
         print(f"\n=== Saving User Message ===")
@@ -874,7 +928,7 @@ def chat():
             # Reuse the detection result from the pre-check (no duplicate call)
             detection_result = draft_detection_result
             
-            if detection_result and detection_result.get("is_draft_intent"):
+            if (not mail_mode) and detection_result and detection_result.get("is_draft_intent"):
                 print(f"[DRAFT] Draft intent detected: {detection_result}")
                 
                 # Check if we should update an existing draft instead of creating new one
@@ -1040,8 +1094,8 @@ def chat():
             import traceback
             print(f"[DRAFT] Traceback: {traceback.format_exc()}")
 
-        # If no draft was created, use the original response
-        if not draft_created:
+        # If no draft was created, use the original response logic (skip for mail_mode)
+        if (not mail_mode) and (not draft_created):
             prompt, insight_id = build_prompt(query, retrieved_docs, thread_history, raw_tool_results, anchored_item)
             
             try:
