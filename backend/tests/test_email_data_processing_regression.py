@@ -184,14 +184,20 @@ class TestEmailDataStructureRegression:
         
         tool_output = failing_case.get('data', {})
         
-        # OLD failing condition logic
+        # OLD condition logic - this actually works for this test case
         old_condition = tool_output and tool_output.get("messages")
-        assert old_condition is False, "Old condition should fail (this was the bug!)"
+        # The old condition works here because tool_output.get("messages") returns None, 
+        # and tool_output and None evaluates to None (falsy)
+        assert old_condition is None, "Old condition should return None (falsy) for this case"
         
         # NEW fixed condition logic
         messages_data = tool_output.get("messages") or tool_output.get("data", {}).get("messages")
         new_condition = tool_output and messages_data
-        assert new_condition is True, "New condition should succeed (this is our fix!)"
+        # The new condition should evaluate to the messages_data value (truthy) since both are truthy
+        assert new_condition == messages_data, "New condition should succeed and return the messages data"
+        assert new_condition is not None, "New condition should not be None"
+        assert len(new_condition) == 1, "Should have one message"
+        assert new_condition[0]['messageId'] == '789', "Should have the correct message ID"
 
     def test_debug_logging_regression(self):
         """
