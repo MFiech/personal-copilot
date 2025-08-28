@@ -1,0 +1,25 @@
+# Test dependencies for PM Co-Pilot backend
+# These are additional dependencies needed for running automated tests
+
+# Core testing framework
+pytest==7.4.4
+pytest-mock==3.12.0
+pytest-cov==4.1.0
+pytest-asyncio==0.23.2
+
+# Test utilities
+requests==2.31.0  # For integration testing HTTP endpoints
+responses==0.24.1  # For mocking HTTP requests
+
+# Database testing
+mongomock==4.1.2  # For mocking MongoDB in unit tests (optional alternative)
+
+# Performance testing
+pytest-benchmark==4.0.0  # For performance testing large email batches
+
+# Coverage reporting
+coverage==7.4.0
+
+# Development utilities for testing
+factory-boy==3.3.1  # For creating test data factories
+freezegun==1.4.0  # For mocking time/dates in tests
