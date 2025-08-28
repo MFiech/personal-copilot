@@ -150,7 +150,7 @@ export const Chat: React.FC = () => {
 
     try {
       // Use regular fetch instead of streaming for now
-      const response = await fetch('/chat', {
+      const response = await fetch('http://localhost:5001/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
