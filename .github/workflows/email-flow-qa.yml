@@ -1,0 +1,163 @@
+name: Email Flow QA Tests
+
+# Trigger on pushes to main and all pull requests
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+    # Also trigger on specific paths that affect email functionality
+    paths:
+      - 'backend/**'
+      - '.github/workflows/email-flow-qa.yml'
+
+# Allow manual triggering for testing
+  workflow_dispatch:
+
+jobs:
+  email-flow-tests:
+    name: Email Flow QA Tests
+    runs-on: ubuntu-latest
+    
+    # Set up MongoDB service for testing
+    services:
+      mongodb:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ping: 1})'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential
+
+    - name: Install Python dependencies
+      run: |
+        cd backend
+        pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-mock pytest-cov
+
+    - name: Wait for MongoDB to be ready
+      run: |
+        for i in {1..30}; do
+          if mongosh --host localhost:27017 --eval "db.runCommand({ping: 1})" --quiet; then
+            echo "MongoDB is ready"
+            break
+          fi
+          echo "Waiting for MongoDB... ($i/30)"
+          sleep 2
+        done
+
+    - name: Test MongoDB connection
+      run: |
+        mongosh --host localhost:27017 --eval "
+          db.test.insertOne({test: 'connection'});
+          print('MongoDB connection successful');
+          db.test.drop();
+        "
+
+    - name: Run email flow regression tests
+      run: |
+        cd backend
+        pytest tests/test_email_data_processing_regression.py -v --tb=short
+      env:
+        MONGO_URI: mongodb://localhost:27017
+        MONGO_DB_NAME: pm_copilot_test
+        # Mock environment variables for testing
+        COMPOSIO_API_KEY: test_key_for_mocking
+        OPENAI_API_KEY: test_key_for_mocking
+
+    - name: Run email count verification tests
+      run: |
+        cd backend
+        pytest tests/test_email_count_verification.py -v --tb=short
+      env:
+        MONGO_URI: mongodb://localhost:27017
+        MONGO_DB_NAME: pm_copilot_test
+        COMPOSIO_API_KEY: test_key_for_mocking
+        OPENAI_API_KEY: test_key_for_mocking
+
+    - name: Run email integration flow tests
+      run: |
+        cd backend
+        pytest tests/test_email_integration_flow.py -v --tb=short
+      env:
+        MONGO_URI: mongodb://localhost:27017
+        MONGO_DB_NAME: pm_copilot_test
+        COMPOSIO_API_KEY: test_key_for_mocking
+        OPENAI_API_KEY: test_key_for_mocking
+
+    - name: Run all email tests with coverage
+      run: |
+        cd backend
+        pytest tests/test_email_*.py --cov=models --cov=services --cov-report=xml --cov-report=term-missing
+      env:
+        MONGO_URI: mongodb://localhost:27017
+        MONGO_DB_NAME: pm_copilot_test
+        COMPOSIO_API_KEY: test_key_for_mocking
+        OPENAI_API_KEY: test_key_for_mocking
+
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      if: success()
+      with:
+        file: ./backend/coverage.xml
+        flags: email-flow-tests
+        name: email-flow-coverage
+
+    - name: Test summary
+      run: |
+        echo "✅ All email flow QA tests completed successfully!"
+        echo "🔍 Tests covered:"
+        echo "  - Data structure regression tests (the fix we implemented)"
+        echo "  - Email count verification (retrieval vs. saved)"
+        echo "  - Full integration flow tests"
+        echo "  - Error handling and edge cases"
+        echo "  - Performance with large email batches"
+
+  # Job to check if tests are required (for PR status checks)
+  email-tests-required:
+    name: Email Tests Status Check
+    runs-on: ubuntu-latest
+    needs: email-flow-tests
+    if: always()
+    steps:
+    - name: Check test results
+      run: |
+        if [ "${{ needs.email-flow-tests.result }}" = "success" ]; then
+          echo "✅ All email flow tests passed!"
+          exit 0
+        else
+          echo "❌ Email flow tests failed!"
+          echo "This indicates a potential regression in email functionality."
+          echo "Please review the test failures before merging."
+          exit 1
+        fi
+
+  # Optional: Deploy or notify on success (you can customize this)
+  notify-success:
+    name: Notify Success
+    runs-on: ubuntu-latest
+    needs: email-flow-tests
+    if: success() && github.ref == 'refs/heads/main'
+    steps:
+    - name: Success notification
+      run: |
+        echo "🎉 Email flow QA tests passed on main branch!"
+        echo "The email retrieval and MongoDB saving functionality is working correctly."
