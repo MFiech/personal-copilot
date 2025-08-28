@@ -53,6 +53,15 @@ jobs:
         pip install -r requirements.txt
         pip install pytest pytest-mock pytest-cov
 
+    - name: Install MongoDB tools
+      # Install mongosh (MongoDB shell) for database connection testing
+      # This is required because the Ubuntu runner doesn't have MongoDB tools pre-installed
+      run: |
+        wget -qO - https://www.mongodb.org/static/pgp/server-7.0.asc | sudo apt-key add -
+        echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+        sudo apt-get update
+        sudo apt-get install -y mongodb-mongosh
+
     - name: Wait for MongoDB to be ready
       run: |
         for i in {1..30}; do
@@ -103,6 +112,16 @@ jobs:
         COMPOSIO_API_KEY: test_key_for_mocking
         OPENAI_API_KEY: test_key_for_mocking
 
+    - name: Run email endpoint tests
+      run: |
+        cd backend
+        pytest tests/test_email_endpoints.py -v --tb=short
+      env:
+        MONGO_URI: mongodb://localhost:27017
+        MONGO_DB_NAME: pm_copilot_test
+        COMPOSIO_API_KEY: test_key_for_mocking
+        OPENAI_API_KEY: test_key_for_mocking
+
     - name: Run all email tests with coverage
       run: |
         cd backend
@@ -128,6 +147,7 @@ jobs:
         echo "  - Data structure regression tests (the fix we implemented)"
         echo "  - Email count verification (retrieval vs. saved)"
         echo "  - Full integration flow tests"
+        echo "  - Email endpoint tests (/get_email_content, /summarize_single_email)"
         echo "  - Error handling and edge cases"
         echo "  - Performance with large email batches"
 
