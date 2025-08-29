@@ -420,29 +420,31 @@ class TestSummarizeSingleEmailEndpoint:
         mock_claude_response = Mock()
         mock_claude_response.content = "Project deadline extended to next Friday. Team meeting scheduled for Monday to discuss progress."
         
-        with patch('app.get_gemini_llm', return_value=None), \
-             patch('app.get_llm') as mock_default_llm, \
-             mock_lazy_services():
-            
-            # Mock the default LLM properly
-            mock_default_llm.return_value.invoke.return_value = mock_claude_response
-            
+        # Create a proper mock instance
+        mock_claude_instance = Mock()
+        mock_claude_instance.invoke.return_value = mock_claude_response
+        
+        with mock_lazy_services():
             from app import app
             
-            with app.test_client() as client:
-                response = client.post('/summarize_single_email', 
-                                    json={
-                                        'email_id': email_id,
-                                        'thread_id': thread_id,
-                                        'assistant_message_id': assistant_message_id,
-                                        'email_content_full': email_content,
-                                        'email_content_truncated': email_content
-                                    })
+            # Mock the functions after importing the app
+            with patch('app.get_gemini_llm', return_value=None), \
+                 patch('app.get_llm', return_value=mock_claude_instance):
                 
-                assert response.status_code == 200
-                data = response.get_json()
-                assert data['success'] is True
-                assert 'Project deadline extended' in data['response']
+                with app.test_client() as client:
+                    response = client.post('/summarize_single_email', 
+                                        json={
+                                            'email_id': email_id,
+                                            'thread_id': thread_id,
+                                            'assistant_message_id': assistant_message_id,
+                                            'email_content_full': email_content,
+                                            'email_content_truncated': email_content
+                                        })
+                    
+                    assert response.status_code == 200
+                    data = response.get_json()
+                    assert data['success'] is True
+                    assert 'Project deadline extended' in data['response']
 
     def test_summarize_single_email_missing_parameters(self, test_db, clean_collections):
         """
@@ -499,15 +501,18 @@ class TestSummarizeSingleEmailEndpoint:
         email_content = "Test email content for rate limit testing."
         
         # Mock rate limit error
-        with patch('app.get_gemini_llm') as mock_gemini, mock_lazy_services():
+        with mock_lazy_services():
+            from app import app
+            
             # Create a mock instance that raises the rate limit error
             mock_gemini_instance = Mock()
             mock_gemini_instance.invoke.side_effect = Exception("rate_limit_error: Too many requests")
-            mock_gemini.return_value = mock_gemini_instance
             
-            from app import app
-            
-            with app.test_client() as client:
+            # Mock the functions after importing the app
+            with patch('app.get_gemini_llm', return_value=mock_gemini_instance), \
+                 patch('app.get_llm', return_value=mock_gemini_instance):
+                
+                with app.test_client() as client:
                 response = client.post('/summarize_single_email', 
                                     json={
                                         'email_id': email_id,
@@ -586,10 +591,18 @@ class TestSummarizeSingleEmailEndpoint:
         assistant_message_id = "non_existent_message"
         email_content = "Test email content."
         
+        # Create a proper mock instance
+        mock_llm_instance = Mock()
+        mock_llm_instance.invoke.return_value = Mock(content="Test summary generated for email content.")
+        
         with mock_lazy_services():
             from app import app
-        
-        with app.test_client() as client:
+            
+            # Mock the functions after importing the app
+            with patch('app.get_gemini_llm', return_value=None), \
+                 patch('app.get_llm', return_value=mock_llm_instance):
+                
+                with app.test_client() as client:
             response = client.post('/summarize_single_email', 
                                 json={
                                     'email_id': email_id,
@@ -661,7 +674,6 @@ class TestEmailEndpointsIntegration:
         conversation.save()
         
         with patch('app.tooling_service', mock_composio_service), \
-             patch('app.get_gemini_llm') as mock_gemini, \
              mock_lazy_services():
             
             # Mock Gemini response
@@ -671,41 +683,44 @@ class TestEmailEndpointsIntegration:
             # Create a proper mock instance
             mock_gemini_instance = Mock()
             mock_gemini_instance.invoke.return_value = mock_gemini_response
-            mock_gemini.return_value = mock_gemini_instance
             
             from app import app
             
-            with app.test_client() as client:
-                # Step 1: Get email content
-                content_response = client.post('/get_email_content', 
-                                            json={'email_id': email_id})
+            # Mock the functions after importing the app
+            with patch('app.get_gemini_llm', return_value=mock_gemini_instance), \
+                 patch('app.get_llm', return_value=mock_gemini_instance):
                 
-                assert content_response.status_code == 200
-                content_data = content_response.get_json()
-                assert content_data['success'] is True
-                assert 'Project Update Meeting' in content_data['content']['text']
-                
-                # Step 2: Summarize the email
-                summary_response = client.post('/summarize_single_email', 
-                                            json={
-                                                'email_id': email_id,
-                                                'thread_id': thread_id,
-                                                'assistant_message_id': assistant_message_id,
-                                                'email_content_full': content_data['content']['text'],
-                                                'email_content_truncated': content_data['content']['text']
-                                            })
-                
-                assert summary_response.status_code == 200
-                summary_data = summary_response.get_json()
-                assert summary_data['success'] is True
-                assert 'Project update meeting tomorrow at 3 PM' in summary_data['response']
-                
-                # Verify both operations were successful
-                emails_collection = get_collection('emails')
-                saved_email = emails_collection.find_one({'email_id': email_id})
-                assert saved_email is not None
-                assert 'Project Update Meeting' in saved_email['content']['text']
-                
-                saved_summary = Conversation.find_one({'message_id': summary_data['message_id']})
-                assert saved_summary is not None
-                assert 'Project update meeting' in saved_summary['content']  # MongoDB document is a dict
+                with app.test_client() as client:
+                    # Step 1: Get email content
+                    content_response = client.post('/get_email_content', 
+                                                json={'email_id': email_id})
+                    
+                    assert content_response.status_code == 200
+                    content_data = content_response.get_json()
+                    assert content_data['success'] is True
+                    assert 'Project Update Meeting' in content_data['content']['text']
+                    
+                    # Step 2: Summarize the email
+                    summary_response = client.post('/summarize_single_email', 
+                                                json={
+                                                    'email_id': email_id,
+                                                    'thread_id': thread_id,
+                                                    'assistant_message_id': assistant_message_id,
+                                                    'email_content_full': content_data['content']['text'],
+                                                    'email_content_truncated': content_data['content']['text']
+                                                })
+                    
+                    assert summary_response.status_code == 200
+                    summary_data = summary_response.get_json()
+                    assert summary_data['success'] is True
+                    assert 'Project update meeting tomorrow at 3 PM' in summary_data['response']
+                    
+                    # Verify both operations were successful
+                    emails_collection = get_collection('emails')
+                    saved_email = emails_collection.find_one({'email_id': email_id})
+                    assert saved_email is not None
+                    assert 'Project Update Meeting' in saved_email['content']['text']
+                    
+                    saved_summary = Conversation.find_one({'message_id': summary_data['message_id']})
+                    assert saved_summary is not None
+                    assert 'Project update meeting' in saved_summary['content']  # MongoDB document is a dict
