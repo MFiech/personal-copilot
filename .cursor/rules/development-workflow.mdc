@@ -3,6 +3,10 @@ description: Everytime I ask to push new changes to the repository, obey the bel
 globs: 
 alwaysApply: false
 ---
+CRITICAL: ALWAYS run a complete set of automated tests (instruction in ../README_TESTING.md) BEFORE any git push command.
+
+CRITICAL: Never commit the changes directly to the "main" branch. ALWAYS push the changes on a separate feature branch. I'll create manually a PR out of it, wait for the tests, and then marge it.
+
 # How do we start working on a new feature?
     1. If you're on other feature branch, stage the changes and checkout to main.
     2. Pull the newest version of main.
@@ -10,9 +14,7 @@ alwaysApply: false
     4. Start working on the feature.
     5. Until requested, do not commit the changes automatically.
 
-# How do we push local changes to the remote repository?
-    CRITICAL: ALWAYS run all of the automated tests before pushing anything to remote repo.
-    CRITICAL: Never commit the changes straight to main. Send it as a branch. I'll create manually a PR out of it, wait for the tests, and then marge it.
+# How do we push local changes to the remote repository?    
     1. Always make sure that you're on a correct feature branch with the changes.
     2. Stage all modified files.
     3. Write a description commit title and description. Make sure the title/description is about all changes on the branch, not only recent changes.

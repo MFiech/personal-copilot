@@ -1,4 +1,11 @@
 ---
-description: Anytime you need to debug some backend issue, use the below information to speed up things:\n - Docker Container is called "pm-copilot-backend", \n - Check the MongoDB "conversations" collection and the last couple of documents to see what was saved in the DB and what has not. \n - If you need any FE logs you can't extract on your own, ask for them explicitly.
+description: Anytime you need to debug some backend issue, follow the below instructions.
 alwaysApply: false
 ---
+
+Follow these helpful information to to speed up things while debugging issues:
+- Docker Container is called "pm-copilot-backend",
+- If I provide you with logs in the query, do not query Docker logs until needed (there's often a lot of HTML code that's not important),
+- First check in the code what are the debug console logs to know what to look for in the Docker logs.
+- Check the MongoDB "conversations" collection and the last couple of documents to see what was saved in the DB and what has not. 
+- If you need any FE logs you can't extract on your own, ask for them explicitly.

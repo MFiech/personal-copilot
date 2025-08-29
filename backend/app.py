@@ -48,6 +48,10 @@ anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 google_api_key = os.getenv("GOOGLE_API_KEY")
 composio_api_key = os.getenv("COMPOSIO_API_KEY")
 
+# Check if we're in testing mode
+is_testing = os.getenv("TESTING", "false").lower() == "true"
+is_ci = os.getenv("CI", "false").lower() == "true"
+
 if not all([pinecone_api_key, openai_api_key, anthropic_api_key]):
     # Keep google_api_key optional for now, only required if summarization is used with Gemini
     print("Warning: One or more required API keys (Pinecone, OpenAI, Anthropic) are missing from .env")
@@ -75,50 +79,121 @@ except Exception as e:
     print(f"Warning: Failed to initialize Contact service: {e}")
     contact_service = None
 
-pc = Pinecone(api_key=pinecone_api_key)
-index_name = "personal"  # Changed from "alohacamp" to "personal"
-index = pc.Index(index_name)
+# Lazy initialization for external services to prevent API calls during import
+_pinecone_client = None
+_pinecone_index = None
+_embeddings = None
+_vectorstore = None
+_llm = None
+_gemini_llm = None
+_qa_chain = None
 
-# Initialize embeddings with text-embedding-3-large
-embeddings = OpenAIEmbeddings(model="text-embedding-3-large", api_key=SecretStr(openai_api_key) if openai_api_key else None)
+def get_pinecone_client():
+    """Lazy initialization of Pinecone client."""
+    global _pinecone_client
+    if _pinecone_client is None and pinecone_api_key and not (is_testing or is_ci):
+        try:
+            _pinecone_client = Pinecone(api_key=pinecone_api_key)
+        except Exception as e:
+            print(f"Warning: Failed to initialize Pinecone client: {e}")
+            _pinecone_client = None
+    return _pinecone_client
 
-# Set up a single vectorstore with the saved_insights namespace
-vectorstore = PineconeVectorStore(
-    index=index, 
-    embedding=embeddings, 
-    text_key="text", 
-    namespace="saved_insights",  # Changed to use saved_insights namespace
-    pinecone_api_key=pinecone_api_key
-)
+def get_pinecone_index():
+    """Lazy initialization of Pinecone index."""
+    global _pinecone_index
+    if _pinecone_index is None:
+        client = get_pinecone_client()
+        if client:
+            try:
+                _pinecone_index = client.Index("personal")
+            except Exception as e:
+                print(f"Warning: Failed to initialize Pinecone index: {e}")
+                _pinecone_index = None
+    return _pinecone_index
 
-# Initialize the LLM (Claude for general chat)
-llm = ChatAnthropic(model="claude-3-7-sonnet-latest", anthropic_api_key=anthropic_api_key)
+def get_embeddings():
+    """Lazy initialization of OpenAI embeddings."""
+    global _embeddings
+    if _embeddings is None and openai_api_key and not (is_testing or is_ci):
+        try:
+            _embeddings = OpenAIEmbeddings(
+                model="text-embedding-3-large", 
+                api_key=SecretStr(openai_api_key) if openai_api_key else None
+            )
+        except Exception as e:
+            print(f"Warning: Failed to initialize OpenAI embeddings: {e}")
+            _embeddings = None
+    return _embeddings
 
-# Initialize Gemini Pro LLM for Summarization
-gemini_llm = None
-if google_api_key:
-    try:
-        gemini_llm = ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash-lite",
-            google_api_key=google_api_key,
-            convert_system_message_to_human=True
-        )
-        print("Gemini (gemini-2.0-flash-lite) LLM for summarization initialized successfully.")
-    except Exception as e:
-        print(f"Warning: Failed to initialize Gemini LLM: {e}. Summarization might fall back or fail.")
-else:
-    print("Warning: GOOGLE_API_KEY not found. Summarization will use the default LLM (Claude) or fail if it's unavailable.")
+def get_vectorstore():
+    """Lazy initialization of Pinecone vectorstore."""
+    global _vectorstore
+    if _vectorstore is None:
+        index = get_pinecone_index()
+        embeddings = get_embeddings()
+        if index and embeddings:
+            try:
+                _vectorstore = PineconeVectorStore(
+                    index=index, 
+                    embedding=embeddings, 
+                    text_key="text", 
+                    namespace="saved_insights",
+                    pinecone_api_key=pinecone_api_key
+                )
+            except Exception as e:
+                print(f"Warning: Failed to initialize Pinecone vectorstore: {e}")
+                _vectorstore = None
+    return _vectorstore
+
+def get_llm():
+    """Lazy initialization of Claude LLM."""
+    global _llm
+    if _llm is None and anthropic_api_key and not (is_testing or is_ci):
+        try:
+            _llm = ChatAnthropic(model="claude-3-7-sonnet-latest", anthropic_api_key=anthropic_api_key)
+        except Exception as e:
+            print(f"Warning: Failed to initialize Claude LLM: {e}")
+            _llm = None
+    return _llm
+
+def get_gemini_llm():
+    """Lazy initialization of Gemini LLM."""
+    global _gemini_llm
+    if _gemini_llm is None and google_api_key and not (is_testing or is_ci):
+        try:
+            _gemini_llm = ChatGoogleGenerativeAI(
+                model="gemini-2.0-flash-lite",
+                google_api_key=google_api_key,
+                convert_system_message_to_human=True
+            )
+            print("Gemini (gemini-2.0-flash-lite) LLM for summarization initialized successfully.")
+        except Exception as e:
+            print(f"Warning: Failed to initialize Gemini LLM: {e}. Summarization might fall back or fail.")
+            _gemini_llm = None
+    return _gemini_llm
+
+def get_qa_chain():
+    """Lazy initialization of QA chain."""
+    global _qa_chain
+    if _qa_chain is None:
+        llm = get_llm()
+        vectorstore = get_vectorstore()
+        if llm and vectorstore:
+            try:
+                _qa_chain = RetrievalQA.from_chain_type(
+                    llm=llm,
+                    chain_type="stuff",
+                    retriever=vectorstore.as_retriever(),
+                    return_source_documents=True
+                )
+            except Exception as e:
+                print(f"Warning: Failed to initialize QA chain: {e}")
+                _qa_chain = None
+    return _qa_chain
 
 # Initialize conversation memory
 memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
-
-# Initialize the QA chain
-qa_chain = RetrievalQA.from_chain_type(
-    llm=llm,
-    chain_type="stuff",
-    retriever=vectorstore.as_retriever(),
-    return_source_documents=True
-)
 
 def convert_objectid_to_str(obj):
     if isinstance(obj, ObjectId):
@@ -838,7 +913,7 @@ def chat():
         else:
             # Get relevant documents using the retriever
             try:
-                result = qa_chain.invoke({"query": query})
+                result = get_qa_chain().invoke({"query": query})
                 retrieved_docs = result["source_documents"]
             except Exception as e:
                 print(f"Error in QA chain: {str(e)}")
@@ -892,7 +967,7 @@ def chat():
 
             try:
                 print(f"[DEBUG] Calling LLM with prompt...")
-                response = llm.invoke(prompt)
+                response = get_llm().invoke(prompt)
                 response_text = response.content[0] if isinstance(response.content, list) else response.content
                 response_text = response_text.strip() if isinstance(response_text, str) else str(response_text)
                 print(f"[DEBUG] LLM response: '{response_text}'")
@@ -1077,7 +1152,7 @@ def chat():
                     # Call LLM again with draft context
                     try:
                         print(f"[DEBUG] Calling LLM again with draft context...")
-                        response = llm.invoke(prompt)
+                        response = get_llm().invoke(prompt)
                         response_text = response.content[0] if isinstance(response.content, list) else response.content
                         response_text = response_text.strip() if isinstance(response_text, str) else str(response_text)
                         print(f"[DEBUG] LLM response with draft context: {response_text[:200]}...")
@@ -1100,7 +1175,7 @@ def chat():
             
             try:
                 print(f"[DEBUG] Calling LLM with original prompt...")
-                response = llm.invoke(prompt)
+                response = get_llm().invoke(prompt)
                 response_text = response.content[0] if isinstance(response.content, list) else response.content
                 response_text = response_text.strip() if isinstance(response_text, str) else str(response_text)
                 print(f"[DEBUG] LLM response: {response_text[:200]}...")
@@ -1397,11 +1472,11 @@ def save_insight():
         return jsonify({"error": "No content provided"}), 400
     
     # Generate embedding and save to Pinecone
-    embedding = embeddings.embed_query(user_input)
+    embedding = get_embeddings().embed_query(user_input)
     insight_id = f"insight_{uuid.uuid4()}"
     
     # Save to the saved_insights namespace in the personal index
-    index.upsert(
+    get_pinecone_index().upsert(
         vectors=[(insight_id, embedding, {
             "text": user_input, 
             "source": "user",
@@ -2039,9 +2114,9 @@ def summarize_single_email():
         
         # 3. Generate summary using LLM
         prompt = email_summarization_prompt(email_content_truncated)
-        current_llm_for_summary = llm
-        if gemini_llm:
-            current_llm_for_summary = gemini_llm
+        current_llm_for_summary = get_llm()
+        if get_gemini_llm():
+            current_llm_for_summary = get_gemini_llm()
             print("[INFO] Using Gemini Pro for summarization.")
         else:
             print("[INFO] Gemini Pro not available, using default LLM (Claude) for summarization.")

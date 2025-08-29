@@ -16,9 +16,25 @@ from unittest.mock import Mock, patch, MagicMock
 backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, backend_dir)
 
+# Set testing environment before importing app
+os.environ["TESTING"] = "true"
+os.environ["CI"] = "true"
+
 from utils.mongo_client import get_collection
 from models.conversation import Conversation
 from models.email import Email
+
+def mock_lazy_services():
+    """Helper function to mock all lazy-initialized services."""
+    return patch.multiple('app',
+        get_pinecone_client=Mock(return_value=None),
+        get_pinecone_index=Mock(return_value=None),
+        get_embeddings=Mock(return_value=None),
+        get_vectorstore=Mock(return_value=None),
+        get_llm=Mock(return_value=None),
+        get_gemini_llm=Mock(return_value=None),
+        get_qa_chain=Mock(return_value=None)
+    )
 
 
 class TestGetEmailContentEndpoint:
@@ -57,8 +73,8 @@ class TestGetEmailContentEndpoint:
         }
         emails_collection.insert_one(minimal_email)
         
-        # Mock the tooling service in the app
-        with patch('app.tooling_service', mock_composio_service):
+        # Mock the tooling service and lazy services in the app
+        with patch('app.tooling_service', mock_composio_service), mock_lazy_services():
             # Import app after mocking
             from app import app
             
@@ -107,8 +123,9 @@ class TestGetEmailContentEndpoint:
         }
         emails_collection.insert_one(existing_email)
         
-        # Test the endpoint
-        from app import app
+        # Test the endpoint with lazy services mocked
+        with mock_lazy_services():
+            from app import app
         
         with app.test_client() as client:
             response = client.post('/get_email_content', 
@@ -155,7 +172,7 @@ class TestGetEmailContentEndpoint:
         }
         emails_collection.insert_one(minimal_email)
         
-        with patch('app.tooling_service', mock_composio_service):
+        with patch('app.tooling_service', mock_composio_service), mock_lazy_services():
             from app import app
             
             with app.test_client() as client:
@@ -179,7 +196,8 @@ class TestGetEmailContentEndpoint:
         """
         Test error handling when email_id is missing.
         """
-        from app import app
+        with mock_lazy_services():
+            from app import app
         
         with app.test_client() as client:
             # Test with no email_id
@@ -206,7 +224,7 @@ class TestGetEmailContentEndpoint:
         
         email_id = "failed_email_123"
         
-        with patch('app.tooling_service', mock_composio_service):
+        with patch('app.tooling_service', mock_composio_service), mock_lazy_services():
             from app import app
             
             with app.test_client() as client:
@@ -242,7 +260,7 @@ class TestGetEmailContentEndpoint:
         # Mock Composio service failure
         mock_composio_service.get_email_details.return_value = None
         
-        with patch('app.tooling_service', mock_composio_service):
+        with patch('app.tooling_service', mock_composio_service), mock_lazy_services():
             from app import app
             
             with app.test_client() as client:
@@ -262,7 +280,7 @@ class TestGetEmailContentEndpoint:
         email_id = "unavailable_service_email_123"
         
         # Mock tooling service as None
-        with patch('app.tooling_service', None):
+        with patch('app.tooling_service', None), mock_lazy_services():
             from app import app
             
             with app.test_client() as client:
@@ -278,7 +296,8 @@ class TestGetEmailContentEndpoint:
         """
         Test OPTIONS method handling for CORS.
         """
-        from app import app
+        with mock_lazy_services():
+            from app import app
         
         with app.test_client() as client:
             response = client.options('/get_email_content')
@@ -293,7 +312,7 @@ class TestGetEmailContentEndpoint:
         
         email_id = "db_failure_email_123"
         
-        with patch('app.tooling_service', mock_composio_service):
+        with patch('app.tooling_service', mock_composio_service), mock_lazy_services():
             from app import app
             
             with app.test_client() as client:
@@ -337,49 +356,46 @@ class TestSummarizeSingleEmailEndpoint:
         email_id = "summary_email_123"
         email_content = "This is a test email about a meeting tomorrow at 2 PM. Please bring your project updates."
         
-        # Mock Gemini LLM
+                # Mock Gemini LLM
         mock_gemini_response = Mock()
         mock_gemini_response.content = ["Meeting scheduled for tomorrow at 2 PM. Action items: bring project updates."]
         
-        with patch('app.gemini_llm') as mock_gemini, \
-             patch('app.llm') as mock_default_llm:
-            
-            # Create a proper mock instance and set it directly
-            mock_gemini_instance = Mock()
-            mock_gemini_instance.invoke.return_value = mock_gemini_response
-            mock_gemini.return_value = mock_gemini_instance
-            
-            # Also patch the module-level variable
-            import app
-            app.gemini_llm = mock_gemini_instance
-            
+        # Create a proper mock instance
+        mock_gemini_instance = Mock()
+        mock_gemini_instance.invoke.return_value = mock_gemini_response
+    
+        with mock_lazy_services():
             from app import app
             
-            with app.test_client() as client:
-                response = client.post('/summarize_single_email', 
-                                    json={
-                                        'email_id': email_id,
-                                        'thread_id': thread_id,
-                                        'assistant_message_id': assistant_message_id,
-                                        'email_content_full': email_content,
-                                        'email_content_truncated': email_content
-                                    })
+            # Mock the module-level functions
+            with patch('app.get_gemini_llm', return_value=mock_gemini_instance), \
+                 patch('app.get_llm', return_value=mock_gemini_instance):
                 
-                assert response.status_code == 200
-                data = response.get_json()
-                
-                assert data['success'] is True
-                assert 'Meeting scheduled for tomorrow at 2 PM' in data['response']
-                assert data['thread_id'] == thread_id
-                assert 'message_id' in data
-                assert 'tool_results' in data
-                assert data['tool_results']['email_summary']['email_id'] == email_id
-                
-                # Verify summary was saved to conversation
-                saved_summary = Conversation.find_one({'message_id': data['message_id']})
-                assert saved_summary is not None
-                assert saved_summary['role'] == 'assistant'  # MongoDB document is a dict
-                assert 'Meeting scheduled' in saved_summary['content']
+                with app.test_client() as client:
+                    response = client.post('/summarize_single_email', 
+                                        json={
+                                            'email_id': email_id,
+                                            'thread_id': thread_id,
+                                            'assistant_message_id': assistant_message_id,
+                                            'email_content_full': email_content,
+                                            'email_content_truncated': email_content
+                                        })
+                    
+                    assert response.status_code == 200
+                    data = response.get_json()
+                    
+                    assert data['success'] is True
+                    assert 'Meeting scheduled for tomorrow at 2 PM' in data['response']
+                    assert data['thread_id'] == thread_id
+                    assert 'message_id' in data
+                    assert 'tool_results' in data
+                    assert data['tool_results']['email_summary']['email_id'] == email_id
+                    
+                    # Verify summary was saved to conversation
+                    saved_summary = Conversation.find_one({'message_id': data['message_id']})
+                    assert saved_summary is not None
+                    assert saved_summary['role'] == 'assistant'  # MongoDB document is a dict
+                    assert 'Meeting scheduled' in saved_summary['content']
 
     def test_summarize_single_email_success_claude_fallback(self, test_db, clean_collections):
         """
@@ -404,39 +420,38 @@ class TestSummarizeSingleEmailEndpoint:
         mock_claude_response = Mock()
         mock_claude_response.content = "Project deadline extended to next Friday. Team meeting scheduled for Monday to discuss progress."
         
-        with patch('app.gemini_llm', None), \
-             patch('app.llm') as mock_default_llm:
-            
-            # Mock the default LLM properly
-            mock_default_llm.invoke.return_value = mock_claude_response
-
-            # Also set the module-level variable
-
-            import app
-            app.gemini_llm = None
-            
+        # Create a proper mock instance
+        mock_claude_instance = Mock()
+        mock_claude_instance.invoke.return_value = mock_claude_response
+        
+        with mock_lazy_services():
             from app import app
             
-            with app.test_client() as client:
-                response = client.post('/summarize_single_email', 
-                                    json={
-                                        'email_id': email_id,
-                                        'thread_id': thread_id,
-                                        'assistant_message_id': assistant_message_id,
-                                        'email_content_full': email_content,
-                                        'email_content_truncated': email_content
-                                    })
+            # Mock the functions after importing the app
+            with patch('app.get_gemini_llm', return_value=None), \
+                 patch('app.get_llm', return_value=mock_claude_instance):
                 
-                assert response.status_code == 200
-                data = response.get_json()
-                assert data['success'] is True
-                assert 'Project deadline extended' in data['response']
+                with app.test_client() as client:
+                    response = client.post('/summarize_single_email', 
+                                        json={
+                                            'email_id': email_id,
+                                            'thread_id': thread_id,
+                                            'assistant_message_id': assistant_message_id,
+                                            'email_content_full': email_content,
+                                            'email_content_truncated': email_content
+                                        })
+                    
+                    assert response.status_code == 200
+                    data = response.get_json()
+                    assert data['success'] is True
+                    assert 'Project deadline extended' in data['response']
 
     def test_summarize_single_email_missing_parameters(self, test_db, clean_collections):
         """
         Test error handling when required parameters are missing.
         """
-        from app import app
+        with mock_lazy_services():
+            from app import app
         
         with app.test_client() as client:
             # Test with missing email_id
@@ -486,32 +501,31 @@ class TestSummarizeSingleEmailEndpoint:
         email_content = "Test email content for rate limit testing."
         
         # Mock rate limit error
-        with patch('app.gemini_llm') as mock_gemini:
+        with mock_lazy_services():
+            from app import app
+            
             # Create a mock instance that raises the rate limit error
             mock_gemini_instance = Mock()
             mock_gemini_instance.invoke.side_effect = Exception("rate_limit_error: Too many requests")
-            mock_gemini.return_value = mock_gemini_instance
             
-            # Also set the module-level variable
-            import app
-            app.gemini_llm = mock_gemini_instance
-            
-            from app import app
-            
-            with app.test_client() as client:
-                response = client.post('/summarize_single_email', 
-                                    json={
-                                        'email_id': email_id,
-                                        'thread_id': thread_id,
-                                        'assistant_message_id': assistant_message_id,
-                                        'email_content_full': email_content,
-                                        'email_content_truncated': email_content
-                                    })
+            # Mock the functions after importing the app
+            with patch('app.get_gemini_llm', return_value=mock_gemini_instance), \
+                 patch('app.get_llm', return_value=mock_gemini_instance):
                 
-                assert response.status_code == 429
-                data = response.get_json()
-                assert data['success'] is False
-                assert 'rate limit' in data['error'].lower()
+                with app.test_client() as client:
+                    response = client.post('/summarize_single_email', 
+                                        json={
+                                            'email_id': email_id,
+                                            'thread_id': thread_id,
+                                            'assistant_message_id': assistant_message_id,
+                                            'email_content_full': email_content,
+                                            'email_content_truncated': email_content
+                                        })
+                    
+                    assert response.status_code == 429
+                    data = response.get_json()
+                    assert data['success'] is False
+                    assert 'rate limit' in data['error'].lower()
 
     def test_summarize_single_email_llm_failure(self, test_db, clean_collections):
         """
@@ -533,10 +547,11 @@ class TestSummarizeSingleEmailEndpoint:
         email_content = "Test email content for LLM failure testing."
         
         # Mock LLM failure
-        with patch('app.gemini_llm', None), \
-             patch('app.llm') as mock_default_llm:
+        with patch('app.get_gemini_llm', return_value=None), \
+             patch('app.get_llm') as mock_default_llm, \
+             mock_lazy_services():
             
-            mock_default_llm.invoke.side_effect = Exception("LLM service unavailable")
+            mock_default_llm.return_value.invoke.side_effect = Exception("LLM service unavailable")
             
             from app import app
             
@@ -559,7 +574,8 @@ class TestSummarizeSingleEmailEndpoint:
         """
         Test OPTIONS method handling for CORS.
         """
-        from app import app
+        with mock_lazy_services():
+            from app import app
         
         with app.test_client() as client:
             response = client.options('/summarize_single_email')
@@ -575,22 +591,31 @@ class TestSummarizeSingleEmailEndpoint:
         assistant_message_id = "non_existent_message"
         email_content = "Test email content."
         
-        from app import app
+        # Create a proper mock instance
+        mock_llm_instance = Mock()
+        mock_llm_instance.invoke.return_value = Mock(content="Test summary generated for email content.")
         
-        with app.test_client() as client:
-            response = client.post('/summarize_single_email', 
-                                json={
-                                    'email_id': email_id,
-                                    'thread_id': thread_id,
-                                    'assistant_message_id': assistant_message_id,
-                                    'email_content_full': email_content,
-                                    'email_content_truncated': email_content
-                                })
+        with mock_lazy_services():
+            from app import app
             
-            # Should still work even if conversation not found (creates new one)
-            assert response.status_code == 200
-            data = response.get_json()
-            assert data['success'] is True
+            # Mock the functions after importing the app
+            with patch('app.get_gemini_llm', return_value=None), \
+                 patch('app.get_llm', return_value=mock_llm_instance):
+                
+                with app.test_client() as client:
+                    response = client.post('/summarize_single_email', 
+                                        json={
+                                            'email_id': email_id,
+                                            'thread_id': thread_id,
+                                            'assistant_message_id': assistant_message_id,
+                                            'email_content_full': email_content,
+                                            'email_content_truncated': email_content
+                                        })
+                    
+                    # Should still work even if conversation not found (creates new one)
+                    assert response.status_code == 200
+                    data = response.get_json()
+                    assert data['success'] is True
 
 
 class TestEmailEndpointsIntegration:
@@ -649,7 +674,7 @@ class TestEmailEndpointsIntegration:
         conversation.save()
         
         with patch('app.tooling_service', mock_composio_service), \
-             patch('app.gemini_llm') as mock_gemini:
+             mock_lazy_services():
             
             # Mock Gemini response
             mock_gemini_response = Mock()
@@ -658,45 +683,44 @@ class TestEmailEndpointsIntegration:
             # Create a proper mock instance
             mock_gemini_instance = Mock()
             mock_gemini_instance.invoke.return_value = mock_gemini_response
-            mock_gemini.return_value = mock_gemini_instance
-            
-            # Also set the module-level variable
-            import app
-            app.gemini_llm = mock_gemini_instance
             
             from app import app
             
-            with app.test_client() as client:
-                # Step 1: Get email content
-                content_response = client.post('/get_email_content', 
-                                            json={'email_id': email_id})
+            # Mock the functions after importing the app
+            with patch('app.get_gemini_llm', return_value=mock_gemini_instance), \
+                 patch('app.get_llm', return_value=mock_gemini_instance):
                 
-                assert content_response.status_code == 200
-                content_data = content_response.get_json()
-                assert content_data['success'] is True
-                assert 'Project Update Meeting' in content_data['content']['text']
-                
-                # Step 2: Summarize the email
-                summary_response = client.post('/summarize_single_email', 
-                                            json={
-                                                'email_id': email_id,
-                                                'thread_id': thread_id,
-                                                'assistant_message_id': assistant_message_id,
-                                                'email_content_full': content_data['content']['text'],
-                                                'email_content_truncated': content_data['content']['text']
-                                            })
-                
-                assert summary_response.status_code == 200
-                summary_data = summary_response.get_json()
-                assert summary_data['success'] is True
-                assert 'Project update meeting tomorrow at 3 PM' in summary_data['response']
-                
-                # Verify both operations were successful
-                emails_collection = get_collection('emails')
-                saved_email = emails_collection.find_one({'email_id': email_id})
-                assert saved_email is not None
-                assert 'Project Update Meeting' in saved_email['content']['text']
-                
-                saved_summary = Conversation.find_one({'message_id': summary_data['message_id']})
-                assert saved_summary is not None
-                assert 'Project update meeting' in saved_summary['content']  # MongoDB document is a dict
+                with app.test_client() as client:
+                    # Step 1: Get email content
+                    content_response = client.post('/get_email_content', 
+                                                json={'email_id': email_id})
+                    
+                    assert content_response.status_code == 200
+                    content_data = content_response.get_json()
+                    assert content_data['success'] is True
+                    assert 'Project Update Meeting' in content_data['content']['text']
+                    
+                    # Step 2: Summarize the email
+                    summary_response = client.post('/summarize_single_email', 
+                                                json={
+                                                    'email_id': email_id,
+                                                    'thread_id': thread_id,
+                                                    'assistant_message_id': assistant_message_id,
+                                                    'email_content_full': content_data['content']['text'],
+                                                    'email_content_truncated': content_data['content']['text']
+                                                })
+                    
+                    assert summary_response.status_code == 200
+                    summary_data = summary_response.get_json()
+                    assert summary_data['success'] is True
+                    assert 'Project update meeting tomorrow at 3 PM' in summary_data['response']
+                    
+                    # Verify both operations were successful
+                    emails_collection = get_collection('emails')
+                    saved_email = emails_collection.find_one({'email_id': email_id})
+                    assert saved_email is not None
+                    assert 'Project Update Meeting' in saved_email['content']['text']
+                    
+                    saved_summary = Conversation.find_one({'message_id': summary_data['message_id']})
+                    assert saved_summary is not None
+                    assert 'Project update meeting' in saved_summary['content']  # MongoDB document is a dict

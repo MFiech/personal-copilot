@@ -1,5 +1,7 @@
 ---
-description: "Before any git push, always run the full suite of automation tests."
+description:
 globs:
 alwaysApply: true
 ---
+
+CRITICAL: ALWAYS run a complete set of automated tests (instruction in ../README_TESTING.md) BEFORE any git push command.
