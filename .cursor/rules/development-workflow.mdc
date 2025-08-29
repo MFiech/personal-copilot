@@ -11,6 +11,8 @@ alwaysApply: false
     5. Until requested, do not commit the changes automatically.
 
 # How do we push local changes to the remote repository?
+    CRITICAL: ALWAYS run all of the automated tests before pushing anything to remote repo.
+    CRITICAL: Never commit the changes straight to main. Send it as a branch. I'll create manually a PR out of it, wait for the tests, and then marge it.
     1. Always make sure that you're on a correct feature branch with the changes.
     2. Stage all modified files.
     3. Write a description commit title and description. Make sure the title/description is about all changes on the branch, not only recent changes.
@@ -19,5 +21,5 @@ alwaysApply: false
         main    git@github.com:MFiech/pm-copilot.git (fetch)
         main    git@github.com:MFiech/pm-copilot.git (push)
     5. Checkout back to main.
-    6. Do not summarize wha you have done. Just wait for my confirmation that I have merged the change.
+    6. Do not summarize what you have done. Just wait for my confirmation that I have merged the change.
     7. After the remote merge, pull the latest main version to the local main.

@@ -409,8 +409,9 @@ class TestSummarizeSingleEmailEndpoint:
             
             # Mock the default LLM properly
             mock_default_llm.invoke.return_value = mock_claude_response
-            
+
             # Also set the module-level variable
+
             import app
             app.gemini_llm = None
             

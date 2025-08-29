@@ -1,0 +1,5 @@
+---
+description: "Before any git push, always run the full suite of automation tests."
+globs:
+alwaysApply: true
+---
