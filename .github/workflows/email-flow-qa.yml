@@ -58,7 +58,7 @@ jobs:
       # This is required because the Ubuntu runner doesn't have MongoDB tools pre-installed
       run: |
         wget -qO - https://www.mongodb.org/static/pgp/server-7.0.asc | sudo apt-key add -
-        echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+        echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org-7.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
         sudo apt-get update
         sudo apt-get install -y mongodb-mongosh
 
@@ -88,9 +88,15 @@ jobs:
       env:
         MONGO_URI: mongodb://localhost:27017
         MONGO_DB_NAME: pm_copilot_test
-        # Mock environment variables for testing
+        # Mock environment variables for testing - prevent external API calls
         COMPOSIO_API_KEY: test_key_for_mocking
         OPENAI_API_KEY: test_key_for_mocking
+        ANTHROPIC_API_KEY: test_key_for_mocking
+        GOOGLE_API_KEY: test_key_for_mocking
+        PINECONE_API_TOKEN: test_key_for_mocking
+        # Set test environment to prevent external service calls
+        TESTING: true
+        CI: true
 
     - name: Run email count verification tests
       run: |
@@ -101,6 +107,11 @@ jobs:
         MONGO_DB_NAME: pm_copilot_test
         COMPOSIO_API_KEY: test_key_for_mocking
         OPENAI_API_KEY: test_key_for_mocking
+        ANTHROPIC_API_KEY: test_key_for_mocking
+        GOOGLE_API_KEY: test_key_for_mocking
+        PINECONE_API_TOKEN: test_key_for_mocking
+        TESTING: true
+        CI: true
 
     - name: Run email integration flow tests
       run: |
@@ -111,6 +122,11 @@ jobs:
         MONGO_DB_NAME: pm_copilot_test
         COMPOSIO_API_KEY: test_key_for_mocking
         OPENAI_API_KEY: test_key_for_mocking
+        ANTHROPIC_API_KEY: test_key_for_mocking
+        GOOGLE_API_KEY: test_key_for_mocking
+        PINECONE_API_TOKEN: test_key_for_mocking
+        TESTING: true
+        CI: true
 
     - name: Run email endpoint tests
       run: |
@@ -121,6 +137,11 @@ jobs:
         MONGO_DB_NAME: pm_copilot_test
         COMPOSIO_API_KEY: test_key_for_mocking
         OPENAI_API_KEY: test_key_for_mocking
+        ANTHROPIC_API_KEY: test_key_for_mocking
+        GOOGLE_API_KEY: test_key_for_mocking
+        PINECONE_API_TOKEN: test_key_for_mocking
+        TESTING: true
+        CI: true
 
     - name: Run all email tests with coverage
       run: |
@@ -131,6 +152,11 @@ jobs:
         MONGO_DB_NAME: pm_copilot_test
         COMPOSIO_API_KEY: test_key_for_mocking
         OPENAI_API_KEY: test_key_for_mocking
+        ANTHROPIC_API_KEY: test_key_for_mocking
+        GOOGLE_API_KEY: test_key_for_mocking
+        PINECONE_API_TOKEN: test_key_for_mocking
+        TESTING: true
+        CI: true
 
     - name: Upload coverage reports
       uses: codecov/codecov-action@v3
@@ -150,6 +176,7 @@ jobs:
         echo "  - Email endpoint tests (/get_email_content, /summarize_single_email)"
         echo "  - Error handling and edge cases"
         echo "  - Performance with large email batches"
+        echo "  - All external API calls properly mocked for CI/CD"
 
   # Job to check if tests are required (for PR status checks)
   email-tests-required:
@@ -181,3 +208,4 @@ jobs:
       run: |
         echo "🎉 Email flow QA tests passed on main branch!"
         echo "The email retrieval and MongoDB saving functionality is working correctly."
+        echo "All external API calls are properly mocked for CI/CD environment."

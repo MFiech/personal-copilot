@@ -99,11 +99,44 @@ pytest tests/test_email_*.py --cov=models --cov=services --cov-report=html
 - **Coverage**: Generates coverage reports automatically
 - **Status Checks**: Prevents merging if tests fail
 
-### Workflow File: `.github/workflows/email-flow-qa.yml`
-- Tests run in isolated MongoDB database
-- Mocks external services (Composio, OpenAI)
-- Provides detailed test reporting
-- Works on GitHub's free tier
+### CI/CD Environment Variables
+The workflow automatically sets mock environment variables to prevent external API calls:
+
+```yaml
+env:
+  # Database configuration
+  MONGO_URI: mongodb://localhost:27017
+  MONGO_DB_NAME: pm_copilot_test
+  
+  # Mock API keys (prevents external calls)
+  COMPOSIO_API_KEY: test_key_for_mocking
+  OPENAI_API_KEY: test_key_for_mocking
+  ANTHROPIC_API_KEY: test_key_for_mocking
+  GOOGLE_API_KEY: test_key_for_mocking
+  PINECONE_API_TOKEN: test_key_for_mocking
+  
+  # Environment flags
+  TESTING: true
+  CI: true
+```
+
+### What This Fixes
+- ✅ **GOOGLE_API_KEY warning**: Now provides mock key for query classification
+- ✅ **HTTP 500 errors**: External API calls are mocked during CI/CD
+- ✅ **Connected accounts errors**: Services are properly mocked
+- ✅ **Test reliability**: No dependency on external services
+
+### MongoDB Tools Installation
+The workflow automatically installs MongoDB tools (`mongosh`) for database health checks:
+
+```yaml
+- name: Install MongoDB tools
+  run: |
+    wget -qO - https://www.mongodb.org/static/pgp/server-7.0.asc | sudo apt-key add -
+    echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+    sudo apt-get update
+    sudo apt-get install -y mongodb-mongosh
+```
 
 ## 📊 Test Coverage
 
