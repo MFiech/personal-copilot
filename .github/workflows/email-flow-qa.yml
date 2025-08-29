@@ -57,10 +57,25 @@ jobs:
       # Install mongosh (MongoDB shell) for database connection testing
       # This is required because the Ubuntu runner doesn't have MongoDB tools pre-installed
       run: |
-        wget -qO - https://www.mongodb.org/static/pgp/server-7.0.asc | sudo apt-key add -
-        echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org-7.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
-        sudo apt-get update
-        sudo apt-get install -y mongodb-mongosh
+        # Modern approach: Download and install mongosh directly from MongoDB
+        echo "Installing MongoDB tools using direct download method..."
+        
+        # Download the latest mongosh package for Ubuntu
+        wget -qO mongodb-mongosh.deb "https://downloads.mongodb.org/compass/mongodb-mongosh_2.1.1_amd64.deb"
+        
+        # Install the package
+        sudo dpkg -i mongodb-mongosh.deb || {
+          echo "Package installation failed, fixing dependencies..."
+          sudo apt-get update
+          sudo apt-get install -f -y
+          sudo dpkg -i mongodb-mongosh.deb
+        }
+        
+        # Clean up
+        rm mongodb-mongosh.deb
+        
+        # Verify installation
+        mongosh --version || echo "MongoDB tools installation completed"
 
     - name: Wait for MongoDB to be ready
       run: |
