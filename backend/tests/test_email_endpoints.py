@@ -513,19 +513,19 @@ class TestSummarizeSingleEmailEndpoint:
                  patch('app.get_llm', return_value=mock_gemini_instance):
                 
                 with app.test_client() as client:
-                response = client.post('/summarize_single_email', 
-                                    json={
-                                        'email_id': email_id,
-                                        'thread_id': thread_id,
-                                        'assistant_message_id': assistant_message_id,
-                                        'email_content_full': email_content,
-                                        'email_content_truncated': email_content
-                                    })
-                
-                assert response.status_code == 429
-                data = response.get_json()
-                assert data['success'] is False
-                assert 'rate limit' in data['error'].lower()
+                    response = client.post('/summarize_single_email', 
+                                        json={
+                                            'email_id': email_id,
+                                            'thread_id': thread_id,
+                                            'assistant_message_id': assistant_message_id,
+                                            'email_content_full': email_content,
+                                            'email_content_truncated': email_content
+                                        })
+                    
+                    assert response.status_code == 429
+                    data = response.get_json()
+                    assert data['success'] is False
+                    assert 'rate limit' in data['error'].lower()
 
     def test_summarize_single_email_llm_failure(self, test_db, clean_collections):
         """
@@ -603,19 +603,19 @@ class TestSummarizeSingleEmailEndpoint:
                  patch('app.get_llm', return_value=mock_llm_instance):
                 
                 with app.test_client() as client:
-            response = client.post('/summarize_single_email', 
-                                json={
-                                    'email_id': email_id,
-                                    'thread_id': thread_id,
-                                    'assistant_message_id': assistant_message_id,
-                                    'email_content_full': email_content,
-                                    'email_content_truncated': email_content
-                                })
-            
-            # Should still work even if conversation not found (creates new one)
-            assert response.status_code == 200
-            data = response.get_json()
-            assert data['success'] is True
+                    response = client.post('/summarize_single_email', 
+                                        json={
+                                            'email_id': email_id,
+                                            'thread_id': thread_id,
+                                            'assistant_message_id': assistant_message_id,
+                                            'email_content_full': email_content,
+                                            'email_content_truncated': email_content
+                                        })
+                    
+                    # Should still work even if conversation not found (creates new one)
+                    assert response.status_code == 200
+                    data = response.get_json()
+                    assert data['success'] is True
 
 
 class TestEmailEndpointsIntegration:

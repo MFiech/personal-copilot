@@ -33,6 +33,7 @@ class TestEmailDataStructureRegression:
     But the code was looking for messages directly under tool_output.
     """
 
+    @pytest.mark.regression
     def test_nested_composio_data_extraction_working(self):
         """
         CRITICAL: Test that our fix for nested Composio data structure works correctly.
@@ -74,6 +75,7 @@ class TestEmailDataStructureRegression:
         assert len(messages_data) == 1, "Should extract the correct number of messages"
         assert messages_data[0]['messageId'] == '198efca4a33ef48d', "Should extract correct message ID"
 
+    @pytest.mark.regression
     def test_old_bug_reproduction(self):
         """
         CRITICAL: Reproduce the old bug to ensure we understand what was broken.
@@ -102,6 +104,7 @@ class TestEmailDataStructureRegression:
         assert new_fixed_extraction is not None, "New logic should succeed with nested structure"
         assert len(new_fixed_extraction) == 1, "Should extract messages correctly"
 
+    @pytest.mark.regression
     def test_both_data_structure_variations(self):
         """
         CRITICAL: Test that our fix handles both possible Composio response structures.
@@ -137,6 +140,7 @@ class TestEmailDataStructureRegression:
         assert messages_nested is not None, "Should handle nested structure"
         assert messages_nested[0]['messageId'] == 'nested_456'
 
+    @pytest.mark.regression
     def test_empty_or_malformed_data_structures(self):
         """
         Test edge cases that could break the email processing.
@@ -167,6 +171,7 @@ class TestEmailDataStructureRegression:
                 # If there's data, it should be valid
                 assert isinstance(messages_data, list)
 
+    @pytest.mark.regression
     def test_condition_logic_from_app_py(self):
         """
         CRITICAL: Test the exact conditional logic from app.py that was failing.
@@ -199,6 +204,7 @@ class TestEmailDataStructureRegression:
         assert len(new_condition) == 1, "Should have one message"
         assert new_condition[0]['messageId'] == '789', "Should have the correct message ID"
 
+    @pytest.mark.regression
     def test_debug_logging_regression(self):
         """
         Test that the debug logging we added helps identify when nested structure handling kicks in.

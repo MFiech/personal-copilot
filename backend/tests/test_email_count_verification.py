@@ -25,6 +25,7 @@ class TestEmailCountVerification:
     Critical tests to ensure email count consistency between retrieval and persistence.
     """
 
+    @pytest.mark.regression
     def test_email_count_matches_saved_emails(self, test_db, clean_collections, mock_composio_service):
         """
         CRITICAL: Verify that reported email count matches actually saved emails.
@@ -99,6 +100,7 @@ class TestEmailCountVerification:
         assert saved_count == expected_count, f"Saved {saved_count} emails to DB, expected {expected_count}"
         assert processed_count == saved_count, f"Processed count ({processed_count}) must match saved count ({saved_count})"
 
+    @pytest.mark.regression
     def test_zero_emails_scenario(self, test_db, clean_collections, mock_composio_service):
         """
         Test that zero emails are handled correctly.
@@ -131,6 +133,7 @@ class TestEmailCountVerification:
         assert processed_count == 0, "Should process 0 emails for empty response"
         assert saved_count == 0, "Should save 0 emails for empty response"
 
+    @pytest.mark.regression
     def test_large_email_batch_count_accuracy(self, test_db, clean_collections, mock_composio_service):
         """
         Test count accuracy with larger batches (simulating real-world usage).
@@ -193,6 +196,7 @@ class TestEmailCountVerification:
         assert processed_count == large_batch_size, f"Should process all {large_batch_size} emails"
         assert saved_count == large_batch_size, f"Should save all {large_batch_size} emails"
 
+    @pytest.mark.regression
     def test_conversation_collection_email_references(self, test_db, clean_collections, mock_composio_service):
         """
         CRITICAL: Verify that conversation collection contains correct email references.
@@ -259,6 +263,7 @@ class TestEmailCountVerification:
         for email_id in email_ids:
             assert email_id in saved_email_ids, f"Email ID {email_id} should be in conversation tool results"
 
+    @pytest.mark.regression
     def test_duplicate_email_handling(self, test_db, clean_collections, mock_composio_service):
         """
         Test that duplicate emails don't inflate the count.
