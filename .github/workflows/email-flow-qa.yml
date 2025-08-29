@@ -57,25 +57,44 @@ jobs:
       # Install mongosh (MongoDB shell) for database connection testing
       # This is required because the Ubuntu runner doesn't have MongoDB tools pre-installed
       run: |
-        # Modern approach: Download and install mongosh directly from MongoDB
-        echo "Installing MongoDB tools using direct download method..."
+        echo "Installing MongoDB tools using universal method..."
         
-        # Download the latest mongosh package for Ubuntu
-        wget -qO mongodb-mongosh.deb "https://downloads.mongodb.org/compass/mongodb-mongosh_2.1.1_amd64.deb"
-        
-        # Install the package
-        sudo dpkg -i mongodb-mongosh.deb || {
-          echo "Package installation failed, fixing dependencies..."
-          sudo apt-get update
-          sudo apt-get install -f -y
-          sudo dpkg -i mongodb-mongosh.deb
-        }
-        
-        # Clean up
-        rm mongodb-mongosh.deb
+        # Method 1: Try to install from Ubuntu universe repository (most reliable)
+        sudo apt-get update
+        if sudo apt-get install -y mongodb-clients; then
+          echo "MongoDB tools installed from Ubuntu repository"
+          # Create mongosh symlink if needed
+          if ! command -v mongosh &> /dev/null; then
+            sudo ln -sf /usr/bin/mongo /usr/local/bin/mongosh
+          fi
+        else
+          echo "Ubuntu repository method failed, trying alternative approaches..."
+          
+          # Method 2: Try snap installation
+          if command -v snap &> /dev/null; then
+            echo "Installing via snap..."
+            sudo snap install mongodb-mongosh --classic
+          else
+            echo "Snap not available, trying binary download..."
+            
+            # Method 3: Download pre-compiled binary
+            wget -qO mongosh.tgz "https://downloads.mongodb.org/linux/mongosh-2.1.1-linux-x64.tgz"
+            tar -xzf mongosh.tgz
+            sudo mv mongosh-2.1.1-linux-x64/bin/mongosh /usr/local/bin/
+            rm -rf mongosh.tgz mongosh-2.1.1-linux-x64
+          fi
+        fi
         
         # Verify installation
-        mongosh --version || echo "MongoDB tools installation completed"
+        if command -v mongosh &> /dev/null; then
+          echo "✅ MongoDB tools installed successfully"
+          mongosh --version
+        elif command -v mongo &> /dev/null; then
+          echo "✅ MongoDB tools installed (using mongo command)"
+          mongo --version
+        else
+          echo "⚠️ MongoDB tools installation may have failed, but continuing..."
+        fi
 
     - name: Wait for MongoDB to be ready
       run: |
