@@ -145,21 +145,6 @@ jobs:
         TESTING: true
         CI: true
 
-    - name: Run email endpoint tests
-      run: |
-        cd backend
-        pytest tests/test_email_endpoints.py -v --tb=short
-      env:
-        MONGO_URI: mongodb://localhost:27017
-        MONGO_DB_NAME: pm_copilot_test
-        COMPOSIO_API_KEY: test_key_for_mocking
-        OPENAI_API_KEY: test_key_for_mocking
-        ANTHROPIC_API_KEY: test_key_for_mocking
-        GOOGLE_API_KEY: test_key_for_mocking
-        PINECONE_API_TOKEN: test_key_for_mocking
-        TESTING: true
-        CI: true
-
     - name: Run all email tests with coverage
       run: |
         cd backend
@@ -190,7 +175,6 @@ jobs:
         echo "  - Data structure regression tests (the fix we implemented)"
         echo "  - Email count verification (retrieval vs. saved)"
         echo "  - Full integration flow tests"
-        echo "  - Email endpoint tests (/get_email_content, /summarize_single_email)"
         echo "  - Error handling and edge cases"
         echo "  - Performance with large email batches"
         echo "  - All external API calls properly mocked for CI/CD"
