@@ -349,7 +349,7 @@ class TestSummarizeSingleEmailEndpoint:
             mock_gemini_instance.invoke.return_value = mock_gemini_response
             mock_gemini.return_value = mock_gemini_instance
             
-            # Also set the module-level variable
+            # Also patch the module-level variable
             import app
             app.gemini_llm = mock_gemini_instance
             
@@ -410,7 +410,7 @@ class TestSummarizeSingleEmailEndpoint:
             # Mock the default LLM properly
             mock_default_llm.invoke.return_value = mock_claude_response
             
-            # Also set the module-level variable
+            # Also patch the module-level variable
             import app
             app.gemini_llm = None
             
@@ -491,7 +491,7 @@ class TestSummarizeSingleEmailEndpoint:
             mock_gemini_instance.invoke.side_effect = Exception("rate_limit_error: Too many requests")
             mock_gemini.return_value = mock_gemini_instance
             
-            # Also set the module-level variable
+            # Also patch the module-level variable
             import app
             app.gemini_llm = mock_gemini_instance
             
@@ -659,7 +659,7 @@ class TestEmailEndpointsIntegration:
             mock_gemini_instance.invoke.return_value = mock_gemini_response
             mock_gemini.return_value = mock_gemini_instance
             
-            # Also set the module-level variable
+            # Also patch the module-level variable
             import app
             app.gemini_llm = mock_gemini_instance
             
