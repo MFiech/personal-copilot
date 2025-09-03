@@ -604,11 +604,43 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
                         : [...prev, eventId]
                     );
                   }}
-                  onDelete={(eventId) => {
+                  onDelete={async (eventId) => {
                     console.log('Delete calendar event:', eventId);
-                    // TODO: Implement calendar event deletion via API
-                    if (showSnackbar) {
-                      showSnackbar('Calendar event deletion will be implemented soon', 'info');
+                    
+                    try {
+                      const response = await fetch('http://localhost:5001/delete_calendar_event', {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                          event_id: eventId,
+                          thread_id: threadId,
+                          message_id: messageId
+                        })
+                      });
+
+                      const result = await response.json();
+                      
+                      if (result.success) {
+                        if (showSnackbar) {
+                          showSnackbar('Calendar event deleted successfully', 'success');
+                        }
+                        // Remove the event from the UI by calling onUpdate to refresh
+                        if (onUpdate) {
+                          onUpdate();
+                        }
+                      } else {
+                        console.error('Failed to delete calendar event:', result.error);
+                        if (showSnackbar) {
+                          showSnackbar(`Failed to delete event: ${result.error}`, 'error');
+                        }
+                      }
+                    } catch (error) {
+                      console.error('Error deleting calendar event:', error);
+                      if (showSnackbar) {
+                        showSnackbar('Error deleting calendar event', 'error');
+                      }
                     }
                   }}
                   isAnchored={anchoredItem?.id === event.id}

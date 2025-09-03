@@ -1669,8 +1669,10 @@ def delete_calendar_event():
             }), 404
             
         # Delete from Google Calendar using Tooling service
+        print(f"🔴 [DELETE] Attempting to delete event {event_id} from Google Calendar...")
+        print(f"🔴 [DELETE] Event details: {matching_event}")
         delete_success = tooling_service.delete_calendar_event(event_id)
-        print(f"Google Calendar deletion result: {delete_success}")
+        print(f"🔴 [DELETE] Google Calendar deletion result: {delete_success}")
         
         if not delete_success:
             print(f"Failed to delete event from Google Calendar: {event_id}")

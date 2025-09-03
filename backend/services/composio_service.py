@@ -318,37 +318,64 @@ Respond with ONLY the JSON object, no additional text."""
                 return {"successful": False, "error": error_msg}
             
             # Execute the action using the new API
+            print(f"🔴 [COMPOSIO] Executing action: {action} with params: {params} on account: {connected_account_id}")
             response = self.composio.actions.execute(
                 action=action,
                 params=params or {},
                 connected_account=connected_account_id
             )
             
-            print(f"[DEBUG] Action execution response type: {type(response)}")
+            print(f"🔴 [COMPOSIO] Action execution response type: {type(response)}")
             
             # Safe logging of response to avoid printing issues
             try:
                 if isinstance(response, dict):
                     response_keys = list(response.keys()) if response else []
-                    print(f"[DEBUG] Response is dict with keys: {response_keys}")
-                    if len(str(response)) > 1000:
-                        print(f"[DEBUG] Response content too large to log ({len(str(response))} chars)")
-                    else:
-                        print(f"[DEBUG] Action execution response: {response}")
+                    print(f"🔴 [COMPOSIO] Response is dict with keys: {response_keys}")
+                    # Always log the full response for delete operations
+                    print(f"🔴 [COMPOSIO] Full response: {response}")
                 else:
-                    print(f"[DEBUG] Response attributes: {dir(response) if hasattr(response, '__dict__') else 'No attributes'}")
-                    print(f"[DEBUG] Action execution response: {str(response)[:500]}...")
+                    print(f"🔴 [COMPOSIO] Response attributes: {dir(response) if hasattr(response, '__dict__') else 'No attributes'}")
+                    print(f"🔴 [COMPOSIO] Action execution response: {str(response)[:500]}...")
             except Exception as log_error:
-                print(f"[WARNING] Could not log response safely: {log_error}")
+                print(f"🔴 [COMPOSIO] Could not log response safely: {log_error}")
             
             # The response format might be different, so let's handle it properly
             if hasattr(response, 'successful'):
-                print(f"[DEBUG] Response has 'successful' attribute: {response.successful}")
-                return {"successful": response.successful, "data": response.data if hasattr(response, 'data') else response}
+                print(f"🔴 [COMPOSIO] Response has 'successful' attribute: {response.successful}")
+                result = {"successful": response.successful, "data": response.data if hasattr(response, 'data') else response}
+                print(f"🔴 [COMPOSIO] Returning result: {result}")
+                return result
+            elif isinstance(response, dict):
+                # Handle dict response with potential typos in keys
+                success_key = None
+                if 'successful' in response:
+                    success_key = 'successful'
+                elif 'successfull' in response:  # Handle typo
+                    success_key = 'successfull'
+                
+                if success_key:
+                    success_value = response[success_key]
+                    print(f"🔴 [COMPOSIO] Found success key '{success_key}': {success_value}")
+                    result = {"successful": success_value, "data": response.get('data', response)}
+                    print(f"🔴 [COMPOSIO] Returning dict result: {result}")
+                    return result
+                else:
+                    print(f"🔴 [COMPOSIO] No success key found in dict response, checking for errors")
+                    if 'error' in response and response['error']:
+                        print(f"🔴 [COMPOSIO] Error found in response: {response['error']}")
+                        result = {"successful": False, "error": response['error'], "data": response}
+                    else:
+                        print(f"🔴 [COMPOSIO] No error found, assuming success")
+                        result = {"successful": True, "data": response}
+                    print(f"🔴 [COMPOSIO] Returning dict result: {result}")
+                    return result
             else:
-                print(f"[DEBUG] Response doesn't have 'successful' attribute, assuming success")
+                print(f"🔴 [COMPOSIO] Response doesn't have 'successful' attribute, assuming success")
                 # Assume success if no error was thrown
-                return {"successful": True, "data": response}
+                result = {"successful": True, "data": response}
+                print(f"🔴 [COMPOSIO] Returning assumed success result: {result}")
+                return result
             
         except Exception as e:
             print(f"Error executing action {str(action)}: {e}")
@@ -814,10 +841,10 @@ Respond with ONLY the JSON object, no additional text."""
             show_deleted: Include deleted events
         """
         params = {
-            "calendarId": calendar_id,
-            "maxResults": max_results,
-            "singleEvents": single_events,
-            "showDeleted": show_deleted
+            "calendarId": calendar_id,  # GOOGLECALENDAR_EVENTS_LIST expects camelCase
+            "max_results": max_results,
+            "single_events": single_events,
+            "show_deleted": show_deleted
         }
         
         # Add optional parameters
@@ -825,8 +852,12 @@ Respond with ONLY the JSON object, no additional text."""
             params["timeMin"] = time_min
         if time_max:
             params["timeMax"] = time_max
-        if order_by:
-            params["orderBy"] = order_by
+        # Only add orderBy if we don't have time filters (orderBy conflicts with timeMin/timeMax)
+        if order_by and not time_min and not time_max:
+            if order_by == "startTime":
+                params["orderBy"] = "startTime"
+            elif order_by == "updated":
+                params["orderBy"] = "updated"
             
         response = self._execute_action(
             action=Action.GOOGLECALENDAR_EVENTS_LIST,
@@ -895,7 +926,7 @@ Respond with ONLY the JSON object, no additional text."""
         
         # Build parameters following Composio schema (not Google Calendar API format)
         params = {
-            "calendarId": calendar_id,
+            "calendarId": calendar_id,  # GOOGLECALENDAR_CREATE_EVENT expects camelCase
             "summary": summary,
             "start_datetime": start_time,  # Flat field format for Composio
             "end_datetime": end_time       # Flat field format for Composio
@@ -957,8 +988,8 @@ Respond with ONLY the JSON object, no additional text."""
         """
         # Build parameters with proper schema structure
         params = {
-            "calendarId": calendar_id,
-            "eventId": event_id
+            "calendarId": calendar_id,  # GOOGLECALENDAR_UPDATE_EVENT expects camelCase
+            "event_id": event_id        # But event_id stays snake_case
         }
         
         # Add optional parameters with proper structure
@@ -990,17 +1021,38 @@ Respond with ONLY the JSON object, no additional text."""
         """
         Delete a calendar event using proper schema structure.
         """
+        print(f"🔴 [COMPOSIO] Starting delete_calendar_event for event_id: {event_id}, calendar_id: {calendar_id}")
+        
         params = {
-            "calendarId": calendar_id,  # Using camelCase as per schema
-            "eventId": event_id
+            "calendar_id": calendar_id,  # Using snake_case as per Composio schema
+            "event_id": event_id
         }
+        
+        print(f"🔴 [COMPOSIO] Delete params: {params}")
+        print(f"🔴 [COMPOSIO] Using action: {Action.GOOGLECALENDAR_DELETE_EVENT}")
         
         response = self._execute_action(
             action=Action.GOOGLECALENDAR_DELETE_EVENT,
             params=params
         )
         
-        return response and response.get("successful", False)
+        print(f"🔴 [COMPOSIO] Raw response from _execute_action: {response}")
+        
+        success = response and response.get("successful", False)
+        print(f"🔴 [COMPOSIO] Final success result: {success}")
+        
+        if not success:
+            print(f"🔴 [COMPOSIO] Delete failed - response details: {response}")
+            if response:
+                print(f"🔴 [COMPOSIO] Response keys: {list(response.keys()) if isinstance(response, dict) else 'Not a dict'}")
+                if 'error' in response:
+                    print(f"🔴 [COMPOSIO] Error details: {response['error']}")
+                if 'data' in response:
+                    print(f"🔴 [COMPOSIO] Response data: {response['data']}")
+        else:
+            print(f"🔴 [COMPOSIO] Delete appears successful - response data: {response.get('data', 'No data field')}")
+        
+        return success
 
     def get_events_for_date(self, date=None):
         """
