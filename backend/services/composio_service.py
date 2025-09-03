@@ -325,12 +325,28 @@ Respond with ONLY the JSON object, no additional text."""
             )
             
             print(f"[DEBUG] Action execution response type: {type(response)}")
-            print(f"[DEBUG] Action execution response: {response}")
+            
+            # Safe logging of response to avoid printing issues
+            try:
+                if isinstance(response, dict):
+                    response_keys = list(response.keys()) if response else []
+                    print(f"[DEBUG] Response is dict with keys: {response_keys}")
+                    if len(str(response)) > 1000:
+                        print(f"[DEBUG] Response content too large to log ({len(str(response))} chars)")
+                    else:
+                        print(f"[DEBUG] Action execution response: {response}")
+                else:
+                    print(f"[DEBUG] Response attributes: {dir(response) if hasattr(response, '__dict__') else 'No attributes'}")
+                    print(f"[DEBUG] Action execution response: {str(response)[:500]}...")
+            except Exception as log_error:
+                print(f"[WARNING] Could not log response safely: {log_error}")
             
             # The response format might be different, so let's handle it properly
             if hasattr(response, 'successful'):
+                print(f"[DEBUG] Response has 'successful' attribute: {response.successful}")
                 return {"successful": response.successful, "data": response.data if hasattr(response, 'data') else response}
             else:
+                print(f"[DEBUG] Response doesn't have 'successful' attribute, assuming success")
                 # Assume success if no error was thrown
                 return {"successful": True, "data": response}
             
@@ -817,8 +833,10 @@ Respond with ONLY the JSON object, no additional text."""
             params=params
         )
         if response and response.get("successful"):
+            print(f"[DEBUG] GOOGLECALENDAR_EVENTS_LIST successful, data keys: {list(response.get('data', {}).keys()) if isinstance(response.get('data'), dict) else 'Not a dict'}")
             return {"data": response.get("data", {})}
         else:
+            print(f"[ERROR] GOOGLECALENDAR_EVENTS_LIST failed - Response: {response}")
             return {"error": response.get("error") if response else "No response received"}
 
     def find_events(self, query=None, calendar_id="primary", time_min=None, time_max=None, 
