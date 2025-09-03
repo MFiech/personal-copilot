@@ -774,10 +774,14 @@ def chat():
                             if created_event:
                                 events = [created_event]
                             print(f"[DEBUG] Processing calendar creation response with 1 created event")
+                        elif 'data' in calendar_data and isinstance(calendar_data['data'], dict) and 'items' in calendar_data['data']:
+                            # Nested items in calendar_data.data.items (Composio structure) - for database storage
+                            events = calendar_data['data'].get('items', [])
+                            print(f"[DEBUG] Processing calendar search response with {len(events)} events (nested items for DB)")
                         elif 'items' in calendar_data:
-                            # This is a search/list response with multiple events
+                            # Direct items in calendar_data.items (legacy compatibility) - for database storage
                             events = calendar_data.get('items', [])
-                            print(f"[DEBUG] Processing calendar search response with {len(events)} events")
+                            print(f"[DEBUG] Processing calendar search response with {len(events)} events (direct items for DB)")
                         else:
                             # Fallback: check if calendar_data itself is an event object
                             if isinstance(calendar_data, dict) and 'id' in calendar_data:
@@ -836,8 +840,15 @@ def chat():
                     'data': calendar_data  # Pass the whole data including created_event
                 }
             else:
-                # This is a search response - extract events list
-                events = calendar_data.get('items', []) if calendar_data else []
+                # This is a search response - extract events list with nested structure handling
+                events = []
+                if calendar_data:
+                    if 'data' in calendar_data and isinstance(calendar_data['data'], dict) and 'items' in calendar_data['data']:
+                        # Nested items in calendar_data.data.items (Composio structure)
+                        events = calendar_data['data'].get('items', [])
+                    elif 'items' in calendar_data:
+                        # Direct items in calendar_data.items (legacy compatibility)
+                        events = calendar_data.get('items', [])
                 tool_context = {
                     'source_type': 'google-calendar',
                     'data': {
