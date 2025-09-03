@@ -142,3 +142,102 @@ def mock_openai_client():
         mock_client.chat.completions.create.return_value = mock_response
         
         yield mock_client
+
+
+# Calendar Testing Fixtures
+@pytest.fixture
+def mock_composio_calendar_service():
+    """Mock Composio calendar service with realistic responses"""
+    with patch('services.composio_service.ComposioService') as mock_service:
+        mock_instance = Mock()
+        mock_service.return_value = mock_instance
+        
+        # Import calendar helpers here to avoid circular imports
+        import sys
+        import os
+        backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        sys.path.insert(0, backend_dir)
+        from tests.test_utils.calendar_helpers import create_mock_calendar_search_response
+        
+        # Configure calendar search response (the nested structure we fixed)
+        search_response = create_mock_calendar_search_response('this_week', 2)
+        mock_instance.process_query.return_value = {
+            'source_type': 'google-calendar',
+            'content': 'Events fetched.',
+            'data': search_response['data'],
+            'search_context': {
+                'date_range': 'this_week',
+                'search_method': 'list_events (time-based)'
+            }
+        }
+        
+        # Configure individual calendar methods
+        mock_instance.list_events.return_value = {"data": search_response['data']}
+        mock_instance.find_events.return_value = {"data": search_response['data']}
+        mock_instance.create_calendar_event.return_value = {
+            'source_type': 'google-calendar',
+            'content': 'Successfully created calendar event',
+            'data': {'id': 'created_123', 'summary': 'Test Event'},
+            'action_performed': 'create'
+        }
+        mock_instance.update_calendar_event.return_value = {"data": {'id': 'updated_123'}}
+        mock_instance.delete_calendar_event.return_value = True
+        
+        # Set up account status
+        mock_instance.calendar_account_id = '06747a1e-ff62-4c16-9869-4c214eebc920'
+        mock_instance.client_available = True
+        
+        yield mock_instance
+
+
+@pytest.fixture  
+def mock_calendar_creation_response():
+    """Mock successful calendar event creation"""
+    from tests.test_utils.calendar_helpers import create_mock_calendar_creation_response
+    return create_mock_calendar_creation_response(
+        title="Test Created Event",
+        start_time="2025-09-04T15:00:00+02:00"
+    )
+
+
+@pytest.fixture
+def mock_composio_calendar_errors():
+    """Mock various Composio calendar error scenarios"""
+    from tests.test_utils.calendar_helpers import create_mock_composio_errors
+    return create_mock_composio_errors()
+
+
+@pytest.fixture
+def sample_calendar_events():
+    """Sample calendar events for testing"""
+    from tests.test_utils.calendar_helpers import create_mock_calendar_event
+    return [
+        create_mock_calendar_event(
+            event_id='test_event_1',
+            title='Test Meeting 1',
+            start_time='2025-09-03T14:00:00+02:00',
+            end_time='2025-09-03T15:00:00+02:00',
+            location='Room A'
+        ),
+        create_mock_calendar_event(
+            event_id='test_event_2', 
+            title='Test Meeting 2',
+            start_time='2025-09-03T16:00:00+02:00',
+            end_time='2025-09-03T17:00:00+02:00',
+            attendees=['attendee@example.com']
+        )
+    ]
+
+
+@pytest.fixture
+def calendar_test_queries():
+    """Common calendar query patterns for testing"""
+    return {
+        'search_this_week': "What plans do I have scheduled for this week?",
+        'search_today': "What meetings do I have today?",
+        'search_tomorrow': "Show me tomorrow's calendar",
+        'create_meeting': "Schedule a meeting with John at 3pm tomorrow",
+        'create_detailed': "Create a meeting called 'Project Review' tomorrow at 2pm in Room A with john@example.com",
+        'ambiguous': "What about next week?",
+        'empty_result': "Do I have any meetings on Christmas?"
+    }
