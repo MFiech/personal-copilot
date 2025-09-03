@@ -198,15 +198,3 @@ jobs:
           exit 1
         fi
 
-  # Optional: Deploy or notify on success (you can customize this)
-  notify-success:
-    name: Notify Success
-    runs-on: ubuntu-latest
-    needs: email-flow-tests
-    if: success() && github.ref == 'refs/heads/main'
-    steps:
-    - name: Success notification
-      run: |
-        echo "🎉 Email flow QA tests passed on main branch!"
-        echo "The email retrieval and MongoDB saving functionality is working correctly."
-        echo "All external API calls are properly mocked for CI/CD environment."
