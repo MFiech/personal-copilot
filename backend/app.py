@@ -2283,6 +2283,167 @@ def get_email_content():
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
+@app.route('/emails/threads', methods=['GET'])
+def get_email_threads():
+    """Get grouped email threads"""
+    try:
+        limit = request.args.get('limit', 50, type=int)
+        
+        # Get grouped threads from Email model
+        result = Email.get_gmail_threads_grouped(limit=limit)
+        
+        return jsonify({
+            'success': True,
+            'data': result
+        }), 200
+        
+    except Exception as e:
+        print(f"[ERROR] Exception in get_email_threads: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/emails/thread/<gmail_thread_id>', methods=['GET'])
+def get_email_thread(gmail_thread_id):
+    """Get specific email thread by Gmail thread ID"""
+    try:
+        # Get emails in the thread
+        emails = Email.get_by_gmail_thread_id(gmail_thread_id)
+        
+        if not emails:
+            return jsonify({
+                'success': False,
+                'error': 'Thread not found'
+            }), 404
+        
+        # Convert ObjectId to string for JSON serialization
+        serializable_emails = []
+        for email in emails:
+            email_dict = email.copy()
+            if '_id' in email_dict:
+                email_dict['_id'] = str(email_dict['_id'])
+            serializable_emails.append(email_dict)
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'gmail_thread_id': gmail_thread_id,
+                'email_count': len(serializable_emails),
+                'emails': serializable_emails
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"[ERROR] Exception in get_email_thread: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/emails/thread/<gmail_thread_id>/full', methods=['GET'])
+def get_full_email_thread(gmail_thread_id):
+    """Get full email thread with processed content"""
+    try:
+        # Get emails in the thread
+        emails = Email.get_by_gmail_thread_id(gmail_thread_id)
+        
+        if not emails:
+            return jsonify({
+                'success': False,
+                'error': 'Thread not found'
+            }), 404
+        
+        # Process each email to get full content
+        processed_emails = []
+        for email in emails:
+            email_dict = email.copy()
+            
+            # Get the full content for this email using the existing get_email_content endpoint logic
+            try:
+                # Use the tooling service to get full email content
+                if tooling_service:
+                    email_content = tooling_service.get_email_details(email_dict.get('email_id'))
+                    if email_content:
+                        # Process the content to extract HTML and convert to text
+                        html_content = ""
+                        text_content = ""
+                        
+                        # If it's HTML content, convert to markdown
+                        if email_content.startswith('<'):
+                            html_content = email_content
+                            # Convert HTML to markdown using html2text
+                            try:
+                                import html2text
+                                h = html2text.HTML2Text()
+                                h.ignore_links = False
+                                h.ignore_images = False
+                                h.body_width = 0  # Don't wrap text
+                                text_content = h.handle(html_content)
+                            except ImportError:
+                                # Fallback to simple HTML stripping if html2text is not available
+                                import re
+                                text_content = re.sub('<[^<]+?>', '', email_content)
+                                text_content = re.sub(r'\s+', ' ', text_content).strip()
+                        else:
+                            text_content = email_content
+                            # Create simple HTML wrapper for text content
+                            html_content = f"<html><body><pre>{email_content}</pre></body></html>"
+                        
+                        # Ensure text_content is always a string
+                        if text_content is None:
+                            text_content = ""
+                        
+                        email_dict['content'] = {
+                            'html': html_content,
+                            'text': text_content
+                        }
+                    else:
+                        # Fallback to existing content if available
+                        email_dict['content'] = {
+                            'html': email_dict.get('content', {}).get('html', ''),
+                            'text': email_dict.get('content', {}).get('text', '')
+                        }
+                else:
+                    # No tooling service, use existing content
+                    email_dict['content'] = {
+                        'html': email_dict.get('content', {}).get('html', ''),
+                        'text': email_dict.get('content', {}).get('text', '')
+                    }
+            except Exception as e:
+                print(f"[ERROR] Failed to process content for email {email_dict.get('email_id')}: {str(e)}")
+                # Use existing content as fallback
+                email_dict['content'] = {
+                    'html': email_dict.get('content', {}).get('html', ''),
+                    'text': email_dict.get('content', {}).get('text', '')
+                }
+            
+            processed_emails.append(email_dict)
+        
+        # Sort emails by date (oldest first - chronological order)
+        processed_emails.sort(key=lambda x: x.get('date', ''), reverse=False)
+        
+        # Convert ObjectId to string for JSON serialization
+        serializable_emails = []
+        for email in processed_emails:
+            email_dict = email.copy()
+            if '_id' in email_dict:
+                email_dict['_id'] = str(email_dict['_id'])
+            serializable_emails.append(email_dict)
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'gmail_thread_id': gmail_thread_id,
+                'email_count': len(serializable_emails),
+                'emails': serializable_emails
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"[ERROR] Exception in get_full_email_thread: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/test_pagination', methods=['POST'])
 def test_pagination():
     """
