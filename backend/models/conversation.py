@@ -294,4 +294,53 @@ class Conversation:
             return result
         except Exception as e:
             print(f"Error in find_one: {str(e)}")
-            return None 
+            return None
+
+    @classmethod
+    def delete_by_thread_id(cls, thread_id):
+        """
+        Delete all conversations in a thread by thread_id.
+        
+        Args:
+            thread_id (str): The thread ID to delete all conversations for
+            
+        Returns:
+            int: Number of conversations deleted
+        """
+        try:
+            collection = get_collection(CONVERSATIONS_COLLECTION)
+            result = collection.delete_many({'thread_id': thread_id})
+            print(f"[DEBUG] Deleted {result.deleted_count} conversations for thread_id: {thread_id}")
+            return result.deleted_count
+        except Exception as e:
+            print(f"Error deleting conversations for thread_id {thread_id}: {str(e)}")
+            return 0
+
+    @classmethod
+    def delete_test_conversations(cls):
+        """
+        Delete all conversations that appear to be from tests (contain 'test' in thread_id).
+        This is a cleanup method for test environments.
+        
+        Returns:
+            int: Number of conversations deleted
+        """
+        try:
+            collection = get_collection(CONVERSATIONS_COLLECTION)
+            # Delete conversations with thread_ids containing 'test', 'integration', 'e2e', etc.
+            test_patterns = ['test', 'integration', 'e2e', 'workflow', 'sample']
+            total_deleted = 0
+            
+            for pattern in test_patterns:
+                result = collection.delete_many({
+                    'thread_id': {'$regex': pattern, '$options': 'i'}
+                })
+                total_deleted += result.deleted_count
+                if result.deleted_count > 0:
+                    print(f"[DEBUG] Deleted {result.deleted_count} conversations matching pattern: {pattern}")
+            
+            print(f"[DEBUG] Total test conversations deleted: {total_deleted}")
+            return total_deleted
+        except Exception as e:
+            print(f"Error deleting test conversations: {str(e)}")
+            return 0 
