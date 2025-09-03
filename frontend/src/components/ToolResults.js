@@ -604,6 +604,13 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
                         : [...prev, eventId]
                     );
                   }}
+                  onDelete={(eventId) => {
+                    console.log('Delete calendar event:', eventId);
+                    // TODO: Implement calendar event deletion via API
+                    if (showSnackbar) {
+                      showSnackbar('Calendar event deletion will be implemented soon', 'info');
+                    }
+                  }}
                   isAnchored={anchoredItem?.id === event.id}
                   onAnchor={() => handleAnchorSelect(event, 'calendar_event')}
                 />

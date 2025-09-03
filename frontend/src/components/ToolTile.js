@@ -142,8 +142,23 @@ const ToolTile = ({
           </div>
         </>
       ) : (
-        // Calendar tile layout - no external checkbox or actions
-        renderCalendarContent()
+        // Calendar tile layout with actions
+        <>
+          {renderCalendarContent()}
+          {(onAnchor || onDelete) && (
+            <div className="calendar-bottom-actions">
+              {onDelete && (
+                <button 
+                  className="calendar-delete-btn"
+                  onClick={handleDeleteClick}
+                  title="Delete event"
+                >
+                  🗑️
+                </button>
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
