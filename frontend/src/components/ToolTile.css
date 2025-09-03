@@ -269,4 +269,37 @@
 
 .calendar-delete-btn:hover {
   background: #cc0000;
+}
+
+/* Calendar delete icon in top row */
+.calendar-delete-btn-icon {
+  background: none;
+  border: 1px solid #ccc;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  color: #ff4444;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  opacity: 0;
+}
+
+.veyra-tile:hover .calendar-delete-btn-icon {
+  opacity: 1;
+}
+
+.calendar-delete-btn-icon:hover {
+  background-color: #ffebee;
+  border-color: #ff4444;
+  color: #d32f2f;
+}
+
+.calendar-delete-btn-icon svg {
+  font-size: 14px;
+  width: 14px;
+  height: 14px;
 } 

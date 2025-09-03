@@ -543,27 +543,33 @@ def chat():
         raw_email_list = None
 
         # Step 0: Pre-check for draft creation intent to avoid calling tooling service
+        # BUT skip this check if we have an anchored item - anchored items should always process through tooling service
         print(f"\n=== Checking for Draft Creation Intent ===")
         should_skip_tooling = False
         draft_detection_result = None  # Store result to reuse later
-        try:
-            from services.draft_service import DraftService
-            draft_service = DraftService()
-            
-            # Single draft intent detection - reuse this result later
-            draft_detection_result = draft_service.detect_draft_intent(query, thread_history)
-            
-            if draft_detection_result.get("is_draft_intent"):
-                print(f"[DRAFT] Draft intent detected - SKIPPING tooling service to prevent auto-creation")
-                print(f"[DraftService] Draft detection result: {draft_detection_result}")
-                should_skip_tooling = True
-            else:
-                print(f"[DRAFT] No draft intent detected - proceeding with normal tooling flow")
-                
-        except Exception as e:
-            print(f"[DRAFT] Error in draft detection: {e}")
-            # If draft detection fails, proceed with normal flow
+        
+        if anchored_item:
+            print(f"[DRAFT] Anchored item detected - SKIPPING draft detection, going straight to tooling service")
             should_skip_tooling = False
+        else:
+            try:
+                from services.draft_service import DraftService
+                draft_service = DraftService()
+                
+                # Single draft intent detection - reuse this result later
+                draft_detection_result = draft_service.detect_draft_intent(query, thread_history)
+                
+                if draft_detection_result.get("is_draft_intent"):
+                    print(f"[DRAFT] Draft intent detected - SKIPPING tooling service to prevent auto-creation")
+                    print(f"[DraftService] Draft detection result: {draft_detection_result}")
+                    should_skip_tooling = True
+                else:
+                    print(f"[DRAFT] No draft intent detected - proceeding with normal tooling flow")
+                    
+            except Exception as e:
+                print(f"[DRAFT] Error in draft detection: {e}")
+                # If draft detection fails, proceed with normal flow
+                should_skip_tooling = False
 
         if tooling_service and not should_skip_tooling:
             print(f"[DEBUG] Tooling service is available, starting processing...")
@@ -993,19 +999,25 @@ def chat():
         print(f"User message saved. message_id: {user_message.message_id}, role: {user_message.role}, content: {user_message.content[:100] if user_message.content else 'None'}...")
 
         # Step 1.5: Check for draft creation intent
+        # BUT skip this if we have an anchored item - anchored items should not create drafts
         print(f"\n=== Processing Draft Operations ===")
         draft_created = None
         try:
-            # Reuse the draft service and detection result from earlier
-            if 'draft_service' not in locals():
-                from services.draft_service import DraftService
-                draft_service = DraftService()
-            
-            # First check if there are existing active drafts in this thread
-            existing_drafts = draft_service.get_active_drafts_by_thread(thread_id)
-            
-            # Reuse the detection result from the pre-check (no duplicate call)
-            detection_result = draft_detection_result
+            # Skip draft processing entirely if we have an anchored item
+            if anchored_item:
+                print(f"[DRAFT] Anchored item detected - SKIPPING all draft operations")
+                detection_result = None
+            else:
+                # Reuse the draft service and detection result from earlier
+                if 'draft_service' not in locals():
+                    from services.draft_service import DraftService
+                    draft_service = DraftService()
+                
+                # First check if there are existing active drafts in this thread
+                existing_drafts = draft_service.get_active_drafts_by_thread(thread_id)
+                
+                # Reuse the detection result from the pre-check (no duplicate call)
+                detection_result = draft_detection_result
             
             if (not mail_mode) and detection_result and detection_result.get("is_draft_intent"):
                 print(f"[DRAFT] Draft intent detected: {detection_result}")
