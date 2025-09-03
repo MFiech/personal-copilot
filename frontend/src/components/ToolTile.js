@@ -1,5 +1,6 @@
 import React from 'react';
 import AnchorIcon from '@mui/icons-material/Anchor';
+import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import './ToolTile.css';
 
 const ToolTile = ({ 
@@ -81,16 +82,15 @@ const ToolTile = ({
                 <AnchorIcon />
               </button>
             )}
-                         <input
-               type="checkbox"
-               className="calendar-checkbox"
-               checked={isSelected}
-               onChange={(e) => {
-                 e.stopPropagation();
-                 if (onSelect) onSelect();
-               }}
-               onClick={(e) => e.stopPropagation()}
-             />
+            {onDelete && (
+              <button 
+                className="calendar-delete-btn-icon"
+                onClick={handleDeleteClick}
+                title="Delete event"
+              >
+                <DeleteOutlinedIcon />
+              </button>
+            )}
           </div>
         </div>
         <div className="calendar-title" title={title}>{title}</div>
@@ -142,7 +142,7 @@ const ToolTile = ({
           </div>
         </>
       ) : (
-        // Calendar tile layout - no external checkbox or actions
+        // Calendar tile layout
         renderCalendarContent()
       )}
     </div>

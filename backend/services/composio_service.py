@@ -1907,6 +1907,109 @@ Respond with ONLY the JSON object."""
                 
         return False
 
+    def _parse_time_modification(self, query_lower, item_data):
+        """
+        Parse time modification requests like "move 3 hours later", "shift 30 minutes earlier"
+        """
+        import re
+        from datetime import datetime, timedelta
+        
+        # Get current start and end times
+        current_start = item_data.get('start', {})
+        current_end = item_data.get('end', {})
+        
+        start_time_str = current_start.get('dateTime')
+        end_time_str = current_end.get('dateTime')
+        
+        if not start_time_str or not end_time_str:
+            print(f"[DEBUG] Missing start/end time for calendar modification: start={start_time_str}, end={end_time_str}")
+            return None
+        
+        try:
+            # Parse current times (handle timezone)
+            start_datetime = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
+            end_datetime = datetime.fromisoformat(end_time_str.replace('Z', '+00:00'))
+            
+            # Extract timezone info for later use
+            timezone_str = start_time_str[-6:] if start_time_str.endswith(('+', '-')) else None
+            
+            # Parse time modification patterns
+            patterns = [
+                # "move 3 hours later", "shift 2 hours later"
+                r'(?:move|shift)\s+(\d+)\s+(hour|hours?|hr|hrs?)\s+(later|forward)',
+                # "move 30 minutes later"
+                r'(?:move|shift)\s+(\d+)\s+(minute|minutes?|min|mins?)\s+(later|forward)',
+                # "move 3 hours earlier", "shift 1 hour earlier"  
+                r'(?:move|shift)\s+(\d+)\s+(hour|hours?|hr|hrs?)\s+(earlier|backward|back)',
+                # "move 15 minutes earlier"
+                r'(?:move|shift)\s+(\d+)\s+(minute|minutes?|min|mins?)\s+(earlier|backward|back)',
+                # "3 hours later"
+                r'(\d+)\s+(hour|hours?|hr|hrs?)\s+(later|forward)',
+                # "30 minutes later" 
+                r'(\d+)\s+(minute|minutes?|min|mins?)\s+(later|forward)',
+                # "2 hours earlier"
+                r'(\d+)\s+(hour|hours?|hr|hrs?)\s+(earlier|backward|back)',
+                # "45 minutes earlier"
+                r'(\d+)\s+(minute|minutes?|min|mins?)\s+(earlier|backward|back)'
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, query_lower)
+                if match:
+                    amount = int(match.group(1))
+                    unit = match.group(2)
+                    direction = match.group(3)
+                    
+                    # Calculate time delta
+                    if unit.startswith('hour') or unit.startswith('hr'):
+                        delta = timedelta(hours=amount)
+                    else:  # minutes
+                        delta = timedelta(minutes=amount)
+                    
+                    # Apply direction
+                    if direction in ['earlier', 'backward', 'back']:
+                        delta = -delta
+                    
+                    # Calculate new times
+                    new_start = start_datetime + delta
+                    new_end = end_datetime + delta
+                    
+                    # Format back to ISO string with timezone
+                    new_start_str = new_start.isoformat()
+                    new_end_str = new_end.isoformat()
+                    
+                    # Preserve original timezone format if it was there
+                    if timezone_str:
+                        new_start_str = new_start_str.replace('+00:00', timezone_str)
+                        new_end_str = new_end_str.replace('+00:00', timezone_str)
+                    
+                    # Create description
+                    direction_text = "later" if direction in ['later', 'forward'] else "earlier"
+                    unit_text = "hours" if unit.startswith('hour') else "minutes"
+                    description = f"{amount} {unit_text} {direction_text}"
+                    
+                    print(f"[DEBUG] Parsed time modification: {description}")
+                    print(f"[DEBUG] Old time: {start_time_str} - {end_time_str}")
+                    print(f"[DEBUG] New time: {new_start_str} - {new_end_str}")
+                    
+                    return {
+                        'old_start': start_time_str,
+                        'old_end': end_time_str,
+                        'new_start': new_start_str,
+                        'new_end': new_end_str,
+                        'description': description,
+                        'amount': amount,
+                        'unit': unit_text,
+                        'direction': direction
+                    }
+            
+            print(f"[DEBUG] No time modification pattern matched for: {query_lower}")
+            return None
+            
+        except Exception as e:
+            print(f"[DEBUG] Error parsing time modification: {e}")
+            return None
+
     def _handle_anchored_item_action(self, query, anchored_item):
         """
         Handle actions on anchored items like "Reply to this email" or "Modify the date of this event"
@@ -1963,21 +2066,62 @@ Respond with ONLY the JSON object."""
         
         elif item_type == 'calendar_event':
             # Handle calendar event actions
-            if any(word in query_lower for word in ["modify", "update", "change", "edit", "reschedule"]):
-                # For calendar modifications, we need to understand what to change
-                return {
-                    "source_type": "google-calendar",
-                    "action": "modify",
-                    "content": f"I understand you want to modify the event '{item_data.get('summary', 'Untitled Event')}'. What would you like to change? (e.g., date, time, location, title)",
-                    "data": {
-                        "event_id": item_id,
-                        "current_summary": item_data.get('summary'),
-                        "current_start": item_data.get('start'),
-                        "current_end": item_data.get('end'),
-                        "current_location": item_data.get('location'),
-                        "action_type": "modify_event"
+            if any(word in query_lower for word in ["modify", "update", "change", "edit", "reschedule", "move", "shift"]):
+                # Try to parse time modifications first
+                time_change = self._parse_time_modification(query_lower, item_data)
+                if time_change:
+                    try:
+                        # Perform the actual calendar update
+                        result = self.update_calendar_event(
+                            event_id=item_id,
+                            start_time=time_change['new_start'],
+                            end_time=time_change['new_end']
+                        )
+                        if result and not result.get("error"):
+                            return {
+                                "source_type": "google-calendar",
+                                "action": "update_time",
+                                "content": f"Successfully moved '{item_data.get('summary', 'Untitled Event')}' {time_change['description']}",
+                                "data": {
+                                    "event_id": item_id,
+                                    "old_start": time_change['old_start'],
+                                    "old_end": time_change['old_end'],
+                                    "new_start": time_change['new_start'],
+                                    "new_end": time_change['new_end'],
+                                    "action_type": "time_updated",
+                                    "success": True
+                                }
+                            }
+                        else:
+                            error_msg = result.get("error") if result else "Unknown error"
+                            return {
+                                "source_type": "google-calendar",
+                                "action": "update_time",
+                                "content": f"Failed to move the event: {error_msg}",
+                                "data": {"event_id": item_id, "action_type": "time_update_failed", "success": False, "error": error_msg}
+                            }
+                    except Exception as e:
+                        return {
+                            "source_type": "google-calendar",
+                            "action": "update_time",
+                            "content": f"Error updating event time: {str(e)}",
+                            "data": {"event_id": item_id, "action_type": "time_update_failed", "success": False, "error": str(e)}
+                        }
+                else:
+                    # For general modifications, we need to understand what to change
+                    return {
+                        "source_type": "google-calendar",
+                        "action": "modify",
+                        "content": f"I understand you want to modify the event '{item_data.get('summary', 'Untitled Event')}'. What would you like to change? (e.g., date, time, location, title)",
+                        "data": {
+                            "event_id": item_id,
+                            "current_summary": item_data.get('summary'),
+                            "current_start": item_data.get('start'),
+                            "current_end": item_data.get('end'),
+                            "current_location": item_data.get('location'),
+                            "action_type": "modify_event"
+                        }
                     }
-                }
             elif any(word in query_lower for word in ["delete", "cancel", "remove"]):
                 # Handle calendar event deletion
                 try:
