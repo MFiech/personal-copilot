@@ -45,7 +45,7 @@ class TestEmailIntegrationFlow:
         expected_emails = [
             {
                 'messageId': 'integration_email_1',
-                'threadId': 'email_thread_1',
+                'thread_id': 'email_thread_1',
                 'subject': 'Integration Test Email 1',
                 'messageText': 'This is integration test email 1',
                 'date': '1640995200',
@@ -56,7 +56,7 @@ class TestEmailIntegrationFlow:
             },
             {
                 'messageId': 'integration_email_2', 
-                'threadId': 'email_thread_2',
+                'thread_id': 'email_thread_2',
                 'subject': 'Integration Test Email 2',
                 'messageText': 'This is integration test email 2',
                 'date': '1640995300',
@@ -111,7 +111,7 @@ class TestEmailIntegrationFlow:
                 
                 for composio_email in messages_data:
                     email_id = composio_email.get('messageId')
-                    thread_id = composio_email.get('threadId')
+                    thread_id = composio_email.get('thread_id')
                     subject = composio_email.get('subject', 'No Subject')
                     
                     # Parse from email
@@ -135,7 +135,7 @@ class TestEmailIntegrationFlow:
                     email_doc = Email(
                         email_id=email_id,
                         thread_id=thread_id,
-                        gmail_thread_id=composio_email.get('threadId'),
+                        gmail_thread_id=composio_email.get('thread_id'),
                         subject=subject,
                         from_email=from_email,
                         to_emails=to_emails,
@@ -260,7 +260,7 @@ class TestEmailIntegrationFlow:
         for i in range(large_batch_size):
             large_email_batch.append({
                 'messageId': f'perf_email_{i:04d}',
-                'threadId': f'perf_thread_{i:04d}',
+                'thread_id': f'perf_thread_{i:04d}',
                 'subject': f'Performance Test Email {i:04d}',
                 'messageText': f'Performance test content {i:04d}',
                 'date': str(1640995200 + i),
@@ -297,8 +297,8 @@ class TestEmailIntegrationFlow:
                 for composio_email in messages_data:
                     email_doc = Email(
                         email_id=composio_email.get('messageId'),
-                        thread_id=composio_email.get('threadId'),
-                        gmail_thread_id=composio_email.get('threadId'),
+                        thread_id=composio_email.get('thread_id'),
+                        gmail_thread_id=composio_email.get('thread_id'),
                         subject=composio_email.get('subject'),
                         from_email={'email': composio_email.get('from', {}).get('email', ''), 
                                   'name': composio_email.get('from', {}).get('name', '')},
@@ -332,7 +332,7 @@ class TestEmailIntegrationFlow:
         test_emails = [
             {
                 'messageId': 'concurrent_email_1',
-                'threadId': 'concurrent_thread_1',
+                'thread_id': 'concurrent_thread_1',
                 'subject': 'Concurrent Test Email 1',
                 'messageText': 'Concurrent test content 1',
                 'date': '1640995200',
@@ -361,8 +361,8 @@ class TestEmailIntegrationFlow:
         for i in range(5):
             email_doc = Email(
                 email_id=email_data.get('messageId'),
-                thread_id=email_data.get('threadId'),
-                gmail_thread_id=email_data.get('threadId'),
+                thread_id=email_data.get('thread_id'),
+                gmail_thread_id=email_data.get('thread_id'),
                 subject=f"{email_data.get('subject')} - Save {i}",  # Slightly different each time
                 from_email={'email': email_data.get('from', {}).get('email', ''), 
                           'name': email_data.get('from', {}).get('name', '')},

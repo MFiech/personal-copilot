@@ -695,7 +695,7 @@ def chat():
                                 }
                                 
                                 # Extract Gmail thread ID from Composio response
-                                gmail_thread_id = composio_email.get('threadId', '')
+                                gmail_thread_id = composio_email.get('thread_id') or composio_email.get('threadId', '')
                                 
                                 # Create Email model instance
                                 email_doc = Email(
@@ -2011,7 +2011,7 @@ def load_more_emails():
                         from_email = {'email': sender_raw.strip(), 'name': sender_raw.split('@')[0]}
                 
                 # Extract Gmail thread ID from Composio response
-                gmail_thread_id = email.get('threadId', '')
+                gmail_thread_id = email.get('thread_id') or email.get('threadId', '')
                 
                 formatted_email = {
                     'email_id': email_id.strip(),

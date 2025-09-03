@@ -65,7 +65,7 @@ def mock_composio_service():
                     'messages': [
                         {
                             'messageId': '198efca4a33ef48d',
-                            'threadId': 'thread_123',
+                            'thread_id': 'thread_123',
                             'subject': 'Test Email Subject',
                             'messageText': 'Test email content',
                             'date': '1640995200',  # Unix timestamp
@@ -76,7 +76,7 @@ def mock_composio_service():
                         },
                         {
                             'messageId': '298efca4a33ef48e',
-                            'threadId': 'thread_124',
+                            'thread_id': 'thread_124',
                             'subject': 'Another Test Email',
                             'messageText': 'Another test email content',
                             'date': '1640995300',
