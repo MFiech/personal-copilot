@@ -694,10 +694,14 @@ def chat():
                                     'html': ''
                                 }
                                 
+                                # Extract Gmail thread ID from Composio response
+                                gmail_thread_id = composio_email.get('threadId', '')
+                                
                                 # Create Email model instance
                                 email_doc = Email(
                                     email_id=email_id,
                                     thread_id=thread_id,
+                                    gmail_thread_id=gmail_thread_id,  # Pass the Gmail thread ID
                                     subject=subject,
                                     from_email=from_email,
                                     to_emails=to_emails,
@@ -707,7 +711,7 @@ def chat():
                                         'source': 'COMPOSIO',
                                         'label_ids': label_ids,
                                         'attachment_count': len(attachment_list),
-                                        'thread_id': composio_email.get('threadId', ''),
+                                        'thread_id': gmail_thread_id,  # Also store in metadata for backward compatibility
                                         'timestamp': date_timestamp
                                     }
                                 )
@@ -2006,9 +2010,13 @@ def load_more_emails():
                     elif '@' in sender_raw:
                         from_email = {'email': sender_raw.strip(), 'name': sender_raw.split('@')[0]}
                 
+                # Extract Gmail thread ID from Composio response
+                gmail_thread_id = email.get('threadId', '')
+                
                 formatted_email = {
                     'email_id': email_id.strip(),
                     'thread_id': thread_id,
+                    'gmail_thread_id': gmail_thread_id,  # Add Gmail thread ID
                     'subject': subject[:1000],  # Truncate subject if too long
                     'from_email': from_email,
                     'date': date_timestamp or '',
@@ -2020,7 +2028,8 @@ def load_more_emails():
                         'source': 'TOOL',
                         'folder': email.get('folder', 'INBOX'),
                         'is_read': email.get('is_read', False),
-                        'size': email.get('size')
+                        'size': email.get('size'),
+                        'thread_id': gmail_thread_id  # Also store in metadata for backward compatibility
                     },
                     'attachments': email.get('attachments', [])[:10],  # Limit attachments
                     'cc': email.get('cc', [])[:50],  # Limit CC recipients
