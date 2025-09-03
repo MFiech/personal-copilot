@@ -39,7 +39,7 @@ class TestEmailCountVerification:
         for i in range(expected_count):
             test_emails.append({
                 'messageId': f'test_email_{i}',
-                'threadId': f'thread_{i}',
+                'thread_id': f'thread_{i}',
                 'subject': f'Test Email {i}',
                 'messageText': f'Content of test email {i}',
                 'date': str(1640995200 + i * 1000),
@@ -80,8 +80,8 @@ class TestEmailCountVerification:
                 # Create Email model instance (simplified version of app.py logic)
                 email_doc = Email(
                     email_id=email_id,
-                    thread_id=composio_email.get('threadId'),
-                    gmail_thread_id=composio_email.get('threadId'),
+                    thread_id=composio_email.get('thread_id'),
+                    gmail_thread_id=composio_email.get('thread_id'),
                     subject=composio_email.get('subject'),
                     from_email={'email': composio_email.get('from', {}).get('email', ''), 
                               'name': composio_email.get('from', {}).get('name', '')},
@@ -146,7 +146,7 @@ class TestEmailCountVerification:
         for i in range(large_batch_size):
             test_emails.append({
                 'messageId': f'large_batch_email_{i:03d}',
-                'threadId': f'large_thread_{i:03d}',
+                'thread_id': f'large_thread_{i:03d}',
                 'subject': f'Large Batch Email {i:03d}',
                 'messageText': f'Content {i:03d}',
                 'date': str(1640995200 + i),
@@ -180,8 +180,8 @@ class TestEmailCountVerification:
             for composio_email in messages_data:
                 email_doc = Email(
                     email_id=composio_email.get('messageId'),
-                    thread_id=composio_email.get('threadId'),
-                    gmail_thread_id=composio_email.get('threadId'),
+                    thread_id=composio_email.get('thread_id'),
+                    gmail_thread_id=composio_email.get('thread_id'),
                     subject=composio_email.get('subject'),
                     from_email={'email': composio_email.get('from', {}).get('email', ''), 
                               'name': composio_email.get('from', {}).get('name', '')},
@@ -211,7 +211,7 @@ class TestEmailCountVerification:
         for i in range(expected_count):
             test_emails.append({
                 'messageId': f'conv_test_email_{i}',
-                'threadId': 'conv_thread_123',
+                'thread_id': 'conv_thread_123',
                 'subject': f'Conversation Test Email {i}',
                 'messageText': f'Conversation content {i}',
                 'date': str(1640995200 + i),
@@ -274,7 +274,7 @@ class TestEmailCountVerification:
         duplicate_emails = [
             {
                 'messageId': 'duplicate_email_123',
-                'threadId': 'thread_dup',
+                'thread_id': 'thread_dup',
                 'subject': 'Duplicate Email',
                 'messageText': 'First version',
                 'date': '1640995200',
@@ -285,7 +285,7 @@ class TestEmailCountVerification:
             },
             {
                 'messageId': 'duplicate_email_123',  # Same ID!
-                'threadId': 'thread_dup',
+                'thread_id': 'thread_dup',
                 'subject': 'Duplicate Email Updated',
                 'messageText': 'Second version',
                 'date': '1640995300',
@@ -318,8 +318,8 @@ class TestEmailCountVerification:
             for composio_email in messages_data:
                 email_doc = Email(
                     email_id=composio_email.get('messageId'),
-                    thread_id=composio_email.get('threadId'),
-                    gmail_thread_id=composio_email.get('threadId'),
+                    thread_id=composio_email.get('thread_id'),
+                    gmail_thread_id=composio_email.get('thread_id'),
                     subject=composio_email.get('subject'),
                     from_email={'email': composio_email.get('from', {}).get('email', ''), 
                               'name': composio_email.get('from', {}).get('name', '')},

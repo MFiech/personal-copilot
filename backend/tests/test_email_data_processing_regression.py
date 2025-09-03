@@ -49,7 +49,7 @@ class TestEmailDataStructureRegression:
                     'messages': [
                         {
                             'messageId': '198efca4a33ef48d',
-                            'threadId': 'thread_123',
+                            'thread_id': 'thread_123',
                             'subject': 'Test Email Subject',
                             'messageText': 'Test email content',
                             'date': '1640995200',
