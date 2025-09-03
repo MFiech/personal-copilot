@@ -26,14 +26,18 @@ os.environ["CI"] = "true"
 class TestCalendarDeleteIntegration:
     """Integration tests for calendar event deletion endpoint"""
     
-    def test_delete_calendar_event_success(self, test_db, clean_collections, mock_openai_client):
+    def test_delete_calendar_event_success(self, test_db, clean_collections, mock_openai_client, conversation_cleanup):
         """Test successful calendar event deletion through HTTP endpoint"""
         from app import app
         from models.conversation import Conversation
         
+        # Track this thread for cleanup
+        test_thread_id = 'test_thread_123'
+        conversation_cleanup(test_thread_id)
+        
         # Create a test conversation with calendar events
         conversation = Conversation(
-            thread_id='test_thread_123',
+            thread_id=test_thread_id,
             role='assistant',
             content='Here are your calendar events',
             tool_results={
@@ -78,14 +82,18 @@ class TestCalendarDeleteIntegration:
                 updated_conversation = Conversation.find_one({'thread_id': 'test_thread_123'})
                 assert len(updated_conversation['tool_results']['calendar_events']) == 0
     
-    def test_delete_calendar_event_not_found_in_conversation(self, test_db, clean_collections):
+    def test_delete_calendar_event_not_found_in_conversation(self, test_db, clean_collections, conversation_cleanup):
         """Test deletion when event is not found in conversation"""
         from app import app
         from models.conversation import Conversation
         
+        # Track this thread for cleanup
+        test_thread_id = 'test_thread_123'
+        conversation_cleanup(test_thread_id)
+        
         # Create a test conversation without the target event
         conversation = Conversation(
-            thread_id='test_thread_123',
+            thread_id=test_thread_id,
             role='assistant',
             content='Here are your calendar events',
             tool_results={
@@ -117,15 +125,19 @@ class TestCalendarDeleteIntegration:
             assert data['success'] is False
             assert 'Event not found in conversation' in data['error']
     
-    def test_delete_calendar_event_conversation_not_found(self, test_db, clean_collections):
+    def test_delete_calendar_event_conversation_not_found(self, test_db, clean_collections, conversation_cleanup):
         """Test deletion when conversation is not found"""
         from app import app
+        
+        # Track this thread for cleanup (even though it won't exist)
+        test_thread_id = 'nonexistent_thread_123'
+        conversation_cleanup(test_thread_id)
         
         with app.test_client() as client:
             response = client.post('/delete_calendar_event', 
                 json={
                     'event_id': 'test_event_789',
-                    'thread_id': 'nonexistent_thread_123',
+                    'thread_id': test_thread_id,
                     'message_id': 'test_message_456'
                 },
                 content_type='application/json'
@@ -170,14 +182,18 @@ class TestCalendarDeleteIntegration:
             assert data['success'] is False
             assert 'Missing required parameters' in data['error']
     
-    def test_delete_calendar_event_composio_failure(self, test_db, clean_collections):
+    def test_delete_calendar_event_composio_failure(self, test_db, clean_collections, conversation_cleanup):
         """Test deletion when Composio service fails"""
         from app import app
         from models.conversation import Conversation
         
+        # Track this thread for cleanup
+        test_thread_id = 'test_thread_123'
+        conversation_cleanup(test_thread_id)
+        
         # Create a test conversation with calendar events
         conversation = Conversation(
-            thread_id='test_thread_123',
+            thread_id=test_thread_id,
             role='assistant',
             content='Here are your calendar events',
             tool_results={
@@ -219,14 +235,18 @@ class TestCalendarDeleteIntegration:
                 updated_conversation = Conversation.find_one({'thread_id': 'test_thread_123'})
                 assert len(updated_conversation['tool_results']['calendar_events']) == 0
     
-    def test_delete_calendar_event_no_calendar_events(self, test_db, clean_collections):
+    def test_delete_calendar_event_no_calendar_events(self, test_db, clean_collections, conversation_cleanup):
         """Test deletion when conversation has no calendar events"""
         from app import app
         from models.conversation import Conversation
         
+        # Track this thread for cleanup
+        test_thread_id = 'test_thread_123'
+        conversation_cleanup(test_thread_id)
+        
         # Create a test conversation without calendar events
         conversation = Conversation(
-            thread_id='test_thread_123',
+            thread_id=test_thread_id,
             role='assistant',
             content='No calendar events here',
             tool_results={}

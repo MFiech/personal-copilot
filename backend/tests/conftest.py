@@ -126,6 +126,54 @@ def clean_collections(test_db):
 
 
 @pytest.fixture
+def conversation_cleanup():
+    """Fixture to track and clean up conversations created during tests"""
+    from models.conversation import Conversation
+    
+    # Track thread_ids created during the test
+    created_thread_ids = []
+    
+    def track_thread_id(thread_id):
+        """Track a thread_id for cleanup"""
+        if thread_id and thread_id not in created_thread_ids:
+            created_thread_ids.append(thread_id)
+    
+    def cleanup_conversations():
+        """Clean up all tracked conversations"""
+        total_deleted = 0
+        for thread_id in created_thread_ids:
+            deleted_count = Conversation.delete_by_thread_id(thread_id)
+            total_deleted += deleted_count
+        
+        if total_deleted > 0:
+            print(f"[TEST CLEANUP] Deleted {total_deleted} conversations from {len(created_thread_ids)} threads")
+        
+        return total_deleted
+    
+    # Provide the tracking function to tests
+    yield track_thread_id
+    
+    # Clean up after test
+    cleanup_conversations()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def cleanup_all_test_conversations():
+    """Session-level fixture to clean up all test conversations at the end of test session"""
+    from models.conversation import Conversation
+    
+    yield  # Run tests first
+    
+    # Clean up all test conversations after all tests complete
+    print("\n[SESSION CLEANUP] Cleaning up all test conversations...")
+    deleted_count = Conversation.delete_test_conversations()
+    if deleted_count > 0:
+        print(f"[SESSION CLEANUP] Deleted {deleted_count} test conversations")
+    else:
+        print("[SESSION CLEANUP] No test conversations found to delete")
+
+
+@pytest.fixture
 def mock_openai_client():
     """Mock OpenAI client for testing"""
     with patch('openai.OpenAI') as mock_openai:

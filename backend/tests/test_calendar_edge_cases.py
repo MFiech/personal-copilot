@@ -86,7 +86,7 @@ class TestCalendarEdgeCases:
                 assert 'not connected' in response_data['response'].lower()
                 
     def test_composio_rate_limiting(
-        self, test_db, clean_collections, mock_openai_client, mock_composio_calendar_errors  
+        self, test_db, clean_collections, mock_openai_client, mock_composio_calendar_errors
     ):
         """Test handling of Composio API rate limiting"""
         from app import app
