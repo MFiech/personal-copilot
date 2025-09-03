@@ -121,11 +121,29 @@ synthesize it into your answer. Otherwise, use your general knowledge.
     
     return "\n\n".join(prompt_parts)
 
-def email_summarization_prompt(email_body):
+def email_summarization_prompt(email_body, is_thread_email=False, thread_email_count=1):
     """
-    Prompt for summarizing an email.
+    Prompt for summarizing an email or email thread.
     """
-    return f"""
+    if is_thread_email and thread_email_count > 1:
+        return f"""
+You are an expert at summarizing email threads and conversations.
+
+Email Thread Content ({thread_email_count} emails):
+---
+{email_body}
+---
+
+Provide a comprehensive summary (3-5 sentences) of this email thread. Include:
+1. The main topic/subject being discussed
+2. Key points from the conversation
+3. Any decisions made or action items mentioned
+4. The overall flow and conclusion of the discussion
+
+Output only the summary without any introductory text or explanations. Focus on the conversation as a whole, not individual emails.
+"""
+    else:
+        return f"""
 You are an expert at summarizing email content.
 
 Email Content:

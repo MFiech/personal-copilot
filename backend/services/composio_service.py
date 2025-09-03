@@ -604,6 +604,167 @@ Respond with ONLY the JSON object, no additional text."""
         
         return content
 
+
+
+    def _parse_email_address(self, email_string):
+        """Parse email address string like 'Name <email@domain.com>' or 'email@domain.com'"""
+        try:
+            if '<' in email_string and '>' in email_string:
+                name = email_string.split('<')[0].strip().strip('"')
+                email = email_string.split('<')[1].split('>')[0].strip()
+                return {'name': name, 'email': email}
+            else:
+                return {'name': '', 'email': email_string.strip()}
+        except:
+            return {'name': '', 'email': email_string}
+
+    def _extract_content_from_thread_message(self, message):
+        """
+        Extract content from a thread message object (already has full content).
+        This avoids making another API call since the thread fetch already provides full content.
+        """
+        try:
+            # The message object from thread fetch should already have the content
+            # Check if it has a payload with content
+            payload = message.get('payload', {})
+            if not payload:
+                print(f"[DEBUG] _extract_content_from_thread_message - No payload found")
+                return None
+            
+            # Try to extract content from the payload
+            content = self._extract_content_from_payload(payload)
+            
+            if content:
+                print(f"[DEBUG] _extract_content_from_thread_message - Successfully extracted content, length: {len(content)}")
+                return content
+            else:
+                print(f"[DEBUG] _extract_content_from_thread_message - No content found in payload")
+                return None
+                
+        except Exception as e:
+            print(f"[ERROR] _extract_content_from_thread_message - Error extracting content: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    def _extract_content_from_payload(self, payload):
+        """
+        Extract content from a Gmail message payload.
+        """
+        try:
+            content = ""
+            
+            # Check if it's a simple text/html message
+            mime_type = payload.get('mimeType', '')
+            if mime_type in ["text/html", "text/plain"]:
+                body_data = payload.get("body", {}).get("data")
+                if body_data:
+                    try:
+                        content = base64.urlsafe_b64decode(body_data.encode('ASCII')).decode('utf-8')
+                        print(f"[DEBUG] _extract_content_from_payload - Decoded simple message, length: {len(content)}")
+                    except Exception as e:
+                        print(f"[DEBUG] _extract_content_from_payload - Error decoding simple message: {e}")
+            
+            # Check if it's a multipart message
+            elif "parts" in payload:
+                print(f"[DEBUG] _extract_content_from_payload - Multipart message with {len(payload.get('parts', []))} parts")
+                content = self._extract_content_from_parts(payload.get("parts", []))
+            
+            return content
+            
+        except Exception as e:
+            print(f"[ERROR] _extract_content_from_payload - Error: {e}")
+            return None
+
+    def _parse_email_addresses(self, emails_string):
+        """Parse multiple email addresses separated by commas"""
+        try:
+            addresses = []
+            for email_part in emails_string.split(','):
+                parsed = self._parse_email_address(email_part.strip())
+                if parsed['email']:
+                    addresses.append(parsed)
+            return addresses
+        except:
+            return []
+
+    def get_full_gmail_thread(self, gmail_thread_id):
+        """
+        Get full Gmail thread using GMAIL_FETCH_MESSAGE_BY_THREAD_ID action.
+        Returns all messages in the thread with full content.
+        """
+        response = self._execute_action(
+            action=Action.GMAIL_FETCH_MESSAGE_BY_THREAD_ID,
+            params={
+                "thread_id": gmail_thread_id,
+                "format": "full",
+                "user_id": "me"
+            }
+        )
+        
+        if response.get("successful"):
+            # The Composio response has a nested 'data' key
+            composio_raw_data = response.get("data", {})
+            print(f"[DEBUG] get_full_gmail_thread - Composio raw data keys: {list(composio_raw_data.keys())}")
+            
+            # Extract the 'messages' array from the nested 'data'
+            messages = composio_raw_data.get('messages', [])
+            print(f"[DEBUG] get_full_gmail_thread - Found {len(messages)} messages in response")
+            
+            # Instead of complex message processing, fetch each email individually
+            emails = []
+            for i, message in enumerate(messages):
+                message_id = message.get('messageId')
+                if message_id:
+                    print(f"[DEBUG] get_full_gmail_thread - Fetching email {i+1}/{len(messages)} with ID: {message_id}")
+                    
+                    # Get the full email content using the existing method
+                    email_content = self.get_email_details(message_id)
+                    if email_content:
+                        # Create a simple email structure
+                        email_data = {
+                            'email_id': message_id,
+                            'message_id': message_id,
+                            'gmail_thread_id': gmail_thread_id,
+                            'subject': '',
+                            'from_email': {},
+                            'to_emails': [],
+                            'date': message.get('messageTimestamp', ''),
+                            'content': email_content
+                        }
+                        
+                        # Extract basic info from headers if available
+                        headers = message.get('payload', {}).get('headers', [])
+                        for header in headers:
+                            name = header.get('name', '').lower()
+                            value = header.get('value', '')
+                            
+                            if name == 'subject':
+                                email_data['subject'] = value
+                            elif name == 'from':
+                                email_data['from_email'] = self._parse_email_address(value)
+                            elif name == 'to':
+                                email_data['to_emails'] = self._parse_email_addresses(value)
+                            elif name == 'date':
+                                email_data['date'] = value
+                        
+                        emails.append(email_data)
+                        print(f"[DEBUG] get_full_gmail_thread - Successfully fetched email {i+1}")
+                    else:
+                        print(f"[DEBUG] get_full_gmail_thread - Failed to fetch email {i+1}")
+                else:
+                    print(f"[DEBUG] get_full_gmail_thread - No messageId found for message {i+1}")
+            
+            print(f"[DEBUG] get_full_gmail_thread - Final result: {len(emails)} emails fetched")
+            return {
+                'emails': emails,
+                'gmail_thread_id': gmail_thread_id,
+                'email_count': len(emails)  # Add email count for completeness
+            }
+        else:
+            print(f"[DEBUG] get_full_gmail_thread - Action not successful: {response.get('error', 'Unknown error')}")
+            return None
+
     def delete_email(self, message_id, permanently=False, **kwargs):
         action = Action.GMAIL_DELETE_EMAIL_PERMANENTLY if permanently else Action.GMAIL_TRASH_EMAIL
         response = self._execute_action(

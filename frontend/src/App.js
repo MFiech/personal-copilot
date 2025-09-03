@@ -241,6 +241,8 @@ function App() {
   const [emailSidebar, setEmailSidebar] = useState({
     open: false,
     email: null,
+    threadEmails: [],
+    gmailThreadId: null,
     loading: false,
     error: null
   });
@@ -832,6 +834,12 @@ function App() {
   // Email sidebar functions
   const handleOpenEmail = async (email) => {
     console.log('Opening email:', email);
+    console.log('Email ID fields:', { 
+      email_id: email.email_id, 
+      id: email.id, 
+      _id: email._id,
+      keys: Object.keys(email)
+    });
     
     // On mobile, close the drawer sidebar to make room for email sidebar
     if (isMobile) {
@@ -842,16 +850,26 @@ function App() {
     setEmailSidebar({
       open: true,
       email: null,
+      threadEmails: [],
+      gmailThreadId: null,
       loading: true,
       error: null
     });
 
     try {
+      // Determine the correct email ID to use
+      const emailId = email.email_id || email.id || email._id;
+      console.log('Using email ID:', emailId);
+      
+      if (!emailId) {
+        throw new Error('No valid email ID found in email data');
+      }
+      
       // Fetch email content if not already present
       const response = await fetch('http://localhost:5001/get_email_content', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email_id: email.email_id || email.id }),
+        body: JSON.stringify({ email_id: emailId }),
       });
 
       if (!response.ok) {
@@ -867,9 +885,37 @@ function App() {
           content: data.content
         };
 
+        // Check if this email is part of a Gmail thread
+        let threadEmails = [];
+        let gmailThreadId = null;
+        
+        if (email.gmail_thread_id) {
+          gmailThreadId = email.gmail_thread_id;
+          try {
+            // Fetch the full thread with content
+            const threadResponse = await fetch(`http://localhost:5001/emails/thread/${gmailThreadId}/full`, {
+              method: 'GET',
+              headers: { 'Content-Type': 'application/json' }
+            });
+            
+            if (threadResponse.ok) {
+              const threadData = await threadResponse.json();
+              if (threadData.success && threadData.data.emails) {
+                threadEmails = threadData.data.emails;
+                console.log(`Found ${threadEmails.length} emails in thread ${gmailThreadId} with full content`);
+              }
+            }
+          } catch (threadError) {
+            console.warn('Could not fetch thread data:', threadError);
+            // Continue without thread data
+          }
+        }
+
         setEmailSidebar({
           open: true,
           email: emailWithContent,
+          threadEmails: threadEmails,
+          gmailThreadId: gmailThreadId,
           loading: false,
           error: null
         });
@@ -881,6 +927,8 @@ function App() {
       setEmailSidebar({
         open: true,
         email: null,
+        threadEmails: [],
+        gmailThreadId: null,
         loading: false,
         error: error.message
       });
@@ -891,6 +939,8 @@ function App() {
     setEmailSidebar({
       open: false,
       email: null,
+      threadEmails: [],
+      gmailThreadId: null,
       loading: false,
       error: null
     });
@@ -1783,6 +1833,8 @@ function App() {
         <EmailSidebar
           open={emailSidebar.open}
           email={emailSidebar.email}
+          threadEmails={emailSidebar.threadEmails}
+          gmailThreadId={emailSidebar.gmailThreadId}
           loading={emailSidebar.loading}
           error={emailSidebar.error}
           onClose={handleCloseEmailSidebar}
