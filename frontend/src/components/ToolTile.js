@@ -68,8 +68,6 @@ const ToolTile = ({
       timeDisplay = `${startTime}-${endTime}, ${dateStr}`;
     }
     
-    console.log('renderCalendarContent - onDelete:', onDelete, 'onAnchor:', onAnchor);
-    
     return (
       <>
         <div className="calendar-top-row">
@@ -86,18 +84,13 @@ const ToolTile = ({
             )}
             {onDelete && (
               <button 
-                className="calendar-delete-btn-icon calendar-delete-visible"
+                className="calendar-delete-btn-icon"
                 onClick={handleDeleteClick}
                 title="Delete event"
-                style={{opacity: 1, backgroundColor: 'red', color: 'white'}}
               >
                 <DeleteOutlinedIcon />
               </button>
             )}
-            {/* Debug info */}
-            <span style={{fontSize: '10px', color: 'blue'}}>
-              onDelete: {onDelete ? 'YES' : 'NO'}
-            </span>
           </div>
         </div>
         <div className="calendar-title" title={title}>{title}</div>

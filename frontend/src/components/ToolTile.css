@@ -271,7 +271,7 @@
   background: #cc0000;
 }
 
-/* Calendar delete icon in top row */
+/* Calendar delete icon in top row - styled like anchor button but red */
 .calendar-delete-btn-icon {
   background: none;
   border: 1px solid #ccc;
