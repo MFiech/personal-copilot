@@ -36,6 +36,8 @@ class Conversation:
 
     def save(self):
         """Save conversation to MongoDB, processing and linking emails from tool_results."""
+        print(f"[DEBUG SAVE] Starting save() method for thread_id: {self.thread_id}")
+        print(f"[DEBUG SAVE] tool_results keys: {list(self.tool_results.keys()) if self.tool_results else 'No tool_results'}")
         self.message_id = str(uuid.uuid4())
         
         message = {
@@ -57,10 +59,16 @@ class Conversation:
                     message[field] = self.metadata[field]
 
         if 'emails' in self.tool_results and self.tool_results['emails']:
+            print(f"[DEBUG SAVE] Processing {len(self.tool_results['emails'])} emails from tool_results")
             processed_email_ids = []
             emails_collection = get_collection(EMAILS_COLLECTION)
             
-            for email_data in self.tool_results['emails']:
+            for idx, email_data in enumerate(self.tool_results['emails']):
+                print(f"[DEBUG SAVE] Processing email {idx + 1}: type={type(email_data)}")
+                if isinstance(email_data, dict):
+                    print(f"[DEBUG SAVE] Email {idx + 1} keys: {list(email_data.keys())}")
+                else:
+                    print(f"[DEBUG SAVE] Email {idx + 1} is not a dict: {email_data}")
                 if not isinstance(email_data, dict) or 'id' not in email_data:
                     if isinstance(email_data, str):
                         processed_email_ids.append(email_data)
@@ -68,10 +76,23 @@ class Conversation:
 
                 from_info = email_data.get('from_email', {})
                 email_id = email_data['id'].strip()
+                
+                # DEBUG: Check for Gmail thread ID in different locations
+                gmail_thread_id = None
+                if 'threadId' in email_data:
+                    gmail_thread_id = email_data['threadId']
+                    print(f"[DEBUG] Found threadId in email_data: {gmail_thread_id}")
+                elif 'gmail_thread_id' in email_data:
+                    gmail_thread_id = email_data['gmail_thread_id']
+                    print(f"[DEBUG] Found gmail_thread_id in email_data: {gmail_thread_id}")
+                else:
+                    print(f"[DEBUG] No threadId found in email_data keys: {list(email_data.keys())}")
 
+                print(f"[DEBUG SAVE] Creating Email object with gmail_thread_id: {gmail_thread_id}")
                 email_doc = Email(
                     email_id=email_id,
                     thread_id=self.thread_id,
+                    gmail_thread_id=gmail_thread_id,  # Use the extracted Gmail thread ID
                     subject=email_data.get('subject', ''),
                     from_email={
                         'email': from_info.get('email', ''),
@@ -89,7 +110,9 @@ class Conversation:
                         'is_read': email_data.get('is_read'),
                     }
                 )
+                print(f"[DEBUG SAVE] About to save Email object to database")
                 email_doc.save()
+                print(f"[DEBUG SAVE] Email object saved successfully")
                 processed_email_ids.append(email_id)
             
             self.tool_results['emails'] = processed_email_ids

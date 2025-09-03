@@ -135,6 +135,7 @@ class TestEmailIntegrationFlow:
                     email_doc = Email(
                         email_id=email_id,
                         thread_id=thread_id,
+                        gmail_thread_id=composio_email.get('threadId'),
                         subject=subject,
                         from_email=from_email,
                         to_emails=to_emails,
@@ -144,7 +145,6 @@ class TestEmailIntegrationFlow:
                             'source': 'COMPOSIO',
                             'label_ids': composio_email.get('labelIds', []),
                             'attachment_count': len(composio_email.get('attachmentList', [])),
-                            'thread_id': composio_email.get('threadId', ''),
                             'timestamp': composio_email.get('date')
                         }
                     )
@@ -298,6 +298,7 @@ class TestEmailIntegrationFlow:
                     email_doc = Email(
                         email_id=composio_email.get('messageId'),
                         thread_id=composio_email.get('threadId'),
+                        gmail_thread_id=composio_email.get('threadId'),
                         subject=composio_email.get('subject'),
                         from_email={'email': composio_email.get('from', {}).get('email', ''), 
                                   'name': composio_email.get('from', {}).get('name', '')},
@@ -361,6 +362,7 @@ class TestEmailIntegrationFlow:
             email_doc = Email(
                 email_id=email_data.get('messageId'),
                 thread_id=email_data.get('threadId'),
+                gmail_thread_id=email_data.get('threadId'),
                 subject=f"{email_data.get('subject')} - Save {i}",  # Slightly different each time
                 from_email={'email': email_data.get('from', {}).get('email', ''), 
                           'name': email_data.get('from', {}).get('name', '')},

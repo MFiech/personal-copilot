@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import ToolTile from './ToolTile';
 import TipsAndUpdatesOutlinedIcon from '@mui/icons-material/TipsAndUpdatesOutlined';
 import OpenInFullOutlinedIcon from '@mui/icons-material/OpenInFullOutlined';
@@ -12,6 +12,10 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
   const [hoveredEmailId, setHoveredEmailId] = useState(null);
   const [summarizingEmails, setSummarizingEmails] = useState(new Set());
   const [loadingMoreEmails, setLoadingMoreEmails] = useState(false);
+  
+  // Thread data state for indicators
+  const [threadData, setThreadData] = useState(null);
+  const [loadingThreads, setLoadingThreads] = useState(false);
 
   // Debug pagination props
   console.log('[ToolResults] Pagination props:', {
@@ -21,6 +25,39 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
     hasMore,
     emailCount: results?.emails?.length
   });
+
+  // Fetch thread data when emails are available
+  useEffect(() => {
+    if (results?.emails && results.emails.length > 0) {
+      fetchThreadData();
+    }
+  }, [results?.emails]);
+
+  const fetchThreadData = async () => {
+    if (!results?.emails || results.emails.length === 0) return;
+    
+    setLoadingThreads(true);
+    try {
+      const response = await fetch('http://localhost:5001/emails/threads', {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setThreadData(data.data);
+          console.log('[ToolResults] Thread data fetched:', data.data);
+        }
+      }
+    } catch (error) {
+      console.error('[ToolResults] Error fetching thread data:', error);
+    } finally {
+      setLoadingThreads(false);
+    }
+  };
+
+
 
   if (!results || (!results.emails && !results.calendar_events)) {
     console.log('[ToolResults] No results to display');
@@ -58,11 +95,44 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
       // First, get the email content
       const emailContent = await getEmailContent(emailId);
       
-      // Use text content for summarization (it's already converted from HTML)
-      const contentToSummarize = emailContent.text || emailContent.html || '';
+      // Check if this email is part of a thread
+      let threadContent = '';
+      let isThreadEmail = false;
+      
+      if (emailContent.gmail_thread_id) {
+        try {
+          // Fetch the full thread content for summarization
+          const threadResponse = await fetch(`http://localhost:5001/emails/thread/${emailContent.gmail_thread_id}/full`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' }
+          });
+          
+          if (threadResponse.ok) {
+            const threadData = await threadResponse.json();
+            if (threadData.success && threadData.data.emails) {
+              isThreadEmail = true;
+              // Combine all emails in the thread for summarization
+              threadContent = threadData.data.emails.map(email => {
+                const sender = email.from_email?.name || email.from_email?.email || 'Unknown';
+                const date = new Date(email.date).toLocaleString();
+                const content = email.content?.text || email.content?.html || '';
+                return `From: ${sender} (${date})\n${content}\n---\n`;
+              }).join('\n');
+              
+              console.log(`Summarizing thread with ${threadData.data.emails.length} emails`);
+            }
+          }
+        } catch (threadError) {
+          console.warn('Could not fetch thread data for summarization:', threadError);
+          // Continue with single email summarization
+        }
+      }
+      
+      // Use thread content if available, otherwise use single email content
+      const contentToSummarize = isThreadEmail ? threadContent : (emailContent.text || emailContent.html || '');
       
       // Truncate content if it's too long (backend expects truncated content)
-      const maxLength = 4000; // Reasonable limit for LLM processing
+      const maxLength = 8000; // Increased limit for thread summarization
       const truncatedContent = contentToSummarize.length > maxLength 
         ? contentToSummarize.substring(0, maxLength) + '...'
         : contentToSummarize;
@@ -75,7 +145,9 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
           thread_id: threadId,
           assistant_message_id: messageId,
           email_content_full: contentToSummarize,
-          email_content_truncated: truncatedContent
+          email_content_truncated: truncatedContent,
+          is_thread_email: isThreadEmail,
+          thread_email_count: isThreadEmail ? threadContent.split('---\n').length - 1 : 1
         }),
       });
       
@@ -343,106 +415,158 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
               </div>
             </div>
             
-            {/* Email rows */}
-            {emails.map((email, index) => {
-              const emailId = email.email_id || email._id;
-              const uniqueKey = emailId ? `email-${emailId}` : `email-index-${index}`;
-              const isSelected = selectedEmails.includes(emailId);
-              const isHovered = hoveredEmailId === emailId;
-              const isSummarizing = summarizingEmails.has(emailId);
-              const fromName = email.from_email?.name || email.from?.name || 'Unknown Sender';
-              const subject = email.subject || 'No Subject';
-              const date = formatDate(email.date);
-              
-              // Skip this email if we don't have a valid emailId to prevent state confusion
-              if (!emailId) {
-                console.warn('Email without valid ID detected, skipping:', email);
-                return null;
-              }
-              
-              return (
-                <div 
-                  key={uniqueKey}
-                  className={`email-row ${isSelected ? 'selected' : ''} ${anchoredItem?.id === emailId ? 'anchored' : ''}`}
-                  onClick={() => handleEmailSelection(emailId)}
-                  onMouseEnter={() => setHoveredEmailId(emailId)}
-                  onMouseLeave={() => setHoveredEmailId(null)}
-                >
-                  <div className="email-checkbox-cell">
-                    <input
-                      type="checkbox"
-                      className="email-checkbox"
-                      checked={isSelected}
-                      onChange={(e) => {
-                        e.stopPropagation();
-                        handleEmailSelection(emailId);
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  </div>
-                  <div className="email-from" title={fromName}>
-                    {fromName}
-                  </div>
-                  <div className="email-subject" title={subject}>
-                    {subject}
-                  </div>
-                  <div className="email-date-actions">
-                    {(isHovered || anchoredItem?.id === emailId) ? (
-                      <div className="email-hover-icons">
-                        <button 
-                          className={`hover-icon-btn anchor-hover-btn ${anchoredItem?.id === emailId ? 'anchored' : ''}`}
-                          onClick={(e) => {
+            {/* Individual Email Display with Thread Indicators */}
+            {loadingThreads ? (
+              <div className="email-row">
+                <div className="email-loading">Loading thread information...</div>
+              </div>
+            ) : (
+              // Show only latest email per thread with thread count indicators
+              (() => {
+                // Filter to show only the latest email per thread
+                const latestEmailsPerThread = new Map();
+                
+                emails.forEach((email) => {
+                  const emailId = email.email_id || email._id;
+                  if (!emailId) return;
+                  
+                  const gmailThreadId = email.gmail_thread_id;
+                  const emailDate = new Date(email.date || 0);
+                  
+                  if (gmailThreadId) {
+                    // For emails with thread ID, keep only the latest one
+                    const existing = latestEmailsPerThread.get(gmailThreadId);
+                    if (!existing || emailDate > new Date(existing.date || 0)) {
+                      latestEmailsPerThread.set(gmailThreadId, email);
+                    }
+                  } else {
+                    // For emails without thread ID, keep them all
+                    latestEmailsPerThread.set(`individual-${emailId}`, email);
+                  }
+                });
+                
+                // Convert to array and sort by date (newest first)
+                const filteredEmails = Array.from(latestEmailsPerThread.values())
+                  .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+                
+                return filteredEmails.map((email, index) => {
+                  const emailId = email.email_id || email._id;
+                  const uniqueKey = emailId ? `email-${emailId}` : `email-index-${index}`;
+                  const isSelected = selectedEmails.includes(emailId);
+                  const isHovered = hoveredEmailId === emailId;
+                  const isSummarizing = summarizingEmails.has(emailId);
+                  const fromName = email.from_email?.name || email.from?.name || 'Unknown Sender';
+                  const subject = email.subject || 'No Subject';
+                  const date = formatDate(email.date);
+                  
+                  // Find thread information for this email
+                  let threadCount = null;
+                  if (threadData && email.gmail_thread_id) {
+                    const thread = threadData.gmail_threads?.find(t => t._id === email.gmail_thread_id);
+                    if (thread && thread.email_count > 1) {
+                      threadCount = thread.email_count;
+                    }
+                  }
+                  
+                  return (
+                    <div 
+                      key={uniqueKey}
+                      className={`email-row ${isSelected ? 'selected' : ''} ${anchoredItem?.id === emailId ? 'anchored' : ''}`}
+                      onMouseEnter={() => setHoveredEmailId(emailId)}
+                      onMouseLeave={() => setHoveredEmailId(null)}
+                    >
+                      <div className="email-checkbox-cell">
+                        <input
+                          type="checkbox"
+                          className="email-checkbox"
+                          checked={isSelected}
+                          onChange={(e) => {
                             e.stopPropagation();
-                            handleAnchorSelect(email, 'email');
+                            handleEmailSelection(emailId);
                           }}
-                          title={anchoredItem?.id === emailId ? "Remove anchor" : "Anchor this email"}
-                        >
-                          <AnchorIcon />
-                        </button>
-                        <button 
-                          className="hover-icon-btn summarize-hover-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleSingleEmailSummarize(emailId);
-                          }}
-                          disabled={isSummarizing}
-                          title={isSummarizing ? "Summarizing..." : "Summarize"}
-                        >
-                          <TipsAndUpdatesOutlinedIcon />
-                        </button>
-                        <button 
-                          className="hover-icon-btn open-hover-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (onOpenEmail) {
-                              onOpenEmail(email);
-                            }
-                          }}
-                          title="Open"
-                        >
-                          <OpenInFullOutlinedIcon />
-                        </button>
-                        <button 
-                          className="hover-icon-btn delete-hover-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            console.log('Delete single email:', emailId);
-                            // TODO: Implement single email delete
-                          }}
-                          title="Delete"
-                        >
-                          <DeleteOutlinedIcon />
-                        </button>
+                          onClick={(e) => e.stopPropagation()}
+                        />
                       </div>
-                    ) : (
-                      <div className="email-date">
-                        {date}
+                      <div 
+                        className="email-content-area"
+                        onClick={() => {
+                          if (onOpenEmail) {
+                            onOpenEmail(email);
+                          }
+                        }}
+                        style={{ cursor: 'pointer', flex: 1, display: 'flex' }}
+                      >
+                        <div className="email-from" title={fromName}>
+                          {fromName}
+                          {threadCount && (
+                            <span className="thread-count-indicator" title={`${threadCount} emails in thread`}>
+                              ({threadCount})
+                            </span>
+                          )}
+                        </div>
+                        <div className="email-subject" title={subject}>
+                          {subject}
+                        </div>
+                        <div className="email-date-actions">
+                          {(isHovered || anchoredItem?.id === emailId) ? (
+                            <div className="email-hover-icons">
+                              <button 
+                                className={`hover-icon-btn anchor-hover-btn ${anchoredItem?.id === emailId ? 'anchored' : ''}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleAnchorSelect(email, 'email');
+                                }}
+                                title={anchoredItem?.id === emailId ? "Remove anchor" : "Anchor this email"}
+                              >
+                                <AnchorIcon />
+                              </button>
+                              <button 
+                                className="hover-icon-btn summarize-hover-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSingleEmailSummarize(emailId);
+                                }}
+                                disabled={isSummarizing}
+                                title={isSummarizing ? "Summarizing..." : "Summarize"}
+                              >
+                                <TipsAndUpdatesOutlinedIcon />
+                              </button>
+                              <button 
+                                className="hover-icon-btn open-hover-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (onOpenEmail) {
+                                    onOpenEmail(email);
+                                  }
+                                }}
+                                title="Open"
+                              >
+                                <OpenInFullOutlinedIcon />
+                              </button>
+                              <button 
+                                className="hover-icon-btn delete-hover-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  console.log('Delete single email:', emailId);
+                                  // TODO: Implement single email delete
+                                }}
+                                title="Delete"
+                              >
+                                <DeleteOutlinedIcon />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="email-date">
+                              {date}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+                    </div>
+                  );
+                });
+              })()
+            )}
             
             {/* Load more emails row */}
             {hasMore && (

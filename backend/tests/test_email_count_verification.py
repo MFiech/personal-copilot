@@ -81,6 +81,7 @@ class TestEmailCountVerification:
                 email_doc = Email(
                     email_id=email_id,
                     thread_id=composio_email.get('threadId'),
+                    gmail_thread_id=composio_email.get('threadId'),
                     subject=composio_email.get('subject'),
                     from_email={'email': composio_email.get('from', {}).get('email', ''), 
                               'name': composio_email.get('from', {}).get('name', '')},
@@ -180,6 +181,7 @@ class TestEmailCountVerification:
                 email_doc = Email(
                     email_id=composio_email.get('messageId'),
                     thread_id=composio_email.get('threadId'),
+                    gmail_thread_id=composio_email.get('threadId'),
                     subject=composio_email.get('subject'),
                     from_email={'email': composio_email.get('from', {}).get('email', ''), 
                               'name': composio_email.get('from', {}).get('name', '')},
@@ -317,6 +319,7 @@ class TestEmailCountVerification:
                 email_doc = Email(
                     email_id=composio_email.get('messageId'),
                     thread_id=composio_email.get('threadId'),
+                    gmail_thread_id=composio_email.get('threadId'),
                     subject=composio_email.get('subject'),
                     from_email={'email': composio_email.get('from', {}).get('email', ''), 
                               'name': composio_email.get('from', {}).get('name', '')},
