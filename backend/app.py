@@ -1278,6 +1278,10 @@ def chat():
             print(f"[DEBUG] Processing calendar results for frontend")
             calendar_data = raw_tool_results.get('data', {})
             
+            print(f"[DEBUG] Calendar data type: {type(calendar_data)}")
+            print(f"[DEBUG] Calendar data keys: {list(calendar_data.keys()) if isinstance(calendar_data, dict) else 'Not a dict'}")
+            print(f"[DEBUG] Calendar data content (first 500 chars): {str(calendar_data)[:500] if calendar_data else 'None'}")
+            
             # Handle both creation and search responses for frontend
             events = []
             if calendar_data:
@@ -1288,14 +1292,20 @@ def chat():
                         events = [created_event]
                     print(f"[DEBUG] Processing calendar creation response for frontend with 1 created event")
                 elif 'items' in calendar_data:
-                    # This is a search/list response with multiple events
+                    # Direct items in calendar_data
                     events = calendar_data.get('items', [])
-                    print(f"[DEBUG] Processing calendar search response for frontend with {len(events)} events")
+                    print(f"[DEBUG] Processing calendar search response for frontend with {len(events)} events (direct items)")
+                elif 'data' in calendar_data and isinstance(calendar_data['data'], dict) and 'items' in calendar_data['data']:
+                    # Nested items in calendar_data.data.items (Composio structure)
+                    events = calendar_data['data'].get('items', [])
+                    print(f"[DEBUG] Processing calendar search response for frontend with {len(events)} events (nested items)")
                 else:
                     # Fallback: check if calendar_data itself is an event object
                     if isinstance(calendar_data, dict) and 'id' in calendar_data:
                         events = [calendar_data]
                         print(f"[DEBUG] Processing single calendar event for frontend as fallback")
+                    else:
+                        print(f"[DEBUG] Calendar data structure not recognized - no 'items', 'created_event', or 'id' found")
             
             response_data['tool_results'] = {
                 'calendar_events': events
