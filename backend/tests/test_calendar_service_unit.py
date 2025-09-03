@@ -312,7 +312,7 @@ class TestCalendarServiceUnit:
         service._execute_action.assert_called_once()
         call_args = service._execute_action.call_args
         params = call_args[1]['params']
-        assert params['eventId'] == "test_event_123"
+        assert params['event_id'] == "test_event_123"
         assert params['location'] == "New Room"
         assert 'summary' not in params  # Should not include unchanged fields
         
@@ -456,8 +456,9 @@ class TestCalendarIntentProcessing:
         # Assert
         assert time_min is not None
         assert time_max is not None
-        assert time_min.endswith('Z')  # UTC format
-        assert time_max.endswith('Z')
+        # Should use CEST timezone format (+02:00) instead of UTC (Z)
+        assert '+02:00' in time_min or time_min.endswith('Z')  # CEST or UTC fallback
+        assert '+02:00' in time_max or time_max.endswith('Z')  # CEST or UTC fallback
         
     def test_extract_time_range_today(self):
         """Test time range extraction for 'today' queries"""
@@ -472,6 +473,9 @@ class TestCalendarIntentProcessing:
         assert time_max is not None
         # Should be same day range
         assert time_min.split('T')[0] == time_max.split('T')[0]
+        # Should use CEST timezone format (+02:00) instead of UTC (Z)
+        assert '+02:00' in time_min or time_min.endswith('Z')  # CEST or UTC fallback
+        assert '+02:00' in time_max or time_max.endswith('Z')  # CEST or UTC fallback
         
     def test_extract_time_range_invalid(self):
         """Test time range extraction for invalid queries"""

@@ -148,46 +148,41 @@ def mock_openai_client():
 @pytest.fixture
 def mock_composio_calendar_service():
     """Mock Composio calendar service with realistic responses"""
-    with patch('services.composio_service.ComposioService') as mock_service:
-        mock_instance = Mock()
-        mock_service.return_value = mock_instance
-        
-        # Import calendar helpers here to avoid circular imports
-        import sys
-        import os
-        backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        sys.path.insert(0, backend_dir)
-        from tests.test_utils.calendar_helpers import create_mock_calendar_search_response
-        
-        # Configure calendar search response (the nested structure we fixed)
-        search_response = create_mock_calendar_search_response('this_week', 2)
-        mock_instance.process_query.return_value = {
-            'source_type': 'google-calendar',
-            'content': 'Events fetched.',
-            'data': search_response['data'],
-            'search_context': {
-                'date_range': 'this_week',
-                'search_method': 'list_events (time-based)'
-            }
+    # Import the real ComposioService class to create a real instance
+    from services.composio_service import ComposioService
+    
+    # Create a real instance with mock API key
+    real_instance = ComposioService(api_key="mock_api_key")
+    
+    # Mock the _execute_action method directly
+    real_instance._execute_action = Mock()
+    
+    # Import calendar helpers here to avoid circular imports
+    import sys
+    import os
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.insert(0, backend_dir)
+    from tests.test_utils.calendar_helpers import create_mock_calendar_search_response
+    
+    # Configure calendar search response (the nested structure we fixed)
+    search_response = create_mock_calendar_search_response('this_week', 2)
+    
+    # Set up account status
+    real_instance.calendar_account_id = '06747a1e-ff62-4c16-9869-4c214eebc920'
+    real_instance.client_available = True
+    
+    # Mock the process_query method for integration tests
+    real_instance.process_query = Mock(return_value={
+        'source_type': 'google-calendar',
+        'content': 'Events fetched.',
+        'data': search_response['data'],
+        'search_context': {
+            'date_range': 'this_week',
+            'search_method': 'list_events (time-based)'
         }
-        
-        # Configure individual calendar methods
-        mock_instance.list_events.return_value = {"data": search_response['data']}
-        mock_instance.find_events.return_value = {"data": search_response['data']}
-        mock_instance.create_calendar_event.return_value = {
-            'source_type': 'google-calendar',
-            'content': 'Successfully created calendar event',
-            'data': {'id': 'created_123', 'summary': 'Test Event'},
-            'action_performed': 'create'
-        }
-        mock_instance.update_calendar_event.return_value = {"data": {'id': 'updated_123'}}
-        mock_instance.delete_calendar_event.return_value = True
-        
-        # Set up account status
-        mock_instance.calendar_account_id = '06747a1e-ff62-4c16-9869-4c214eebc920'
-        mock_instance.client_available = True
-        
-        yield mock_instance
+    })
+    
+    yield real_instance
 
 
 @pytest.fixture  

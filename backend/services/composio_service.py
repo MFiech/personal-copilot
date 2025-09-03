@@ -841,10 +841,10 @@ Respond with ONLY the JSON object, no additional text."""
             show_deleted: Include deleted events
         """
         params = {
-            "calendarId": calendar_id,  # GOOGLECALENDAR_EVENTS_LIST expects camelCase
-            "max_results": max_results,
-            "single_events": single_events,
-            "show_deleted": show_deleted
+            "calendarId": calendar_id,
+            "maxResults": max_results,
+            "singleEvents": single_events,
+            "showDeleted": show_deleted
         }
         
         # Add optional parameters
@@ -852,12 +852,9 @@ Respond with ONLY the JSON object, no additional text."""
             params["timeMin"] = time_min
         if time_max:
             params["timeMax"] = time_max
-        # Only add orderBy if we don't have time filters (orderBy conflicts with timeMin/timeMax)
-        if order_by and not time_min and not time_max:
-            if order_by == "startTime":
-                params["orderBy"] = "startTime"
-            elif order_by == "updated":
-                params["orderBy"] = "updated"
+        if order_by:
+            params["orderBy"] = order_by
+            print(f"[DEBUG] Added orderBy parameter: {order_by}")
             
         response = self._execute_action(
             action=Action.GOOGLECALENDAR_EVENTS_LIST,
@@ -1621,30 +1618,81 @@ Respond with ONLY the JSON object."""
         # For now, delegate to the new method to maintain functionality
         return self._process_calendar_intent(user_query, thread_history)
 
+    def _sort_events_chronologically(self, events):
+        """
+        Sort calendar events chronologically (oldest first, newest last).
+        Handles different date formats and timezones.
+        """
+        def get_event_start_time(event):
+            """Extract start time from event for sorting"""
+            start = event.get('start', {})
+            
+            # Try dateTime first (for timed events)
+            if 'dateTime' in start:
+                try:
+                    # Parse ISO format datetime
+                    dt_str = start['dateTime']
+                    if dt_str.endswith('Z'):
+                        dt_str = dt_str[:-1] + '+00:00'
+                    return datetime.fromisoformat(dt_str)
+                except (ValueError, TypeError):
+                    pass
+            
+            # Try date (for all-day events)
+            if 'date' in start:
+                try:
+                    # Parse date format (YYYY-MM-DD)
+                    date_str = start['date']
+                    return datetime.fromisoformat(date_str)
+                except (ValueError, TypeError):
+                    pass
+            
+            # Fallback to a very old date if parsing fails
+            return datetime.min.replace(tzinfo=zoneinfo.ZoneInfo("UTC"))
+        
+        try:
+            # Sort by start time (oldest first)
+            sorted_events = sorted(events, key=get_event_start_time)
+            return sorted_events
+        except Exception as e:
+            print(f"[WARNING] Failed to sort events chronologically: {e}")
+            return events  # Return original order if sorting fails
+
     def _extract_time_range(self, query_lower):
         """
         Extract time range from natural language query.
         Returns (time_min, time_max) as RFC3339 timestamps.
+        Always uses CEST (Europe/Warsaw) timezone for consistent time handling.
         """
-        now = datetime.utcnow()
+        # Use CEST timezone instead of UTC
+        try:
+            cest_tz = zoneinfo.ZoneInfo("Europe/Warsaw")
+            now = datetime.now(cest_tz)
+            print(f"[DEBUG] Using CEST timezone for time range extraction: {now}")
+        except Exception as tz_error:
+            print(f"[WARNING] Europe/Warsaw timezone not available: {tz_error}")
+            # Fallback to UTC but log the issue
+            now = datetime.utcnow()
+            print(f"[WARNING] Fallback to UTC timezone: {now}")
         
         if "today" in query_lower:
             start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
-            return start.isoformat() + "Z", end.isoformat() + "Z"
+            return start.isoformat(), end.isoformat()
             
         elif "tomorrow" in query_lower:
             tomorrow = now + timedelta(days=1)
             start = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
             end = tomorrow.replace(hour=23, minute=59, second=59, microsecond=999999)
-            return start.isoformat() + "Z", end.isoformat() + "Z"
+            return start.isoformat(), end.isoformat()
             
         elif "this week" in query_lower:
-            # Start of current week (Monday)
+            # Start of current week (Monday) in CEST
             days_since_monday = now.weekday()
             start_of_week = (now - timedelta(days=days_since_monday)).replace(hour=0, minute=0, second=0, microsecond=0)
             end_of_week = start_of_week + timedelta(days=6, hours=23, minutes=59, seconds=59, microseconds=999999)
-            return start_of_week.isoformat() + "Z", end_of_week.isoformat() + "Z"
+            print(f"[DEBUG] This week range in CEST: {start_of_week.isoformat()} to {end_of_week.isoformat()}")
+            return start_of_week.isoformat(), end_of_week.isoformat()
             
         elif "next week" in query_lower:
             # Start of next week (Monday)
