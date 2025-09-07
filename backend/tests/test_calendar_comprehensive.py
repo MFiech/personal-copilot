@@ -15,16 +15,16 @@ from unittest.mock import Mock, patch
 backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, backend_dir)
 
-# Set testing environment
-os.environ["TESTING"] = "true"
-os.environ["CI"] = "true"
+# Set testing environment - but allow LLM for integration tests
+# os.environ["TESTING"] = "true" - Commented out to allow LLM in calendar tests
+os.environ["CI"] = "false"  # Allow LLM initialization
 
 
 class TestCalendarComprehensive:
     """Comprehensive calendar integration tests"""
     
     def test_calendar_nested_response_structure_regression(
-        self, test_db, clean_collections, mock_openai_client
+        self, test_db, clean_collections, mock_openai_client, mock_claude_llm
     ):
         """
         CRITICAL REGRESSION TEST: Ensure nested Composio response structure is handled.

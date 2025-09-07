@@ -2,9 +2,11 @@ import json
 import re
 from datetime import datetime
 from langchain_anthropic import ChatAnthropic
+from langfuse import observe
 from models.draft import Draft
 from services.contact_service import ContactSyncService
-from prompts import draft_detection_prompt, draft_information_extraction_prompt
+from prompts import draft_detection_prompt as fallback_draft_detection_prompt, draft_information_extraction_prompt
+from utils.langfuse_helpers import get_draft_detection_prompt
 import os
 
 class DraftService:
@@ -382,6 +384,7 @@ class DraftService:
         
         return None
 
+    @observe(as_type="generation", name="draft_intent_detection")
     def detect_draft_intent(self, user_query, conversation_history=None, existing_draft=None):
         """
         Use LLM to detect if user wants to create a draft and extract information.
@@ -399,8 +402,8 @@ class DraftService:
             return {"is_draft_intent": False, "draft_data": None}
         
         try:
-            # Generate prompt for draft detection
-            prompt = draft_detection_prompt(user_query, conversation_history, existing_draft)
+            # Generate prompt for draft detection using Langfuse helper
+            prompt = get_draft_detection_prompt(user_query, conversation_history, existing_draft)
             
             # Get LLM response
             response = self.llm.invoke(prompt)
@@ -420,6 +423,7 @@ class DraftService:
             print(f"[DraftService] Error in draft detection: {e}")
             return {"is_draft_intent": False, "draft_data": None}
 
+    @observe(as_type="generation", name="draft_information_extraction")
     def extract_draft_information(self, user_query, existing_draft, conversation_history=None):
         """
         Use LLM to extract information for updating an existing draft.

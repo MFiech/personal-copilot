@@ -28,7 +28,7 @@ def test_contact_model():
         # Test contact creation
         print("1. Testing contact creation...")
         contact = Contact(
-            email="test@example.com",
+            emails="test@example.com",
             name="Test User",
             phone="+1234567890",
             source="manual",
@@ -42,7 +42,7 @@ def test_contact_model():
         print("2. Testing contact retrieval...")
         retrieved_contact = Contact.get_by_email("test@example.com")
         if retrieved_contact:
-            print(f"✓ Retrieved contact: {retrieved_contact['name']} ({retrieved_contact['email']})")
+            print(f"✓ Retrieved contact: {retrieved_contact['name']} ({retrieved_contact['primary_email']})")
         else:
             print("✗ Failed to retrieve contact")
             return False
@@ -60,7 +60,7 @@ def test_contact_model():
         # Test contact deduplication (create duplicate)
         print("5. Testing contact deduplication...")
         duplicate_contact = Contact(
-            email="test@example.com",  # Same email
+            emails="test@example.com",  # Same email
             name="Test User Updated",  # Updated name
             phone="+0987654321",       # Updated phone
             source="gmail_contacts"

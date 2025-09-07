@@ -15,6 +15,8 @@ from pinecone import Pinecone
 import anthropic
 import uuid
 from services.composio_service import ComposioService
+from services.langfuse_service import get_langfuse_service
+from langfuse import observe
 import re
 import time
 import requests
@@ -78,6 +80,14 @@ try:
 except Exception as e:
     print(f"Warning: Failed to initialize Contact service: {e}")
     contact_service = None
+
+# Initialize Langfuse service
+try:
+    langfuse_service = get_langfuse_service()
+    print(f"Langfuse service initialized: {'enabled' if langfuse_service.is_enabled() else 'disabled'}")
+except Exception as e:
+    print(f"Warning: Failed to initialize Langfuse service: {e}")
+    langfuse_service = None
 
 # Lazy initialization for external services to prevent API calls during import
 _pinecone_client = None
@@ -194,6 +204,25 @@ def get_qa_chain():
 
 # Initialize conversation memory
 memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+
+# Traced LLM wrapper functions
+@observe(as_type="generation", name="claude_main_conversation")
+def traced_main_llm_call(prompt: str):
+    """Traced wrapper for main Claude LLM calls in conversation"""
+    llm = get_llm()
+    if llm:
+        return llm.invoke(prompt)
+    else:
+        raise ValueError("Claude LLM not available")
+
+@observe(as_type="generation", name="qa_chain_retrieval")
+def traced_qa_chain_call(query: str):
+    """Traced wrapper for QA chain calls with retrieval"""
+    qa_chain = get_qa_chain()
+    if qa_chain:
+        return qa_chain.invoke({"query": query})
+    else:
+        raise ValueError("QA chain not available")
 
 def convert_objectid_to_str(obj):
     if isinstance(obj, ObjectId):
@@ -536,6 +565,20 @@ def chat():
                     thread_history.append({"role": "user", "content": msg['query']})
                     thread_history.append({"role": "assistant", "content": msg['response']})
         print(f"Thread history length: {len(thread_history)}")
+
+        # Start Langfuse conversation tracing
+        conversation_trace = None
+        try:
+            if langfuse_service and langfuse_service.is_enabled():
+                conversation_trace = langfuse_service.start_conversation_trace(
+                    thread_id=thread_id,
+                    user_query=query,
+                    anchored_item=anchored_item,
+                    conversation_length=len(thread_history)
+                )
+                print(f"[LANGFUSE] Started conversation trace: {conversation_trace.id if conversation_trace else 'None'}")
+        except Exception as e:
+            print(f"[LANGFUSE] Warning: Failed to start conversation trace: {e}")
 
         # Initialize variables for tooling results
         raw_tool_results = None
@@ -934,7 +977,7 @@ def chat():
         else:
             # Get relevant documents using the retriever
             try:
-                result = get_qa_chain().invoke({"query": query})
+                result = traced_qa_chain_call(query)
                 retrieved_docs = result["source_documents"]
             except Exception as e:
                 print(f"Error in QA chain: {str(e)}")
@@ -988,7 +1031,7 @@ def chat():
 
             try:
                 print(f"[DEBUG] Calling LLM with prompt...")
-                response = get_llm().invoke(prompt)
+                response = traced_main_llm_call(prompt)
                 response_text = response.content[0] if isinstance(response.content, list) else response.content
                 response_text = response_text.strip() if isinstance(response_text, str) else str(response_text)
                 print(f"[DEBUG] LLM response: '{response_text}'")
@@ -1179,7 +1222,7 @@ def chat():
                     # Call LLM again with draft context
                     try:
                         print(f"[DEBUG] Calling LLM again with draft context...")
-                        response = get_llm().invoke(prompt)
+                        response = traced_main_llm_call(prompt)
                         response_text = response.content[0] if isinstance(response.content, list) else response.content
                         response_text = response_text.strip() if isinstance(response_text, str) else str(response_text)
                         print(f"[DEBUG] LLM response with draft context: {response_text[:200]}...")
@@ -1202,7 +1245,7 @@ def chat():
             
             try:
                 print(f"[DEBUG] Calling LLM with original prompt...")
-                response = get_llm().invoke(prompt)
+                response = traced_main_llm_call(prompt)
                 response_text = response.content[0] if isinstance(response.content, list) else response.content
                 response_text = response_text.strip() if isinstance(response_text, str) else str(response_text)
                 print(f"[DEBUG] LLM response: {response_text[:200]}...")
@@ -1358,6 +1401,40 @@ def chat():
             # Ensure tool_results is present, even if empty, if a tool was called.
             response_data['tool_results'] = assistant_message.tool_results if assistant_message.tool_results else None
             print(f"[DEBUG] Using assistant_message.tool_results: {assistant_message.tool_results}")
+
+        # End Langfuse conversation tracing
+        try:
+            if langfuse_service and langfuse_service.is_enabled() and conversation_trace:
+                # Determine tool results for tracing
+                tool_results_for_trace = None
+                if 'tool_results' in response_data and response_data['tool_results']:
+                    tool_results_for_trace = response_data['tool_results']
+                elif assistant_tool_results:
+                    tool_results_for_trace = assistant_tool_results
+                
+                # Determine draft info for tracing
+                draft_info_for_trace = None
+                if 'draft_created' in response_data:
+                    draft_info_for_trace = response_data['draft_created']
+                elif draft_created:
+                    draft_info_for_trace = {
+                        "draft_id": getattr(draft_created, 'draft_id', None),
+                        "draft_type": getattr(draft_created, 'draft_type', None),
+                        "status": "created"
+                    }
+                
+                langfuse_service.end_conversation_trace(
+                    trace_span=conversation_trace,
+                    response=response_text,
+                    tool_results=tool_results_for_trace,
+                    draft_created=draft_info_for_trace
+                )
+                
+                # Flush traces to ensure they're sent
+                langfuse_service.flush()
+                print(f"[LANGFUSE] Ended conversation trace and flushed")
+        except Exception as e:
+            print(f"[LANGFUSE] Warning: Failed to end conversation trace: {e}")
 
         print(f"\n=== Sending Response ===")
         print(f"Response data: {json.dumps(response_data, indent=2)[:1000]}")
