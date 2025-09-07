@@ -15,7 +15,7 @@ from pinecone import Pinecone
 import anthropic
 import uuid
 from services.composio_service import ComposioService
-from services.langfuse_service import get_langfuse_service
+from services.langfuse_client import create_langfuse_client
 from langfuse import observe
 import re
 import time
@@ -81,13 +81,13 @@ except Exception as e:
     print(f"Warning: Failed to initialize Contact service: {e}")
     contact_service = None
 
-# Initialize Langfuse service
+# Initialize Langfuse client for conversation service
 try:
-    langfuse_service = get_langfuse_service()
-    print(f"Langfuse service initialized: {'enabled' if langfuse_service.is_enabled() else 'disabled'}")
+    conversation_langfuse = create_langfuse_client("conversation")
+    print(f"✅ [CONVERSATION] Langfuse client initialized: {'enabled' if conversation_langfuse.is_enabled() else 'disabled'}")
 except Exception as e:
-    print(f"Warning: Failed to initialize Langfuse service: {e}")
-    langfuse_service = None
+    print(f"⚠️ [CONVERSATION] Failed to initialize Langfuse client: {e}")
+    conversation_langfuse = None
 
 # Lazy initialization for external services to prevent API calls during import
 _pinecone_client = None
@@ -566,19 +566,28 @@ def chat():
                     thread_history.append({"role": "assistant", "content": msg['response']})
         print(f"Thread history length: {len(thread_history)}")
 
-        # Start Langfuse conversation tracing
-        conversation_trace = None
+        # Start Langfuse conversation tracing with new context manager pattern
+        conversation_span = None
         try:
-            if langfuse_service and langfuse_service.is_enabled():
-                conversation_trace = langfuse_service.start_conversation_trace(
+            if conversation_langfuse and conversation_langfuse.is_enabled():
+                conversation_span = conversation_langfuse.create_workflow_span(
+                    name="pm_copilot_conversation_turn",
                     thread_id=thread_id,
-                    user_query=query,
-                    anchored_item=anchored_item,
-                    conversation_length=len(thread_history)
+                    input_data={
+                        "user_query": query,
+                        "anchored_item": anchored_item,
+                        "conversation_length": len(thread_history)
+                    },
+                    metadata={
+                        "workflow_type": "conversation",
+                        "has_anchored_item": bool(anchored_item)
+                    }
                 )
-                print(f"[LANGFUSE] Started conversation trace: {conversation_trace.id if conversation_trace else 'None'}")
+                if conversation_span:
+                    conversation_langfuse.update_span_with_session(conversation_span, thread_id, ["conversation", "pm_copilot"])
+                print(f"[LANGFUSE] Started conversation span: {conversation_span.trace_id if conversation_span else 'None'}")
         except Exception as e:
-            print(f"[LANGFUSE] Warning: Failed to start conversation trace: {e}")
+            print(f"[LANGFUSE] Warning: Failed to start conversation span: {e}")
 
         # Initialize variables for tooling results
         raw_tool_results = None
@@ -600,7 +609,7 @@ def chat():
                 draft_service = DraftService()
                 
                 # Single draft intent detection - reuse this result later
-                draft_detection_result = draft_service.detect_draft_intent(query, thread_history)
+                draft_detection_result = draft_service.detect_draft_intent(query, thread_history, thread_id=thread_id)
                 
                 if draft_detection_result.get("is_draft_intent"):
                     print(f"[DRAFT] Draft intent detected - SKIPPING tooling service to prevent auto-creation")
@@ -620,7 +629,7 @@ def chat():
                 print("\n=== Processing Tooling Query ===")
                 print(f"Using Tooling service: {type(tooling_service).__name__}")
                 print(f"[DEBUG] About to call tooling_service.process_query...")
-                raw_tool_results = tooling_service.process_query(query, thread_history, anchored_item)
+                raw_tool_results = tooling_service.process_query(query, thread_history, anchored_item, thread_id=thread_id)
                 print(f"[DEBUG] tooling_service.process_query completed successfully")
                 # Safe logging that handles ObjectIds
                 try:
@@ -1404,7 +1413,7 @@ def chat():
 
         # End Langfuse conversation tracing
         try:
-            if langfuse_service and langfuse_service.is_enabled() and conversation_trace:
+            if conversation_langfuse and conversation_langfuse.is_enabled() and conversation_span:
                 # Determine tool results for tracing
                 tool_results_for_trace = None
                 if 'tool_results' in response_data and response_data['tool_results']:
@@ -1423,18 +1432,20 @@ def chat():
                         "status": "created"
                     }
                 
-                langfuse_service.end_conversation_trace(
-                    trace_span=conversation_trace,
-                    response=response_text,
-                    tool_results=tool_results_for_trace,
-                    draft_created=draft_info_for_trace
+                # End span with output data
+                conversation_span.end(
+                    output={
+                        "response": response_text,
+                        "tool_results": tool_results_for_trace,
+                        "draft_created": draft_info_for_trace
+                    }
                 )
                 
                 # Flush traces to ensure they're sent
-                langfuse_service.flush()
-                print(f"[LANGFUSE] Ended conversation trace and flushed")
+                conversation_langfuse.flush()
+                print(f"[LANGFUSE] Ended conversation span and flushed")
         except Exception as e:
-            print(f"[LANGFUSE] Warning: Failed to end conversation trace: {e}")
+            print(f"[LANGFUSE] Warning: Failed to end conversation span: {e}")
 
         print(f"\n=== Sending Response ===")
         print(f"Response data: {json.dumps(response_data, indent=2)[:1000]}")
