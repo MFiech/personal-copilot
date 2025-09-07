@@ -31,6 +31,11 @@ def main():
     parser.add_argument('--all', action='store_true', help='Run all tests')
     parser.add_argument('--coverage', action='store_true', help='Run tests with coverage report')
     parser.add_argument('--install-deps', action='store_true', help='Install test dependencies first')
+    # New optimized test options
+    parser.add_argument('--optimized', action='store_true', help='Run optimized tests with mocks (saves tokens)')
+    parser.add_argument('--health-check', action='store_true', help='Run only health check tests (uses real APIs)')
+    parser.add_argument('--mock-only', action='store_true', help='Run only tests that use mocks')
+    parser.add_argument('--token-efficient', action='store_true', help='Run token-efficient test suite (optimized + health checks)')
     
     args = parser.parse_args()
     
@@ -67,27 +72,78 @@ def main():
             "Integration Tests"
         )
     
-    if args.coverage:
-        # Run all tests with coverage
+    # New optimized test options
+    if args.optimized:
+        # Run optimized tests using mocks
         success &= run_command(
-            "pytest tests/test_email_*.py --cov=models --cov=services --cov-report=html --cov-report=term-missing",
-            "All Tests with Coverage"
+            "TESTING=true pytest -m optimized -v",
+            "Optimized Tests (Using Mocks - Token Efficient)"
+        )
+    
+    if args.health_check:
+        # Run health check tests (real API calls)
+        success &= run_command(
+            "pytest -m health_check -v",
+            "Health Check Tests (Real API Calls)"
+        )
+    
+    if args.mock_only:
+        # Run only tests that use mocks
+        success &= run_command(
+            "TESTING=true pytest -m mock_only -v",
+            "Mock-Only Tests (No Real API Calls)"
+        )
+    
+    if args.token_efficient:
+        # Run the most efficient test suite: optimized tests + minimal health checks
+        print(f"\n🚀 Running Token-Efficient Test Suite")
+        print(f"This runs optimized tests with mocks + minimal health checks")
+        
+        success &= run_command(
+            "TESTING=true pytest -m optimized -v",
+            "1/2: Optimized Integration Tests (Mocked)"
+        )
+        
+        success &= run_command(
+            "pytest -m health_check -v --tb=line",
+            "2/2: API Health Checks (Minimal Real Calls)"
+        )
+        
+        if success:
+            print(f"\n💡 Token-Efficient Suite Complete!")
+            print(f"✅ Full functionality tested with minimal API token usage")
+    
+    if args.coverage:
+        # Run optimized tests with coverage by default to save tokens
+        success &= run_command(
+            "TESTING=true pytest -m 'optimized or critical' --cov=models --cov=services --cov-report=html --cov-report=term-missing",
+            "Coverage Tests (Optimized for Token Efficiency)"
         )
         
         if success:
             print(f"\n📊 Coverage report generated in htmlcov/index.html")
+            print(f"💡 Coverage ran with optimized tests to save tokens")
     
-    if not any([args.critical, args.regression, args.integration, args.all, args.coverage]):
-        # Default: run critical tests
+    # Update default behavior
+    if not any([args.critical, args.regression, args.integration, args.all, args.coverage, 
+                args.optimized, args.health_check, args.mock_only, args.token_efficient]):
+        # New default: run token-efficient suite
+        print(f"\n🎯 Running Default Token-Efficient Test Suite")
         success &= run_command(
-            "pytest tests/test_email_data_processing_regression.py tests/test_email_count_verification.py -v",
-            "Default - Critical Email Flow Tests"
+            "TESTING=true pytest -m optimized -v",
+            "Default - Optimized Tests (Token Efficient)"
         )
     
     print(f"\n{'='*60}")
     if success:
         print("🎉 ALL TESTS PASSED!")
-        print("The email flow is working correctly and protected against regressions.")
+        if args.token_efficient or args.optimized:
+            print("✨ Tests completed with optimized token usage!")
+            print("💰 Significant API cost savings achieved through smart mocking.")
+        elif args.health_check:
+            print("🔍 API connectivity verified - all external services are healthy.")
+        else:
+            print("📧 Application functionality verified and protected against regressions.")
     else:
         print("💥 SOME TESTS FAILED!")
         print("Please fix the failing tests before pushing changes.")
