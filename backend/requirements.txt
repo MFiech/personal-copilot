@@ -13,3 +13,4 @@ pymongo==4.6.1
 html2text==2020.1.16
 langchain-google-genai
 composio_core
+langfuse

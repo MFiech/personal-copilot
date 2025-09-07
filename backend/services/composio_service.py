@@ -8,6 +8,8 @@ import json
 import zoneinfo
 import time
 from bson import ObjectId
+from langfuse import observe
+from utils.langfuse_helpers import get_gmail_query_builder_prompt, get_query_classification_prompt, get_calendar_intent_analysis_prompt
 
 class ComposioService:
     def __init__(self, api_key: str):
@@ -138,6 +140,7 @@ class ComposioService:
             print(f"[WARNING] Failed to initialize Gemini LLM for query classification: {e}")
             self.gemini_llm = None
 
+    @observe(as_type="generation", name="query_classification")
     def classify_query_with_llm(self, user_query, conversation_history=None):
         """
         Use Gemini LLM to classify user query intent with conversation context.
@@ -155,60 +158,9 @@ class ComposioService:
             return self._fallback_keyword_classification(user_query)
         
         try:
-            # Build conversation context
-            context_text = ""
-            if conversation_history:
-                # Include last 6 messages for context (3 exchanges)
-                recent_history = conversation_history[-6:] if len(conversation_history) > 6 else conversation_history
-                for msg in recent_history:
-                    role = msg.get('role', 'user')
-                    content = msg.get('content', '')[:300]  # Truncate for brevity
-                    context_text += f"{role.capitalize()}: {content}\n"
-            
-            # Create the classification prompt
-            prompt = f"""You are an expert query classifier for a personal assistant that can access emails, calendar events, and contacts.
+            # Get the classification prompt using Langfuse helper
+            prompt = get_query_classification_prompt(user_query, conversation_history)
 
-CONVERSATION CONTEXT (recent messages):
-{context_text}
-
-USER QUERY: "{user_query}"
-
-CLASSIFICATION TASK:
-Analyze the user's query considering the conversation context. Classify the intent as one of:
-
-1. "email" - User wants to find, search, or work with emails/messages
-   Examples: "show me emails", "check my inbox", "emails from John", "unread messages"
-
-2. "calendar" - User wants to find, search, or work with calendar events/meetings
-   Examples: "what's on my calendar", "meetings today", "schedule for this week", "upcoming events"
-
-3. "contact" - User wants to find, search, or get information about contacts/people
-   Examples: "what's the email of John Doe", "contact info for Sarah", "find contact Dawid", "email address of Mike", "all emails of John" (meaning email addresses), "phone number of Sarah"
-
-4. "general" - General questions, conversation, or non-email/calendar/contact requests
-   Examples: "how's the weather", "what is AI", "tell me a joke"
-
-IMPORTANT CONTEXT RULES:
-- If previous messages were about emails/calendar/contacts and current query is vague ("and this week?", "show me more", "what about tomorrow?"), inherit that context
-- Time-related queries without explicit service ("today", "this week", "tomorrow") should prefer calendar if recent context suggests it
-- Follow-up questions typically maintain the same intent as previous queries
-- Queries asking for "email of [person]" or "emails of [person]" or "contact info" should be classified as "contact", not "email"
-- "Emails from [person]" or "messages from [person]" should be classified as "email" (searching for messages)
-- "Email addresses of [person]" or "all emails of [person]" should be classified as "contact" (contact information)
-
-RESPONSE FORMAT (JSON only):
-{{
-  "intent": "email" | "calendar" | "contact" | "general",
-  "confidence": 0.95,
-  "reasoning": "Brief explanation of why this classification was chosen",
-  "parameters": {{
-    "timeframe": "today|this_week|tomorrow|...",
-    "keywords": ["relevant", "search", "terms"],
-    "context_inherited": true/false
-  }}
-}}
-
-Respond with ONLY the JSON object, no additional text."""
 
             # Call Gemini
             response = self.gemini_llm.invoke(prompt)
@@ -1132,16 +1084,15 @@ Respond with ONLY the JSON object, no additional text."""
 
         return "\n".join(summary)
 
+    @observe(as_type="generation", name="gmail_query_building")
     def build_gmail_query_with_llm(self, user_query, conversation_history=None):
         """
         Use LLM to intelligently build Gmail search queries from natural language.
         Returns a Gmail search query string or empty string for general queries.
         """
         try:
-            from prompts import gmail_query_builder_prompt
-            
-            # Build the prompt
-            prompt = gmail_query_builder_prompt(user_query, conversation_history)
+            # Build the prompt using Langfuse helper
+            prompt = get_gmail_query_builder_prompt(user_query, conversation_history)
             
             # Get OpenAI API key from environment
             api_key = os.getenv('OPENAI_API_KEY')
@@ -1176,6 +1127,7 @@ Respond with ONLY the JSON object, no additional text."""
             # Fallback to simple query building
             return self._build_simple_query(user_query)
     
+    @observe(as_type="generation", name="calendar_intent_analysis")
     def _analyze_calendar_intent(self, user_query, thread_history=None):
         """
         Use LLM to analyze calendar intent and extract parameters.
@@ -1193,85 +1145,9 @@ Respond with ONLY the JSON object, no additional text."""
             return self._fallback_calendar_intent_analysis(user_query)
         
         try:
-            # Build conversation context
-            context_text = ""
-            if thread_history:
-                recent_history = thread_history[-6:] if len(thread_history) > 6 else thread_history
-                for msg in recent_history:
-                    role = msg.get('role', 'user')
-                    content = msg.get('content', '')[:300]
-                    context_text += f"{role.capitalize()}: {content}\n"
-            
-            current_date = datetime.now()
-            current_weekday = current_date.strftime('%A')  # Monday, Tuesday, etc.
-            
-            prompt = f"""You are an expert calendar assistant. Analyze the user's query to determine if they want to CREATE a new calendar event or SEARCH for existing events.
+            # Get the calendar intent analysis prompt using Langfuse helper
+            prompt = get_calendar_intent_analysis_prompt(user_query, thread_history)
 
-CURRENT CONTEXT:
-- Current date: {current_date.strftime('%Y-%m-%d')} ({current_weekday})
-- Current time: {current_date.strftime('%H:%M')}
-
-CONVERSATION CONTEXT:
-{context_text}
-
-USER QUERY: "{user_query}"
-
-TASK: Determine the operation type and extract parameters.
-
-OPERATIONS:
-1. "create" - User wants to create/schedule/add a new calendar event
-   - Keywords: create, schedule, add, book, set up, plan, new, make
-   - Extract: title, date, time, location, description, attendees
-
-2. "search" - User wants to find/view existing calendar events  
-   - Keywords: show, find, what's, check, list, view, see
-   - Extract: date_range, keywords, attendee_filter
-
-PARAMETER EXTRACTION RULES:
-For CREATE operations:
-- title: Event title/summary (required)
-- date: Event date in YYYY-MM-DD format (required) 
-- start_time: Start time in HH:MM format (required)
-- end_time: End time in HH:MM format (optional, default +1 hour)
-- location: Event location (optional)
-- description: Event description (optional)
-- attendees: List of email addresses (optional)
-
-For SEARCH operations:
-- date_range: today/tomorrow/this week/next week/etc
-- keywords: Search terms for event content
-- time_range: morning/afternoon/evening
-
-DATE/TIME PARSING:
-- "Friday" = next Friday if today is not Friday, today if today is Friday
-- "tomorrow" = {(current_date + timedelta(days=1)).strftime('%Y-%m-%d')}
-- "today" = {current_date.strftime('%Y-%m-%d')}
-- "5pm" = "17:00", "5:30pm" = "17:30"
-- "noon" = "12:00", "midnight" = "00:00"
-- If no time specified for create, use "09:00" as default
-
-RESPONSE FORMAT (JSON only):
-{{
-  "operation": "create" | "search",
-  "confidence": 0.95,
-  "parameters": {{
-    // For create:
-    "title": "Event title",
-    "date": "YYYY-MM-DD", 
-    "start_time": "HH:MM",
-    "end_time": "HH:MM",
-    "location": "location",
-    "description": "description",
-    "attendees": ["email1@domain.com"]
-    
-    // For search:
-    "date_range": "today|tomorrow|this week",
-    "keywords": "search terms",
-    "time_range": "morning|afternoon|evening"
-  }}
-}}
-
-Respond with ONLY the JSON object."""
 
             # Call Gemini
             response = self.gemini_llm.invoke(prompt)

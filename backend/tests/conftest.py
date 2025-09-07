@@ -8,10 +8,14 @@ import sys
 from unittest.mock import Mock, patch
 import tempfile
 import shutil
+from dotenv import load_dotenv
 
 # Add backend directory to path for imports
 backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, backend_dir)
+
+# Load environment variables for tests
+load_dotenv(dotenv_path=os.path.join(backend_dir, '.env'))
 
 from utils.mongo_client import get_db, get_collection
 from models.email import Email
@@ -190,6 +194,23 @@ def mock_openai_client():
         mock_client.chat.completions.create.return_value = mock_response
         
         yield mock_client
+
+
+@pytest.fixture
+def mock_claude_llm():
+    """Mock Claude LLM for testing"""
+    with patch('app.get_llm') as mock_get_llm:
+        mock_llm = Mock()
+        
+        # Create a proper LangChain response object
+        mock_response = Mock()
+        mock_response.content = "Based on your calendar data, here are your scheduled plans for this week: [test response]"
+        
+        # Mock Claude LLM response for calendar queries
+        mock_llm.invoke.return_value = mock_response
+        
+        mock_get_llm.return_value = mock_llm
+        yield mock_llm
 
 
 # Calendar Testing Fixtures
