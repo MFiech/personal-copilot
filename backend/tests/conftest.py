@@ -213,45 +213,155 @@ def mock_claude_llm():
         yield mock_llm
 
 
+@pytest.fixture
+def mock_all_llm_services():
+    """Comprehensive mock for all LLM services to prevent any real API calls"""
+    with patch('app.get_llm') as mock_get_llm, \
+         patch('app.get_gemini_llm') as mock_get_gemini, \
+         patch('app.llm_with_tracing') as mock_llm_tracing, \
+         patch('langchain_anthropic.ChatAnthropic') as mock_anthropic, \
+         patch('langchain_google_genai.ChatGoogleGenerativeAI') as mock_google, \
+         patch('openai.OpenAI') as mock_openai:
+        
+        # Mock Claude LLM
+        mock_claude = Mock()
+        mock_claude_response = Mock()
+        mock_claude_response.content = "Mock LLM response for testing"
+        mock_claude.invoke.return_value = mock_claude_response
+        mock_get_llm.return_value = mock_claude
+        
+        # Mock Gemini LLM  
+        mock_gemini = Mock()
+        mock_gemini_response = Mock()
+        mock_gemini_response.content = "Mock Gemini response for testing"
+        mock_gemini.invoke.return_value = mock_gemini_response
+        mock_get_gemini.return_value = mock_gemini
+        
+        # Mock LLM tracing
+        mock_llm_tracing.return_value = mock_claude_response
+        
+        # Mock LangChain classes
+        mock_anthropic.return_value = mock_claude
+        mock_google.return_value = mock_gemini
+        
+        # Mock OpenAI client
+        mock_openai_client = Mock()
+        mock_openai_response = Mock()
+        mock_openai_response.choices = [Mock()]
+        mock_openai_response.choices[0].message = Mock()
+        mock_openai_response.choices[0].message.content = "Mock OpenAI response"
+        mock_openai_response.choices[0].message.tool_calls = None
+        mock_openai_client.chat.completions.create.return_value = mock_openai_response
+        mock_openai.return_value = mock_openai_client
+        
+        yield {
+            'claude': mock_claude,
+            'gemini': mock_gemini,
+            'openai': mock_openai_client,
+            'tracing': mock_llm_tracing
+        }
+
+
 # Calendar Testing Fixtures
 @pytest.fixture
 def mock_composio_calendar_service():
     """Mock Composio calendar service with realistic responses"""
-    # Import the real ComposioService class to create a real instance
-    from services.composio_service import ComposioService
-    
-    # Create a real instance with mock API key
-    real_instance = ComposioService(api_key="mock_api_key")
-    
-    # Mock the _execute_action method directly
-    real_instance._execute_action = Mock()
-    
-    # Import calendar helpers here to avoid circular imports
-    import sys
-    import os
-    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    sys.path.insert(0, backend_dir)
-    from tests.test_utils.calendar_helpers import create_mock_calendar_search_response
-    
-    # Configure calendar search response (the nested structure we fixed)
-    search_response = create_mock_calendar_search_response('this_week', 2)
-    
-    # Set up account status
-    real_instance.calendar_account_id = '06747a1e-ff62-4c16-9869-4c214eebc920'
-    real_instance.client_available = True
-    
-    # Mock the process_query method for integration tests
-    real_instance.process_query = Mock(return_value={
-        'source_type': 'google-calendar',
-        'content': 'Events fetched.',
-        'data': search_response['data'],
-        'search_context': {
-            'date_range': 'this_week',
-            'search_method': 'list_events (time-based)'
+    with patch('services.composio_service.ComposioService') as mock_service_class:
+        # Create comprehensive mock instance
+        mock_instance = Mock()
+        mock_service_class.return_value = mock_instance
+        
+        # Import calendar helpers here to avoid circular imports
+        import sys
+        import os
+        backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        sys.path.insert(0, backend_dir)
+        from tests.test_utils.calendar_helpers import (
+            create_mock_calendar_search_response,
+            create_mock_calendar_creation_response
+        )
+        
+        # Configure calendar search response (the nested structure we fixed)
+        search_response = create_mock_calendar_search_response('this_week', 2)
+        
+        # Set up account status
+        mock_instance.calendar_account_id = '06747a1e-ff62-4c16-9869-4c214eebc920'
+        mock_instance.client_available = True
+        
+        # Mock all potential methods that could make real API calls
+        mock_instance._execute_action = Mock()
+        mock_instance.composio_client = Mock()
+        
+        # Mock search/list operations
+        mock_instance.process_query.return_value = {
+            'source_type': 'google-calendar',
+            'content': 'Events fetched.',
+            'data': search_response['data'],
+            'search_context': {
+                'date_range': 'this_week',
+                'search_method': 'list_events (time-based)'
+            }
         }
-    })
-    
-    yield real_instance
+        
+        # Mock calendar event creation to prevent real events
+        def mock_create_event(*args, **kwargs):
+            creation_response = create_mock_calendar_creation_response(
+                title=kwargs.get('title', 'Mock Created Event'),
+                start_time=kwargs.get('start_time', '2025-09-04T15:00:00+02:00')
+            )
+            return creation_response
+        
+        mock_instance.create_calendar_event = Mock(side_effect=mock_create_event)
+        
+        # Mock any other calendar operations
+        mock_instance.delete_calendar_event = Mock(return_value={'success': True, 'message': 'Mock event deleted'})
+        mock_instance.update_calendar_event = Mock(return_value={'success': True, 'message': 'Mock event updated'})
+        
+        yield mock_instance
+
+
+@pytest.fixture
+def mock_composio_service_comprehensive():
+    """Comprehensive mock for ComposioService to prevent ALL real API calls"""
+    with patch('services.composio_service.ComposioService') as mock_service_class:
+        mock_instance = Mock()
+        mock_service_class.return_value = mock_instance
+        
+        # Mock email operations
+        mock_instance.process_query.return_value = {
+            'source_type': 'mail',
+            'content': 'Emails fetched.',
+            'data': {
+                'data': {
+                    'messages': [
+                        {
+                            'messageId': 'mock_email_123',
+                            'thread_id': 'mock_thread_123',
+                            'subject': 'Mock Email Subject',
+                            'messageText': 'Mock email content',
+                            'date': '1640995200',
+                            'from': {'name': 'Mock Sender', 'email': 'mock@example.com'},
+                            'to': [{'name': 'Mock Receiver', 'email': 'receiver@example.com'}],
+                            'labelIds': ['INBOX'],
+                            'attachmentList': []
+                        }
+                    ]
+                }
+            },
+            'next_page_token': None,
+            'total_estimate': 1,
+            'has_more': False
+        }
+        
+        # Mock calendar operations
+        mock_instance.calendar_account_id = '06747a1e-ff62-4c16-9869-4c214eebc920'
+        mock_instance.client_available = True
+        
+        # Ensure no real Composio client initialization
+        mock_instance._execute_action = Mock()
+        mock_instance.composio_client = Mock()
+        
+        yield mock_instance
 
 
 @pytest.fixture  
