@@ -9,6 +9,7 @@ import zoneinfo
 import time
 from bson import ObjectId
 from langfuse import observe
+from services.langfuse_client import create_langfuse_client
 from utils.langfuse_helpers import get_gmail_query_builder_prompt, get_query_classification_prompt, get_calendar_intent_analysis_prompt
 
 class ComposioService:
@@ -39,6 +40,13 @@ class ComposioService:
             self.composio = None
             self.client_available = False
             print("[WARNING] Composio client initialization failed. Email/calendar features will be limited.")
+        
+        # Initialize Langfuse client for composio service
+        try:
+            self.langfuse_client = create_langfuse_client("email")
+        except Exception as e:
+            print(f"⚠️ [EMAIL] Failed to initialize Langfuse client: {e}")
+            self.langfuse_client = None
         
         # Initialize Gemini LLM for query classification
         self.gemini_llm = None
@@ -1692,7 +1700,7 @@ class ComposioService:
         
         return None
 
-    def process_query(self, query, thread_history=None, anchored_item=None):
+    def process_query(self, query, thread_history=None, anchored_item=None, thread_id=None):
         """
         Enhanced process_query that uses LLM-based classification and 2-stage approach for calendar processing.
         

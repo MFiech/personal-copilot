@@ -4,7 +4,7 @@ Provides convenient access to Langfuse-managed prompts
 """
 
 from datetime import datetime, timedelta
-from services.langfuse_service import get_langfuse_service
+from services.langfuse_client import create_langfuse_client
 from typing import Optional, List, Dict, Any
 
 def get_managed_prompt(prompt_name: str, **variables) -> Optional[str]:
@@ -18,13 +18,14 @@ def get_managed_prompt(prompt_name: str, **variables) -> Optional[str]:
     Returns:
         Compiled prompt string or None if not available
     """
-    langfuse_service = get_langfuse_service()
-    
-    if not langfuse_service.is_enabled():
-        return None
-    
     try:
-        prompt = langfuse_service.get_prompt(prompt_name, label="production")
+        # Create a helper client for prompt management
+        langfuse_client = create_langfuse_client("helpers")
+        
+        if not langfuse_client.is_enabled():
+            return None
+        
+        prompt = langfuse_client.get_prompt(prompt_name, label="production")
         if prompt:
             # Compile the prompt with variables
             compiled_prompt = prompt.compile(**variables)

@@ -5,6 +5,7 @@ from langchain_anthropic import ChatAnthropic
 from langfuse import observe
 from models.draft import Draft
 from services.contact_service import ContactSyncService
+from services.langfuse_client import create_langfuse_client
 from prompts import draft_detection_prompt as fallback_draft_detection_prompt, draft_information_extraction_prompt
 from utils.langfuse_helpers import get_draft_detection_prompt
 import os
@@ -12,6 +13,13 @@ import os
 class DraftService:
     def __init__(self):
         self.contact_service = ContactSyncService()
+        
+        # Initialize Langfuse client for drafts service
+        try:
+            self.langfuse_client = create_langfuse_client("drafts")
+        except Exception as e:
+            print(f"⚠️ [DRAFTS] Failed to initialize Langfuse client: {e}")
+            self.langfuse_client = None
         
         # Initialize LLM for draft detection and extraction
         anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
@@ -385,7 +393,7 @@ class DraftService:
         return None
 
     @observe(as_type="generation", name="draft_intent_detection")
-    def detect_draft_intent(self, user_query, conversation_history=None, existing_draft=None):
+    def detect_draft_intent(self, user_query, conversation_history=None, existing_draft=None, thread_id=None):
         """
         Use LLM to detect if user wants to create a draft and extract information.
         
@@ -401,6 +409,31 @@ class DraftService:
             print("[DraftService] LLM not available for draft detection")
             return {"is_draft_intent": False, "draft_data": None}
         
+        # Start workflow tracing if Langfuse is enabled and thread_id is provided
+        if self.langfuse_client and self.langfuse_client.is_enabled() and thread_id:
+            try:
+                with self.langfuse_client.create_workflow_span(
+                    name="pm_copilot_draft_intent_detection",
+                    thread_id=thread_id,
+                    input_data={
+                        "user_query": user_query,
+                        "has_conversation_history": bool(conversation_history),
+                        "has_existing_draft": bool(existing_draft)
+                    },
+                    metadata={"workflow_type": "draft_detection"}
+                ) as workflow_span:
+                    if workflow_span:
+                        self.langfuse_client.update_span_with_session(workflow_span, thread_id, ["drafts", "intent_detection"])
+                    
+                    return self._process_draft_detection(user_query, conversation_history, existing_draft)
+            except Exception as e:
+                print(f"⚠️ [DRAFTS] Workflow tracing failed, continuing without tracing: {e}")
+                return self._process_draft_detection(user_query, conversation_history, existing_draft)
+        else:
+            return self._process_draft_detection(user_query, conversation_history, existing_draft)
+    
+    def _process_draft_detection(self, user_query, conversation_history, existing_draft):
+        """Internal method to handle draft detection logic"""
         try:
             # Generate prompt for draft detection using Langfuse helper
             prompt = get_draft_detection_prompt(user_query, conversation_history, existing_draft)
