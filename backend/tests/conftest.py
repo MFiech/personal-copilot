@@ -54,7 +54,7 @@ def test_db(test_db_name):
 
 @pytest.fixture
 def mock_composio_service():
-    """Mock Composio service responses"""
+    """Mock Composio service responses for integration tests"""
     with patch('services.composio_service.ComposioService') as mock_service:
         # Create mock instance
         mock_instance = Mock()
@@ -97,7 +97,45 @@ def mock_composio_service():
             'has_more': False
         }
         
+        # Mock get_email_details for integration tests
+        mock_instance.get_email_details.return_value = "Mocked email content for integration tests"
+        
         yield mock_instance
+
+
+@pytest.fixture
+def safe_composio_service():
+    """Fixture that provides a safely mocked ComposioService for unit tests"""
+    with patch('services.composio_service.Composio') as mock_composio:
+        mock_client = Mock()
+        mock_composio.return_value = mock_client
+        
+        # Prevent real API calls
+        mock_client.execute.side_effect = RuntimeError(
+            "Real Composio API call attempted in test! Use _execute_action mocking."
+        )
+        
+        # Import and create service after mocking
+        service = ComposioService("test_api_key")
+        service.client_available = True
+        
+        yield service
+
+
+@pytest.fixture(autouse=True)
+def prevent_real_api_calls():
+    """Auto-applied fixture to prevent real API calls in all tests"""
+    with patch('composio.Composio') as mock_composio:
+        mock_instance = Mock()
+        mock_composio.return_value = mock_instance
+        
+        # Make real API calls fail loudly if attempted
+        mock_instance.execute.side_effect = RuntimeError(
+            "Real Composio API call attempted in test! "
+            "Use proper mocking with _execute_action or mock_composio_service fixture."
+        )
+        
+        yield
 
 
 @pytest.fixture

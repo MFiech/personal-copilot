@@ -521,10 +521,10 @@ class ComposioService:
                 email_data = {}
             print(f"[DEBUG] get_email_details - Full email data keys: {list(email_data.keys()) if email_data else 'None'}")
             
-            # The actual email data is nested inside the 'data' field
-            actual_email_data = email_data.get("data", {})
+            # The email data is at the top level, not nested
+            actual_email_data = email_data
             if not actual_email_data:
-                print(f"[DEBUG] get_email_details - No nested data field found")
+                print(f"[DEBUG] get_email_details - No email data found")
                 return None
                 
             print(f"[DEBUG] get_email_details - Actual email data keys: {list(actual_email_data.keys())}")
