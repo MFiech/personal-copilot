@@ -233,6 +233,75 @@ def convert_objectid_to_str(obj):
         return [convert_objectid_to_str(item) for item in obj]
     return obj
 
+def extract_content_from_conversation(thread_history, draft_data):
+    """
+    Extract content from recent conversation that should be applied to draft.
+    Looks for LLM-generated content that appears to be draft content.
+    """
+    if not thread_history:
+        return {}
+    
+    # Look at the most recent assistant messages for content that looks like draft content
+    recent_assistant_messages = []
+    for msg in reversed(thread_history[-6:]):  # Last 3 exchanges
+        if msg.get('role') == 'assistant':
+            recent_assistant_messages.append(msg.get('content', ''))
+            if len(recent_assistant_messages) >= 2:  # Max 2 recent assistant messages
+                break
+    
+    updates = {}
+    draft_type = draft_data.get('draft_type', 'email')
+    
+    for content in recent_assistant_messages:
+        if not content:
+            continue
+            
+        # Simple heuristics to detect if assistant generated draft content
+        content_lower = content.lower()
+        
+        if draft_type == 'email':
+            # Look for email-like content
+            if ('subject:' in content_lower or 'email' in content_lower) and len(content) > 50:
+                # Try to extract structured email content
+                lines = content.split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if line.lower().startswith('subject:'):
+                        subject = line[8:].strip().strip('"').strip("'")
+                        if subject and not draft_data.get('subject'):
+                            updates['subject'] = subject
+                            
+                # Look for email body content (longer text blocks)
+                if not draft_data.get('body') and len(content) > 100:
+                    # Extract content that looks like email body
+                    potential_body = content
+                    # Clean up common assistant prefixes
+                    for prefix in ["I'll draft", "Here's", "Based on", "I'll create"]:
+                        if potential_body.startswith(prefix):
+                            # Find the actual content after the explanation
+                            sentences = potential_body.split('.')
+                            if len(sentences) > 2:
+                                potential_body = '. '.join(sentences[1:]).strip()
+                                break
+                    
+                    if len(potential_body) > 50 and any(word in potential_body.lower() for word in ['meeting', 'discuss', 'agenda', 'time']):
+                        updates['body'] = potential_body
+        
+        elif draft_type == 'calendar_event':
+            # Look for calendar event content
+            if any(word in content_lower for word in ['meeting', 'event', 'calendar', 'schedule']):
+                # Try to extract event details
+                if not draft_data.get('summary') and len(content) > 20:
+                    # Extract potential event title
+                    lines = content.split('\n')
+                    for line in lines:
+                        if 'meeting' in line.lower() and len(line.strip()) < 100:
+                            updates['summary'] = line.strip()
+                            break
+    
+    print(f"[DRAFT] Content extraction found: {updates}")
+    return updates
+
 def build_prompt(query, retrieved_docs, thread_history=None, tool_context=None, anchored_item=None, draft_context=None):
     print("=== BUILD_PROMPT FUNCTION CALLED ===")
     prompt_parts = []
@@ -594,34 +663,121 @@ def chat():
         assistant_tool_results = None
         raw_email_list = None
 
-        # Step 0: Pre-check for draft creation intent to avoid calling tooling service
-        # BUT skip this check if we have an anchored item - anchored items should always process through tooling service
-        print(f"\n=== Checking for Draft Creation Intent ===")
+        # Step 0: NEW SEPARATED DRAFT ROUTING LOGIC
+        print(f"\n🔄 === DRAFT INTENT ROUTING STARTED ===")
+        print(f"[DRAFT_ROUTING] Query: {query}")
+        print(f"[DRAFT_ROUTING] Anchored Item: {anchored_item}")
         should_skip_tooling = False
         draft_detection_result = None  # Store result to reuse later
+        draft_update_result = None  # Store draft update result
         
-        if anchored_item:
-            print(f"[DRAFT] Anchored item detected - SKIPPING draft detection, going straight to tooling service")
-            should_skip_tooling = False
-        else:
-            try:
-                from services.draft_service import DraftService
-                draft_service = DraftService()
+        try:
+            from services.draft_service import DraftService
+            draft_service = DraftService()
+            
+            if anchored_item and anchored_item.get('type') == 'draft':
+                # Route 1: Draft Anchored - Check for Update Intent
+                print(f"[DRAFT] Draft anchored - checking for update intent")
                 
-                # Single draft intent detection - reuse this result later
-                draft_detection_result = draft_service.detect_draft_intent(query, thread_history, thread_id=thread_id)
+                # CRITICAL FIX: Always refresh draft data from database to avoid staleness
+                draft_id = anchored_item.get('id')
+                fresh_draft = draft_service.get_draft_by_id(draft_id)
+                if fresh_draft:
+                    anchored_draft_data = fresh_draft.to_dict()
+                    print(f"[DRAFT] Refreshed draft data from database")
+                else:
+                    print(f"[DRAFT] WARNING: Could not refresh draft {draft_id} from database, using stale data")
+                    anchored_draft_data = anchored_item.get('data', {})
+                
+                update_intent = draft_service.detect_draft_update_intent(
+                    query, anchored_draft_data, thread_history, thread_id=thread_id
+                )
+                
+                if update_intent.get("is_update_intent"):
+                    print(f"[DRAFT] Update intent detected - processing draft update")
+                    print(f"[DRAFT] Update category: {update_intent.get('update_category')}")
+                    
+                    # Extract field updates
+                    field_updates = draft_service.extract_draft_field_updates(
+                        query, anchored_draft_data, update_intent.get('update_category'), 
+                        thread_history, thread_id=thread_id
+                    )
+                    
+                    # Handle different update categories
+                    update_category = update_intent.get('update_category')
+                    
+                    if update_category == "completion_finalization":
+                        print(f"[DRAFT] Completion/finalization detected - checking for content to apply")
+                        # Check if there's recent LLM-generated content in conversation that should be applied
+                        content_updates = extract_content_from_conversation(thread_history, anchored_draft_data)
+                        if content_updates:
+                            print(f"[DRAFT] Found content to apply: {list(content_updates.keys())}")
+                            field_updates = {"field_updates": content_updates}
+                        else:
+                            print(f"[DRAFT] No content to apply - draft marked as complete")
+                            field_updates = {"field_updates": {}}  # No updates, just acknowledgment
+                    
+                    elif update_category == "content_application":
+                        print(f"[DRAFT] Content application detected - extracting from conversation")
+                        content_updates = extract_content_from_conversation(thread_history, anchored_draft_data)
+                        field_updates = {"field_updates": content_updates or {}}
+                    
+                    else:
+                        # Normal field extraction for other categories
+                        field_updates = draft_service.extract_draft_field_updates(
+                            query, anchored_draft_data, update_category, 
+                            thread_history, thread_id=thread_id
+                        )
+                    
+                    if field_updates.get("field_updates"):
+                        # Apply updates to the draft
+                        draft_id = anchored_item.get('id')
+                        success = draft_service.update_draft(draft_id, field_updates.get("field_updates"))
+                        
+                        if success:
+                            print(f"[DRAFT] Successfully updated draft {draft_id}")
+                            draft_update_result = {
+                                "success": True,
+                                "draft_id": draft_id,
+                                "updates": field_updates.get("field_updates"),
+                                "message": "Draft updated successfully",
+                                "update_category": update_category
+                            }
+                            should_skip_tooling = True  # Skip tooling since we handled the update
+                        else:
+                            print(f"[DRAFT] Failed to update draft {draft_id}")
+                    else:
+                        if update_category == "completion_finalization":
+                            print(f"[DRAFT] Draft completion acknowledged - no updates needed")
+                            should_skip_tooling = True  # Skip tooling, just acknowledge
+                        else:
+                            print(f"[DRAFT] No field updates extracted")
+                else:
+                    print(f"[DRAFT] No update intent - proceeding to tooling service")
+                    should_skip_tooling = False
+                    
+            else:
+                # Route 2: No Draft Anchored - Check for Creation Intent
+                print(f"[DRAFT] No draft anchored - checking for creation intent")
+                
+                draft_detection_result = draft_service.detect_draft_creation_intent(
+                    query, thread_history, thread_id=thread_id
+                )
                 
                 if draft_detection_result.get("is_draft_intent"):
-                    print(f"[DRAFT] Draft intent detected - SKIPPING tooling service to prevent auto-creation")
-                    print(f"[DraftService] Draft detection result: {draft_detection_result}")
+                    print(f"[DRAFT] Creation intent detected - SKIPPING tooling service")
+                    print(f"[DRAFT] Draft creation result: {draft_detection_result}")
                     should_skip_tooling = True
                 else:
-                    print(f"[DRAFT] No draft intent detected - proceeding with normal tooling flow")
+                    print(f"[DRAFT] No creation intent - proceeding with normal tooling flow")
+                    should_skip_tooling = False
                     
-            except Exception as e:
-                print(f"[DRAFT] Error in draft detection: {e}")
-                # If draft detection fails, proceed with normal flow
-                should_skip_tooling = False
+        except Exception as e:
+            print(f"[DRAFT] Error in draft routing: {e}")
+            import traceback
+            traceback.print_exc()
+            # If draft routing fails, proceed with normal flow
+            should_skip_tooling = False
 
         if tooling_service and not should_skip_tooling:
             print(f"[DEBUG] Tooling service is available, starting processing...")
@@ -1000,38 +1156,79 @@ def chat():
             try:
                 from services.draft_service import DraftService
                 draft_service = DraftService()
-                active_drafts = draft_service.get_active_drafts_by_thread(thread_id)
+                print(f"[DRAFT_CONTEXT] Looking for active drafts in thread: {thread_id}")
+                # CRITICAL: Add thread isolation check
+                if not thread_id:
+                    print(f"[DRAFT_CONTEXT] ❌ ERROR: thread_id is None or empty, skipping draft context")
+                    active_drafts = []
+                else:
+                    active_drafts = draft_service.get_active_drafts_by_thread(thread_id)
+                    print(f"[DRAFT_CONTEXT] Query returned {len(active_drafts)} drafts for thread {thread_id}")
 
                 if active_drafts:
-                    print(f"[DRAFT] Found {len(active_drafts)} active draft(s) for LLM context")
+                    print(f"[DRAFT_CONTEXT] Found {len(active_drafts)} active draft(s) for thread {thread_id}")
+                    for i, draft in enumerate(active_drafts):
+                        draft_dict = draft.to_dict() if hasattr(draft, 'to_dict') else {"draft_id": getattr(draft, 'draft_id', 'unknown')}
+                        print(f"[DRAFT_CONTEXT] Draft {i}: {draft_dict.get('draft_id')} in thread {draft_dict.get('thread_id')}")
+                    
                     # Create draft context for the most recent active draft
                     latest_draft = active_drafts[0]  # get_active_drafts_by_thread sorts by created_at desc
 
+                    # CRITICAL FIX: Convert Draft object to dict to avoid serialization issues
+                    draft_dict = latest_draft.to_dict() if hasattr(latest_draft, 'to_dict') else {
+                        "draft_id": getattr(latest_draft, 'draft_id', None),
+                        "draft_type": getattr(latest_draft, 'draft_type', None),
+                        "thread_id": getattr(latest_draft, 'thread_id', None),
+                        "to_emails": getattr(latest_draft, 'to_emails', []),
+                        "subject": getattr(latest_draft, 'subject', None),
+                        "body": getattr(latest_draft, 'body', None),
+                        "summary": getattr(latest_draft, 'summary', None),
+                        "start_time": getattr(latest_draft, 'start_time', None),
+                        "created_at": getattr(latest_draft, 'created_at', None)
+                    }
+
+                    # CRITICAL VALIDATION: Ensure draft actually belongs to current thread
+                    draft_thread_id = draft_dict.get("thread_id")
+                    if draft_thread_id != thread_id:
+                        print(f"[DRAFT_CONTEXT] ❌ CRITICAL ERROR: Draft {draft_dict.get('draft_id')} belongs to thread {draft_thread_id} but current thread is {thread_id}")
+                        print(f"[DRAFT_CONTEXT] ❌ SKIPPING draft context to prevent cross-thread contamination")
+                        draft_context = None
+                        raise Exception(f"Cross-thread draft contamination detected")  # Skip draft context creation
+
                     # Validate the draft to get missing fields info
-                    validation_result = draft_service.validate_draft_completeness(latest_draft)
+                    validation_result = draft_service.validate_draft_completeness(latest_draft.draft_id)
                     missing_fields = validation_result.get('missing_fields', []) if validation_result else []
 
-                    # Create draft summary
-                    if latest_draft.draft_type == "email":
-                        to_list = [email.get("name", email.get("email", "Unknown")) for email in latest_draft.to_emails] if latest_draft.to_emails else ["Not specified"]
+                    # Create draft summary using the dict data
+                    if draft_dict.get("draft_type") == "email":
+                        to_list = [email.get("name", email.get("email", "Unknown")) for email in (draft_dict.get("to_emails") or [])]
                         summary = f"Email to {', '.join(to_list[:2])}" + ("..." if len(to_list) > 2 else "")
-                        if latest_draft.subject:
-                            summary += f" - Subject: {latest_draft.subject}"
+                        if draft_dict.get("subject"):
+                            summary += f" - Subject: {draft_dict['subject']}"
                     else:  # calendar_event
-                        summary = f"Calendar event: {latest_draft.summary or 'Untitled'}"
-                        if latest_draft.start_time:
-                            summary += f" on {latest_draft.start_time}"
+                        summary = f"Calendar event: {draft_dict.get('summary') or 'Untitled'}"
+                        if draft_dict.get("start_time"):
+                            summary += f" on {draft_dict['start_time']}"
+
+                    # Safe created_at handling
+                    created_at_str = None
+                    created_at = draft_dict.get("created_at")
+                    if created_at:
+                        if hasattr(created_at, 'isoformat'):
+                            created_at_str = created_at.isoformat()
+                        else:
+                            created_at_str = str(created_at)
 
                     draft_context = {
                         "type": "active_draft",
-                        "draft_id": latest_draft.draft_id,
-                        "draft_type": latest_draft.draft_type,
+                        "draft_id": draft_dict.get("draft_id"),
+                        "draft_type": draft_dict.get("draft_type"),
                         "summary": summary,
                         "is_complete": len(missing_fields) == 0,
                         "missing_fields": missing_fields,
-                        "created_at": latest_draft.created_at.isoformat() if hasattr(latest_draft.created_at, 'isoformat') else str(latest_draft.created_at)
+                        "created_at": created_at_str
                     }
-                    print(f"[DRAFT] Created context for draft {latest_draft.draft_id}: {latest_draft.draft_type}, complete: {draft_context['is_complete']}")
+                    print(f"[DRAFT] Created context for draft {draft_dict.get('draft_id')}: {draft_dict.get('draft_type')}, complete: {draft_context['is_complete']}")
 
             except Exception as e:
                 print(f"[DRAFT] Error getting draft context: {e}")
@@ -1062,25 +1259,36 @@ def chat():
         print(f"User message saved. message_id: {user_message.message_id}, role: {user_message.role}, content: {user_message.content[:100] if user_message.content else 'None'}...")
 
         # Step 1.5: Check for draft creation intent
-        # BUT skip this if we have an anchored item - anchored items should not create drafts
+        # Process Draft Operations - handle both creation and updates
         print(f"\n=== Processing Draft Operations ===")
         draft_created = None
         try:
-            # Skip draft processing entirely if we have an anchored item
-            if anchored_item:
-                print(f"[DRAFT] Anchored item detected - SKIPPING all draft operations")
+            # Initialize draft service if not already available
+            if 'draft_service' not in locals():
+                from services.draft_service import DraftService
+                draft_service = DraftService()
+                
+            # Handle draft update result (from anchored draft updates)
+            if draft_update_result and draft_update_result.get("success"):
+                print(f"[DRAFT] Processing draft update result")
+                # Get the updated draft to return in response
+                updated_draft = draft_service.get_draft_by_id(draft_update_result.get("draft_id"))
+                if updated_draft:
+                    draft_created = updated_draft  # Reuse variable for consistency
+                    print(f"[DRAFT] Draft update processed: {draft_update_result}")
+                detection_result = None  # No creation needed
+                
+            elif anchored_item and anchored_item.get('type') == 'draft':
+                # Draft was anchored but no update performed - skip draft operations
+                print(f"[DRAFT] Draft anchored but no update intent - skipping draft operations")
                 detection_result = None
+                
             else:
-                # Reuse the draft service and detection result from earlier
-                if 'draft_service' not in locals():
-                    from services.draft_service import DraftService
-                    draft_service = DraftService()
-                
-                # First check if there are existing active drafts in this thread
+                # Handle draft creation (no anchored draft)
+                print(f"[DRAFT_CREATION] Looking for existing drafts in thread: {thread_id}")
                 existing_drafts = draft_service.get_active_drafts_by_thread(thread_id)
-                
-                # Reuse the detection result from the pre-check (no duplicate call)
-                detection_result = draft_detection_result
+                print(f"[DRAFT_CREATION] Found {len(existing_drafts)} existing drafts in thread {thread_id}")
+                detection_result = draft_detection_result  # Reuse from routing logic
             
             if (not mail_mode) and detection_result and detection_result.get("is_draft_intent"):
                 print(f"[DRAFT] Draft intent detected: {detection_result}")
@@ -1297,14 +1505,41 @@ def chat():
             "message_id": assistant_message.message_id,
         }
         
-        # Add draft information if a draft was created
+        # Add draft information if a draft was created or updated
         if draft_created:
-            response_data["draft_created"] = {
-                "draft_id": draft_created.draft_id,
-                "draft_type": draft_created.draft_type,
-                "user_message_id": user_message.message_id,
-                "status": "created"
-            }
+            if draft_update_result and draft_update_result.get("success"):
+                # Draft was updated
+                update_category = draft_update_result.get("update_category")
+                updates = draft_update_result.get("updates", {})
+                
+                # Create appropriate message based on update type
+                if update_category == "completion_finalization":
+                    if updates:
+                        message = f"Applied content to draft and marked as ready"
+                    else:
+                        message = "Draft marked as complete"
+                elif update_category == "content_application":
+                    message = f"Applied content from conversation to draft"
+                else:
+                    message = draft_update_result.get("message", "Draft updated successfully")
+                
+                response_data["draft_updated"] = {
+                    "draft_id": draft_created.draft_id,
+                    "draft_type": draft_created.draft_type,
+                    "user_message_id": user_message.message_id,
+                    "status": "updated",
+                    "updates": updates,
+                    "update_category": update_category,
+                    "message": message
+                }
+            else:
+                # Draft was created
+                response_data["draft_created"] = {
+                    "draft_id": draft_created.draft_id,
+                    "draft_type": draft_created.draft_type,
+                    "user_message_id": user_message.message_id,
+                    "status": "created"
+                }
         
         # If we have email results, add them in the proper tile format for the frontend
         if raw_email_list is not None:

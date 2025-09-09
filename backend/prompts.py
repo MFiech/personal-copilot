@@ -438,3 +438,313 @@ User: "Set it for 3pm tomorrow"
 Response: {{"updates": {{"start_time": "2024-12-21T15:00:00"}}}}
 
 YOUR RESPONSE (JSON only):"""
+
+# ===== NEW SEPARATED DRAFT PROMPTS =====
+
+def draft_update_intent_prompt(user_query, existing_draft, conversation_history=None):
+    """
+    Prompt for detecting if user wants to update an anchored draft.
+    This is the first step in the update flow.
+    """
+    history_context = ""
+    if conversation_history:
+        recent_messages = conversation_history[-6:]
+        for msg in recent_messages:
+            role = msg.get('role', 'user')
+            content = msg.get('content', '')
+            history_context += f"{role.capitalize()}: {content}\n"
+    
+    draft_type = existing_draft.get('draft_type', 'unknown')
+    current_date = datetime.now()
+    
+    # Build current draft summary
+    draft_summary = f"Type: {draft_type}"
+    if draft_type == 'email':
+        draft_summary += f"\nRecipients: {existing_draft.get('to_emails', [])}"
+        draft_summary += f"\nSubject: {existing_draft.get('subject') or '[NOT SET]'}"
+        draft_summary += f"\nBody: {(existing_draft.get('body') or '[NOT SET]')[:100]}..."
+    else:  # calendar_event
+        draft_summary += f"\nTitle: {existing_draft.get('summary') or '[NOT SET]'}"
+        draft_summary += f"\nTime: {existing_draft.get('start_time') or '[NOT SET]'} to {existing_draft.get('end_time') or '[NOT SET]'}"
+        draft_summary += f"\nAttendees: {existing_draft.get('attendees', [])}"
+        draft_summary += f"\nLocation: {existing_draft.get('location') or '[NOT SET]'}"
+    
+    return f"""You are an expert at detecting if a user wants to update an existing draft.
+
+CURRENT DATE: {current_date.strftime('%Y-%m-%d %H:%M:%S')}
+
+CONVERSATION CONTEXT:
+{history_context}
+
+ANCHORED DRAFT SUMMARY:
+{draft_summary}
+
+USER QUERY: "{user_query}"
+
+TASK: Determine if the user's query is about updating the anchored draft.
+
+UPDATE INTENT CRITERIA:
+- User explicitly wants to modify/change/update something about the draft
+- User wants to add/remove recipients/attendees
+- User wants to change subject/title, body/description, time, location
+- User asks to generate/create missing fields (like "create subject", "add body")
+- User provides additional information for the draft (like email addresses, times)
+- User indicates completion/finalization (like "that's all", "that's it", "looks good", "perfect")
+- User confirms content should be applied to draft after LLM generated suggestions
+
+NOT UPDATE INTENT:
+- General questions about the draft ("what's in the draft?", "show me the draft")
+- Questions unrelated to the draft ("what's the weather?", "find my emails")
+- Requests to send/execute the draft (this should go to send workflow)
+- Pure conversational acknowledgments without draft context
+
+RESPONSE FORMAT:
+Return JSON object with:
+{{
+  "is_update_intent": boolean,
+  "update_category": "string or null",
+  "confidence": "high|medium|low"
+}}
+
+UPDATE CATEGORIES:
+- "subject_title": User wants to modify subject (email) or title (calendar)
+- "body_description": User wants to modify body (email) or description (calendar)  
+- "recipients_attendees": User wants to add/remove/modify recipients or attendees
+- "time_schedule": User wants to modify start/end times (calendar only)
+- "location": User wants to modify location (calendar only)
+- "completion_finalization": User indicates draft is complete/ready ("that's all", "looks good", "perfect")
+- "content_application": User wants to apply previously suggested content to the draft
+- "general_content": User wants to modify multiple fields or general improvements
+
+EXAMPLES:
+
+User: "Create the subject on your own based on the context you have"
+Response: {{"is_update_intent": true, "update_category": "subject_title", "confidence": "high"}}
+
+User: "Add John to this email"
+Response: {{"is_update_intent": true, "update_category": "recipients_attendees", "confidence": "high"}}
+
+User: "Change the meeting time to 3pm"
+Response: {{"is_update_intent": true, "update_category": "time_schedule", "confidence": "high"}}
+
+User: "What's the weather today?"
+Response: {{"is_update_intent": false, "update_category": null, "confidence": "high"}}
+
+User: "Show me what's in the draft"
+Response: {{"is_update_intent": false, "update_category": null, "confidence": "high"}}
+
+User: "His email is john@example.com"
+Response: {{"is_update_intent": true, "update_category": "recipients_attendees", "confidence": "high"}}
+
+User: "that's all"
+Response: {{"is_update_intent": true, "update_category": "completion_finalization", "confidence": "high"}}
+
+User: "looks good, that's it"
+Response: {{"is_update_intent": true, "update_category": "completion_finalization", "confidence": "high"}}
+
+User: "perfect, apply that content to the draft"
+Response: {{"is_update_intent": true, "update_category": "content_application", "confidence": "high"}}
+
+YOUR RESPONSE (JSON only):"""
+
+def draft_field_update_prompt(user_query, existing_draft, update_category, conversation_history=None):
+    """
+    Prompt for extracting specific field updates based on detected update category.
+    This is the second step in the update flow.
+    """
+    history_context = ""
+    if conversation_history:
+        recent_messages = conversation_history[-6:]
+        for msg in recent_messages:
+            role = msg.get('role', 'user')
+            content = msg.get('content', '')
+            history_context += f"{role.capitalize()}: {content}\n"
+    
+    draft_type = existing_draft.get('draft_type', 'unknown')
+    current_date = datetime.now()
+    
+    # Build detailed current draft context
+    current_fields = ""
+    if draft_type == 'email':
+        current_fields = f"""Current Email Draft Fields:
+- Recipients: {existing_draft.get('to_emails', [])}
+- Subject: {existing_draft.get('subject') or '[NOT SET]'}
+- Body: {existing_draft.get('body') or '[NOT SET]'}
+- Attachments: {existing_draft.get('attachments', [])}"""
+    else:  # calendar_event
+        current_fields = f"""Current Calendar Event Fields:
+- Title/Summary: {existing_draft.get('summary') or '[NOT SET]'}
+- Start Time: {existing_draft.get('start_time') or '[NOT SET]'}
+- End Time: {existing_draft.get('end_time') or '[NOT SET]'}
+- Attendees: {existing_draft.get('attendees', [])}
+- Location: {existing_draft.get('location') or '[NOT SET]'}
+- Description: {existing_draft.get('description') or '[NOT SET]'}"""
+
+    # Category-specific extraction rules
+    category_rules = {
+        "subject_title": "Extract subject (for email) or summary/title (for calendar). Use existing body/description as context for generation if user asks to 'create' or 'generate' subject.",
+        "body_description": "Extract body content (for email) or description (for calendar). Can be additions to existing content or complete replacements.",
+        "recipients_attendees": "Extract email addresses and names for to_emails (email) or attendees (calendar). Format as [{'email': 'addr', 'name': 'name'}].",
+        "time_schedule": "Extract start_time and/or end_time for calendar events. Use YYYY-MM-DDTHH:MM:SS format. Only extract if user specifies actual clock times.",
+        "location": "Extract location for calendar events.",
+        "completion_finalization": "User indicates draft is complete. Check if any fields can be finalized or if this is just acknowledgment. Usually returns empty updates unless specific content needs to be applied.",
+        "content_application": "User wants to apply previously generated content. Look for content in conversation history that should be applied to draft fields.",
+        "general_content": "Extract any combination of the above fields that user mentions."
+    }
+    
+    extraction_rule = category_rules.get(update_category, "Extract any field updates mentioned by the user.")
+    
+    return f"""You are an expert at extracting specific field updates for draft modifications.
+
+CURRENT DATE: {current_date.strftime('%Y-%m-%d %H:%M:%S')}
+
+CONVERSATION CONTEXT:
+{history_context}
+
+{current_fields}
+
+UPDATE CATEGORY: {update_category}
+EXTRACTION RULE: {extraction_rule}
+
+USER QUERY: "{user_query}"
+
+TASK: Extract the specific field updates based on the user's query and update category.
+
+🚨 CRITICAL FIELD EXTRACTION RULES:
+
+FOR SUBJECT/TITLE GENERATION:
+- If user asks to "create", "generate", or "make" a subject based on context
+- Use the existing body/description content to create an appropriate subject
+- Generate concise, descriptive subjects that capture the main topic
+
+FOR TIME EXTRACTION:
+- ONLY extract if user specifies actual clock times (2pm, 14:00, 9:30am)
+- "tomorrow" without time = NO time extraction
+- "Saturday" without time = NO time extraction
+- "Saturday at 2pm" = extract start_time
+
+FOR RECIPIENTS/ATTENDEES:
+- Extract email addresses in format: {{"email": "addr", "name": "name"}}
+- If only email provided: {{"email": "addr", "name": ""}}
+- If only name provided: {{"email": "", "name": "name"}}
+
+RESPONSE FORMAT:
+Return JSON object with updates to apply:
+{{
+  "field_updates": {{
+    // Only include fields that should be updated
+    "field_name": "new_value"
+  }}
+}}
+
+EXAMPLES:
+
+User: "Create the subject on your own based on the context you have"
+Existing Body: "We need to discuss the timing for our meeting next week to finally agree on the product strategy."
+Response: {{"field_updates": {{"subject": "Product Strategy Meeting - Next Week Timing Discussion"}}}}
+
+User: "Add Sarah to this email"
+Response: {{"field_updates": {{"to_emails": [/* existing emails */, {{"email": "", "name": "Sarah"}}]}}}}
+
+User: "His email is john@example.com"
+Response: {{"field_updates": {{"to_emails": [/* existing emails */, {{"email": "john@example.com", "name": ""}}]}}}}
+
+User: "Change the time to 3pm tomorrow" 
+Response: {{"field_updates": {{"start_time": "2024-12-21T15:00:00"}}}}
+
+User: "Update the body to include budget discussion"
+Response: {{"field_updates": {{"body": "/* existing body */ We should also discuss the budget implications."}}}}
+
+YOUR RESPONSE (JSON only):"""
+
+def draft_creation_intent_prompt(user_query, conversation_history=None):
+    """
+    Simplified prompt for detecting draft creation intent only.
+    No update logic - purely focused on new draft creation.
+    """
+    history_context = ""
+    if conversation_history:
+        recent_messages = conversation_history[-6:]
+        for msg in recent_messages:
+            role = msg.get('role', 'user')
+            content = msg.get('content', '')
+            history_context += f"{role.capitalize()}: {content}\n"
+    
+    current_date = datetime.now()
+    
+    return f"""You are an expert at detecting NEW draft creation intent and extracting initial information.
+
+🎯 FOCUS: This prompt is ONLY for creating NEW drafts, not updating existing ones.
+
+CURRENT DATE: {current_date.strftime('%Y-%m-%d %H:%M:%S')}
+
+CONVERSATION CONTEXT:
+{history_context}
+
+USER QUERY: "{user_query}"
+
+TASK: Detect if user wants to CREATE a new draft (email or calendar event) and extract initial information.
+
+DRAFT CREATION CRITERIA:
+- User explicitly mentions "draft" in relation to email or calendar/meeting
+- User wants to prepare/compose an email or event for later confirmation
+- User wants to create something but not send/schedule it immediately
+- User mentions creating/drafting/preparing an email or meeting
+
+NOT DRAFT CREATION:
+- User wants to send email immediately (no draft needed)
+- User wants to schedule meeting immediately (no draft needed)
+- General questions or unrelated queries
+- Requests about existing content
+
+🚨 TIME EXTRACTION RULES - CRITICAL:
+- "Saturday" → Extract NO start_time, NO end_time
+- "Saturday at 3pm" → Extract start_time only: "2025-07-05T15:00:00"
+- "tomorrow morning" → Extract NO times
+- Only extract times when user specifies ACTUAL CLOCK TIMES
+
+EXTRACTION RULES:
+1. DRAFT TYPE: "email" or "calendar_event"
+2. RECIPIENTS/ATTENDEES: Names, email addresses, contact references
+3. SUBJECT/TITLE: Email subject or event title  
+4. BODY/DESCRIPTION: Email body or event description
+5. DATE/TIME: Only if actual clock times specified
+6. LOCATION: For calendar events only
+
+RESPONSE FORMAT:
+{{
+  "is_draft_intent": boolean,
+  "draft_data": {{
+    "draft_type": "email|calendar_event",
+    "extracted_info": {{
+      // Email fields:
+      "to_contacts": ["name1", "email1@domain.com"],
+      "subject": "extracted subject",
+      "body": "extracted body",
+      
+      // Calendar fields:
+      "summary": "event title",
+      "start_time": "YYYY-MM-DDTHH:MM:SS",
+      "end_time": "YYYY-MM-DDTHH:MM:SS",
+      "attendees": ["name1", "email1@domain.com"],
+      "location": "location",
+      "description": "description"
+    }}
+  }}
+}}
+
+EXAMPLES:
+
+User: "Create a draft email to John about the meeting"
+Response: {{"is_draft_intent": true, "draft_data": {{"draft_type": "email", "extracted_info": {{"to_contacts": ["John"], "body": "about the meeting"}}}}}}
+
+User: "Draft a meeting with Sarah tomorrow at 2pm"
+Response: {{"is_draft_intent": true, "draft_data": {{"draft_type": "calendar_event", "extracted_info": {{"summary": "meeting with Sarah", "attendees": ["Sarah"], "start_time": "2024-12-21T14:00:00"}}}}}}
+
+User: "Send an email to Bob now"
+Response: {{"is_draft_intent": false, "draft_data": null}}
+
+User: "What's the weather?"
+Response: {{"is_draft_intent": false, "draft_data": null}}
+
+YOUR RESPONSE (JSON only):"""

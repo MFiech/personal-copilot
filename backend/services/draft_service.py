@@ -6,7 +6,13 @@ from langfuse import observe
 from models.draft import Draft
 from services.contact_service import ContactSyncService
 from services.langfuse_client import create_langfuse_client
-from prompts import draft_detection_prompt as fallback_draft_detection_prompt, draft_information_extraction_prompt
+from prompts import (
+    draft_detection_prompt as fallback_draft_detection_prompt, 
+    draft_information_extraction_prompt,
+    draft_update_intent_prompt,
+    draft_field_update_prompt,
+    draft_creation_intent_prompt
+)
 from utils.langfuse_helpers import get_draft_detection_prompt
 import os
 
@@ -91,8 +97,9 @@ class DraftService:
         if not draft:
             raise ValueError(f"Draft {draft_id} not found")
         
-        if draft.status != "active":
-            raise ValueError(f"Cannot update draft {draft_id} with status '{draft.status}'")
+        # Allow updates for active drafts and drafts with composio errors (can be retried)
+        if draft.status not in ["active", "composio_error"]:
+            raise ValueError(f"Cannot update draft {draft_id} with status '{draft.status}'. Only 'active' and 'composio_error' drafts can be updated.")
         
         # Process contact resolution if needed
         processed_updates = updates.copy()
@@ -106,6 +113,11 @@ class DraftService:
             resolved_attendees = self._resolve_contacts_to_emails(updates["attendee_contacts"])
             processed_updates["attendees"] = resolved_attendees
             del processed_updates["attendee_contacts"]
+        
+        # If draft had composio_error status, reset to active when successfully updated
+        if draft.status == "composio_error":
+            processed_updates["status"] = "active"
+            print(f"[DraftService] Resetting draft {draft_id} status from 'composio_error' to 'active' after update")
         
         # Update the draft
         success = draft.update(processed_updates)
@@ -551,7 +563,129 @@ class DraftService:
             
             print(f"[DraftService] Created draft {draft.draft_id} from detection")
             return draft
-            
+        
         except Exception as e:
             print(f"[DraftService] Error creating draft from detection: {e}")
             return None
+
+    # ===== NEW SEPARATED DRAFT METHODS =====
+
+    @observe(as_type="generation", name="draft_creation_intent_detection")
+    def detect_draft_creation_intent(self, user_query, conversation_history=None, thread_id=None):
+        """
+        Detect if user wants to create a NEW draft (no existing draft anchored).
+        
+        Args:
+            user_query: The user's message
+            conversation_history: Recent conversation context
+            thread_id: For Langfuse tracing
+        
+        Returns:
+            dict: {"is_draft_intent": bool, "draft_data": dict or None}
+        """
+        if not self.llm:
+            print("[DraftService] LLM not available for draft creation detection")
+            return {"is_draft_intent": False, "draft_data": None}
+        
+        try:
+            # Generate prompt for draft creation detection
+            prompt = draft_creation_intent_prompt(user_query, conversation_history)
+            
+            # Get LLM response
+            response = self.llm.invoke(prompt)
+            response_text = response.content if hasattr(response, 'content') else str(response)
+            
+            # Parse JSON response
+            detection_result = json.loads(response_text.strip())
+            
+            print(f"[DraftService] Draft creation detection result: {detection_result}")
+            return detection_result
+            
+        except json.JSONDecodeError as e:
+            print(f"[DraftService] Failed to parse creation detection response: {e}")
+            print(f"[DraftService] Raw response: {response_text}")
+            return {"is_draft_intent": False, "draft_data": None}
+        except Exception as e:
+            print(f"[DraftService] Error in creation detection: {e}")
+            return {"is_draft_intent": False, "draft_data": None}
+
+    @observe(as_type="generation", name="draft_update_intent_detection")
+    def detect_draft_update_intent(self, user_query, existing_draft, conversation_history=None, thread_id=None):
+        """
+        Detect if user wants to update an existing anchored draft.
+        
+        Args:
+            user_query: The user's message
+            existing_draft: Current draft data from anchored item
+            conversation_history: Recent conversation context
+            thread_id: For Langfuse tracing
+        
+        Returns:
+            dict: {"is_update_intent": bool, "update_category": str, "confidence": str}
+        """
+        if not self.llm:
+            print("[DraftService] LLM not available for draft update detection")
+            return {"is_update_intent": False, "update_category": None, "confidence": "low"}
+        
+        try:
+            # Generate prompt for draft update detection
+            prompt = draft_update_intent_prompt(user_query, existing_draft, conversation_history)
+            
+            # Get LLM response
+            response = self.llm.invoke(prompt)
+            response_text = response.content if hasattr(response, 'content') else str(response)
+            
+            # Parse JSON response
+            detection_result = json.loads(response_text.strip())
+            
+            print(f"[DraftService] Draft update detection result: {detection_result}")
+            return detection_result
+            
+        except json.JSONDecodeError as e:
+            print(f"[DraftService] Failed to parse update detection response: {e}")
+            print(f"[DraftService] Raw response: {response_text}")
+            return {"is_update_intent": False, "update_category": None, "confidence": "low"}
+        except Exception as e:
+            print(f"[DraftService] Error in update detection: {e}")
+            return {"is_update_intent": False, "update_category": None, "confidence": "low"}
+
+    @observe(as_type="generation", name="draft_field_update_extraction")
+    def extract_draft_field_updates(self, user_query, existing_draft, update_category, conversation_history=None, thread_id=None):
+        """
+        Extract specific field updates for an anchored draft.
+        
+        Args:
+            user_query: The user's message
+            existing_draft: Current draft data from anchored item
+            update_category: Category from update intent detection
+            conversation_history: Recent conversation context
+            thread_id: For Langfuse tracing
+        
+        Returns:
+            dict: {"field_updates": dict} - specific fields to update
+        """
+        if not self.llm:
+            print("[DraftService] LLM not available for field extraction")
+            return {"field_updates": {}}
+        
+        try:
+            # Generate prompt for field extraction
+            prompt = draft_field_update_prompt(user_query, existing_draft, update_category, conversation_history)
+            
+            # Get LLM response
+            response = self.llm.invoke(prompt)
+            response_text = response.content if hasattr(response, 'content') else str(response)
+            
+            # Parse JSON response
+            extraction_result = json.loads(response_text.strip())
+            
+            print(f"[DraftService] Field extraction result: {extraction_result}")
+            return extraction_result
+            
+        except json.JSONDecodeError as e:
+            print(f"[DraftService] Failed to parse field extraction response: {e}")
+            print(f"[DraftService] Raw response: {response_text}")
+            return {"field_updates": {}}
+        except Exception as e:
+            print(f"[DraftService] Error in field extraction: {e}")
+            return {"field_updates": {}}
