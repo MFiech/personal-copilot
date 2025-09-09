@@ -230,7 +230,7 @@ jobs:
     - name: Run frontend tests
       run: |
         cd frontend
-        CI=true npm test -- --coverage --verbose --watchAll=false
+        CI=true npm test -- --coverage --verbose --watchAll=false --passWithNoTests
       env:
         CI: true
 

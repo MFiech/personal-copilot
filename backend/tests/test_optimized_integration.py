@@ -265,7 +265,11 @@ class TestOptimizedCriticalFlows:
         # Retrieve and verify
         retrieved = Conversation.get_by_thread_id(test_thread_id)
         assert len(retrieved) == 1
-        assert retrieved[0].content == "Mock LLM response for testing"
+        # Handle both dict and object responses depending on the get_by_thread_id implementation
+        if isinstance(retrieved[0], dict):
+            assert retrieved[0]['content'] == "Mock LLM response for testing"
+        else:
+            assert retrieved[0].content == "Mock LLM response for testing"
         
         print("✅ Conversation storage tested with mocked LLM response")
 
