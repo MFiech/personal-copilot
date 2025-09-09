@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 import tempfile
 import shutil
 from dotenv import load_dotenv
+import json
 
 # Add backend directory to path for imports
 backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -256,7 +257,7 @@ def mock_all_llm_services():
     """Comprehensive mock for all LLM services to prevent any real API calls"""
     with patch('app.get_llm') as mock_get_llm, \
          patch('app.get_gemini_llm') as mock_get_gemini, \
-         patch('app.llm_with_tracing') as mock_llm_tracing, \
+         patch('app.traced_main_llm_call') as mock_traced_main_llm, \
          patch('langchain_anthropic.ChatAnthropic') as mock_anthropic, \
          patch('langchain_google_genai.ChatGoogleGenerativeAI') as mock_google, \
          patch('openai.OpenAI') as mock_openai:
@@ -275,8 +276,8 @@ def mock_all_llm_services():
         mock_gemini.invoke.return_value = mock_gemini_response
         mock_get_gemini.return_value = mock_gemini
         
-        # Mock LLM tracing
-        mock_llm_tracing.return_value = mock_claude_response
+        # Mock traced main LLM call
+        mock_traced_main_llm.return_value = mock_claude_response
         
         # Mock LangChain classes
         mock_anthropic.return_value = mock_claude
@@ -296,7 +297,7 @@ def mock_all_llm_services():
             'claude': mock_claude,
             'gemini': mock_gemini,
             'openai': mock_openai_client,
-            'tracing': mock_llm_tracing
+            'traced_main': mock_traced_main_llm
         }
 
 
@@ -453,3 +454,164 @@ def calendar_test_queries():
         'ambiguous': "What about next week?",
         'empty_result': "Do I have any meetings on Christmas?"
     }
+
+
+# Draft System Testing Fixtures
+@pytest.fixture
+def mock_draft_service():
+    """Mock DraftService with safe defaults"""
+    with patch('services.draft_service.DraftService') as mock_service_class:
+        mock_instance = Mock()
+        mock_service_class.return_value = mock_instance
+        
+        # Import draft fixtures
+        from tests.fixtures.draft_responses import (
+            create_email_draft_fixture,
+            create_calendar_draft_fixture,
+            DRAFT_VALIDATION_COMPLETE_EMAIL,
+            DRAFT_CREATION_INTENT_TRUE
+        )
+        
+        # Configure default responses
+        mock_instance.create_draft.return_value = Mock(
+            draft_id="mock_draft_123",
+            to_dict=Mock(return_value=create_email_draft_fixture())
+        )
+        mock_instance.get_draft_by_id.return_value = Mock(
+            to_dict=Mock(return_value=create_email_draft_fixture())
+        )
+        mock_instance.update_draft.return_value = True
+        mock_instance.validate_draft_completeness.return_value = DRAFT_VALIDATION_COMPLETE_EMAIL
+        mock_instance.detect_draft_intent.return_value = DRAFT_CREATION_INTENT_TRUE
+        mock_instance.close_draft.return_value = True
+        mock_instance.get_active_drafts_by_thread.return_value = []
+        
+        yield mock_instance
+
+
+@pytest.fixture
+def draft_test_data():
+    """Comprehensive draft test data"""
+    from tests.fixtures.draft_responses import (
+        create_email_draft_fixture,
+        create_calendar_draft_fixture,
+        create_cross_thread_draft_scenario,
+        create_stale_data_scenario
+    )
+    
+    return {
+        'email_draft': create_email_draft_fixture(),
+        'calendar_draft': create_calendar_draft_fixture(),
+        'cross_thread_scenario': create_cross_thread_draft_scenario(),
+        'stale_data_scenario': create_stale_data_scenario()
+    }
+
+
+@pytest.fixture
+def mock_draft_llm_responses():
+    """Mock LLM responses for draft-related prompts"""
+    from tests.fixtures.draft_responses import (
+        DRAFT_CREATION_INTENT_TRUE,
+        DRAFT_CREATION_INTENT_FALSE,
+        DRAFT_UPDATE_INTENT_TRUE,
+        DRAFT_FIELD_UPDATE_SUBJECT
+    )
+    
+    # Patch the Anthropic chat model used by DraftService so newly created services get the mocked LLM
+    with patch('services.draft_service.ChatAnthropic') as mock_chat_class:
+        mock_chat_instance = Mock()
+        mock_chat_class.return_value = mock_chat_instance
+
+        def llm_side_effect(prompt, *args, **kwargs):
+            mock_response = Mock()
+            prompt_text = str(prompt)
+            if "draft_creation_intent" in prompt_text or "Draft creation intent" in prompt_text:
+                mock_response.content = json.dumps(DRAFT_CREATION_INTENT_TRUE)
+            elif "draft_update_intent" in prompt_text or "update intent" in prompt_text:
+                mock_response.content = json.dumps(DRAFT_UPDATE_INTENT_TRUE)
+            elif "draft_field_update" in prompt_text or "field updates" in prompt_text:
+                mock_response.content = json.dumps(DRAFT_FIELD_UPDATE_SUBJECT)
+            else:
+                mock_response.content = json.dumps(DRAFT_CREATION_INTENT_FALSE)
+            return mock_response
+        
+        mock_chat_instance.invoke.side_effect = llm_side_effect
+        yield mock_chat_instance
+
+
+@pytest.fixture
+def clean_draft_collections(test_db):
+    """Ensure draft collections are clean before each test"""
+    drafts_collection = get_collection('drafts')
+    conversations_collection = get_collection('conversations')
+    
+    # Clean up any existing test data
+    drafts_collection.delete_many({})
+    conversations_collection.delete_many({})
+    
+    yield
+    
+    # Clean up after test
+    drafts_collection.delete_many({})
+    conversations_collection.delete_many({})
+
+
+@pytest.fixture
+def draft_thread_isolation():
+    """Fixture to ensure proper thread isolation in draft tests"""
+    def create_isolated_thread_data(thread_id):
+        """Create test data isolated to a specific thread"""
+        from tests.fixtures.draft_responses import create_email_draft_fixture
+        
+        return {
+            'thread_id': thread_id,
+            'draft': create_email_draft_fixture(
+                thread_id=thread_id,
+                draft_id=f"draft_{thread_id}",
+                message_id=f"message_{thread_id}"
+            )
+        }
+    
+    yield create_isolated_thread_data
+
+
+@pytest.fixture
+def mock_draft_composio_service():
+    """Mock ComposioService specifically for draft email sending"""
+    with patch('services.composio_service.ComposioService') as mock_service_class:
+        mock_instance = Mock()
+        mock_service_class.return_value = mock_instance
+        
+        from tests.fixtures.draft_responses import COMPOSIO_SEND_EMAIL_SUCCESS
+        
+        # Configure email sending
+        mock_instance.send_email.return_value = COMPOSIO_SEND_EMAIL_SUCCESS
+        mock_instance.client_available = True
+        mock_instance.gmail_account_id = "test_gmail_account"
+        
+        # Prevent real API calls
+        mock_instance._execute_action = Mock()
+        mock_instance.composio_client = Mock()
+        
+        yield mock_instance
+
+
+@pytest.fixture(autouse=True)
+def prevent_draft_real_api_calls():
+    """Auto-applied fixture to prevent real API calls in draft tests"""
+    with patch('langfuse.Langfuse') as mock_langfuse, \
+         patch('services.langfuse_client.create_langfuse_client') as mock_create_client:
+        
+        # Mock Langfuse client for draft service
+        mock_client = Mock()
+        mock_client.is_enabled.return_value = False  # Disable for tests
+        mock_client.create_workflow_span.return_value = Mock()
+        mock_langfuse.return_value = mock_client
+        mock_create_client.return_value = mock_client
+        
+        # Make real API calls fail loudly if attempted
+        mock_client.trace.side_effect = RuntimeError(
+            "Real Langfuse API call attempted in test! Use proper mocking."
+        )
+        
+        yield

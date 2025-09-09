@@ -1639,11 +1639,21 @@ class ComposioService:
         keywords = parameters.get("keywords", "")
         time_range = parameters.get("time_range")
         
+        # Handle keywords being a list (from LLM responses) or string
+        if isinstance(keywords, list):
+            keywords = " ".join(keywords) if keywords else ""
+        elif keywords is None:
+            keywords = ""
+        
         # Convert date_range to time_min/time_max
         time_min, time_max = None, None
         if date_range:
-            time_min, time_max = self._extract_time_range(date_range.lower())
-            print(f"[DEBUG] Date range '{date_range}' converted to time_min='{time_min}', time_max='{time_max}'")
+            # Handle date_range being a list
+            if isinstance(date_range, list):
+                date_range = date_range[0] if date_range else ""
+            if date_range:
+                time_min, time_max = self._extract_time_range(date_range.lower())
+                print(f"[DEBUG] Date range '{date_range}' converted to time_min='{time_min}', time_max='{time_max}'")
         
         # Only use fallback keyword extraction if LLM analysis was incomplete (no date_range AND no keywords)
         # If LLM provided date_range but no keywords, that's intentional for date-only queries

@@ -45,7 +45,7 @@ def test_contact_model():
             print(f"✓ Retrieved contact: {retrieved_contact['name']} ({retrieved_contact['primary_email']})")
         else:
             print("✗ Failed to retrieve contact")
-            return False
+            assert False, "Failed to retrieve contact"
         
         # Test contact search
         print("3. Testing contact search...")
@@ -75,14 +75,13 @@ def test_contact_model():
             print("✓ Contact was properly updated through deduplication")
         else:
             print("✗ Contact deduplication failed")
-        
-        return True
+            assert False, "Contact deduplication failed"
         
     except Exception as e:
         print(f"✗ Contact model test failed: {e}")
         import traceback
         print(traceback.format_exc())
-        return False
+        assert False, f"Contact model test failed: {e}"
 
 def test_contact_sync_log():
     """Test the ContactSyncLog model functionality"""
@@ -116,13 +115,12 @@ def test_contact_sync_log():
         history = ContactSyncLog.get_sync_history(limit=5)
         print(f"✓ Retrieved {len(history)} sync log entries")
         
-        return True
         
     except Exception as e:
         print(f"✗ Contact sync log test failed: {e}")
         import traceback
         print(traceback.format_exc())
-        return False
+        assert False, f"Contact sync log test failed: {e}"
 
 def test_contact_service():
     """Test the ContactSyncService functionality"""
@@ -157,13 +155,12 @@ def test_contact_service():
         else:
             print(f"✓ No previous sync found (expected): {sync_status['error']}")
         
-        return True
         
     except Exception as e:
         print(f"✗ Contact service test failed: {e}")
         import traceback
         print(traceback.format_exc())
-        return False
+        assert False, f"Contact service test failed: {e}"
 
 def test_mock_composio_integration():
     """Test mock Composio integration"""
@@ -209,13 +206,12 @@ def test_mock_composio_integration():
         contact_dict = contact_service._process_contact_data_to_dict(mock_contact_data)
         print(f"✓ Converted to dict: {contact_dict}")
         
-        return True
         
     except Exception as e:
         print(f"✗ Mock Composio integration test failed: {e}")
         import traceback
         print(traceback.format_exc())
-        return False
+        assert False, f"Mock Composio integration test failed: {e}"
 
 def cleanup_test_data():
     """Clean up test data"""
