@@ -208,6 +208,9 @@ class TestCalendarComprehensive:
         """Test handling of calendar error responses"""
         from app import app
         
+        # Configure LLM to return appropriate error response
+        mock_all_llm_services['claude'].invoke.return_value.content = "I couldn't access your calendar: Google Calendar account not connected"
+        
         with patch('app.tooling_service') as mock_tooling_service:
             mock_tooling_service.calendar_account_id = None  # Not connected
             mock_tooling_service.client_available = True
@@ -281,6 +284,9 @@ class TestCalendarComprehensive:
     ):
         """Test handling of calendar event creation responses"""
         from app import app
+        
+        # Configure LLM to return appropriate creation response
+        mock_all_llm_services['claude'].invoke.return_value.content = "I successfully created a meeting for tomorrow at 3pm."
         
         with patch('app.tooling_service') as mock_tooling_service:
             mock_tooling_service.calendar_account_id = 'test_account'

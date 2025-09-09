@@ -26,13 +26,14 @@ from tests.test_utils.calendar_helpers import (
     create_mock_calendar_search_response,
     assert_calendar_response_structure
 )
+from services.composio_service import ComposioService
 
 
 class TestCalendarRegression:
     """Regression tests for previously fixed calendar bugs"""
     
     def test_nested_composio_response_structure_handling(
-        self, test_db, clean_collections, mock_openai_client, sample_calendar_events
+        self, test_db, clean_collections, mock_all_llm_services, sample_calendar_events
     ):
         """
         REGRESSION TEST: Ensure nested Composio response structure (data.data.items) is handled correctly.
@@ -42,6 +43,9 @@ class TestCalendarRegression:
         even when events existed.
         """
         from app import app
+        
+        # Configure LLM to return appropriate calendar response
+        mock_all_llm_services['claude'].invoke.return_value.content = "Here are your scheduled plans for this week: I found 2 calendar events."
         
         # Mock Composio service with nested structure response
         with patch('services.composio_service.ComposioService') as mock_service:
@@ -150,7 +154,7 @@ class TestCalendarRegression:
             print("✅ REGRESSION TEST PASSED: Calendar events extracted from both response structures")
                 
     def test_frontend_receives_calendar_events(
-        self, test_db, clean_collections, mock_openai_client
+        self, test_db, clean_collections, mock_all_llm_services
     ):
         """
         REGRESSION TEST: Ensure frontend receives calendar events when they exist.
@@ -158,6 +162,9 @@ class TestCalendarRegression:
         Before the fix, events existed in the Composio response but frontend received
         empty array due to incorrect structure parsing.
         """
+        
+        # Configure LLM to return appropriate calendar response
+        mock_all_llm_services['claude'].invoke.return_value.content = "I found 3 meetings scheduled for this week: Regression Test Meeting 1, 2, and 3."
         from app import app
         
         with patch('services.composio_service.ComposioService') as mock_service:
@@ -343,13 +350,16 @@ class TestCalendarResponseLoggingRegression:
         
         print("✅ REGRESSION TEST PASSED: Large calendar responses handled gracefully")
         
-    def test_composio_api_changes_handled_gracefully(self, sample_calendar_events):
+    def test_composio_api_changes_handled_gracefully(self, mock_all_llm_services, sample_calendar_events):
         """
         REGRESSION TEST: Ensure future Composio API changes are handled gracefully.
         
         This tests that unknown response structures don't break the application.
         """
         from app import app
+        
+        # Configure LLM to return appropriate response for unknown structure
+        mock_all_llm_services['claude'].invoke.return_value.content = "I encountered an unusual response format from the calendar service, but no events were found."
         
         # Test unknown future response structure
         future_response_structure = {
@@ -401,12 +411,13 @@ class TestCalendarErrorHandlingRegression:
     """Regression tests for calendar error handling"""
     
     def test_calendar_not_connected_error_handling(
-        self, test_db, clean_collections, mock_openai_client
+        self, test_db, clean_collections, mock_all_llm_services
     ):
-        """
-        REGRESSION TEST: Ensure calendar not connected errors are handled properly.
-        """
+        """Test handling when calendar is not connected"""
         from app import app
+        
+        # Configure LLM to return appropriate not connected response
+        mock_all_llm_services['claude'].invoke.return_value.content = "Your Google Calendar is not connected. Please connect your calendar to view events."
         
         with patch('services.composio_service.ComposioService') as mock_service:
             mock_instance = Mock()
@@ -435,12 +446,13 @@ class TestCalendarErrorHandlingRegression:
                 print("✅ REGRESSION TEST PASSED: Calendar not connected handled properly")
                 
     def test_composio_service_unavailable_handling(
-        self, test_db, clean_collections, mock_openai_client
+        self, test_db, clean_collections, mock_all_llm_services
     ):
-        """
-        REGRESSION TEST: Ensure Composio service unavailability is handled gracefully.
-        """
+        """Test handling when Composio service is completely unavailable"""
         from app import app
+        
+        # Configure LLM to return appropriate service unavailable response
+        mock_all_llm_services['claude'].invoke.return_value.content = "I'm currently unable to access the calendar service. Please try again later."
         
         with patch('services.composio_service.ComposioService') as mock_service:
             mock_instance = Mock()

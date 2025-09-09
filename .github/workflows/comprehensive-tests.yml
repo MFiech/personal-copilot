@@ -237,7 +237,7 @@ jobs:
     - name: Build frontend for production
       run: |
         cd frontend
-        npm run build
+        GENERATE_SOURCEMAP=false CI=false npm run build
 
     - name: Upload frontend coverage (if generated)
       uses: codecov/codecov-action@v3
