@@ -696,6 +696,9 @@ NOT DRAFT CREATION:
 - User wants to schedule meeting immediately (no draft needed)
 - General questions or unrelated queries
 - Requests about existing content
+- User wants to SEARCH, VIEW, FIND, PULL, SHOW existing calendar events/emails
+- User asks about current/upcoming/recent events or emails
+- Calendar/email search queries ("show me", "pull all", "find events", "what's on my calendar")
 
 🚨 TIME EXTRACTION RULES - CRITICAL:
 - "Saturday" → Extract NO start_time, NO end_time
@@ -745,6 +748,15 @@ User: "Send an email to Bob now"
 Response: {{"is_draft_intent": false, "draft_data": null}}
 
 User: "What's the weather?"
+Response: {{"is_draft_intent": false, "draft_data": null}}
+
+User: "pull all events for current week"
+Response: {{"is_draft_intent": false, "draft_data": null}}
+
+User: "show me my calendar events"
+Response: {{"is_draft_intent": false, "draft_data": null}}
+
+User: "find events for tomorrow"
 Response: {{"is_draft_intent": false, "draft_data": null}}
 
 YOUR RESPONSE (JSON only):"""
