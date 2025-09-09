@@ -88,6 +88,7 @@ const DraftCard = ({
 
   const isEmail = draft.draft_type === 'email';
   const isComplete = validation?.is_complete;
+  const isSent = draft.status === 'closed'; // Draft is sent and completed
 
   return (
     <Fade in={true} timeout={500}>
@@ -107,35 +108,49 @@ const DraftCard = ({
         {/* Header */}
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
           {isEmail ? (
-            <EmailIcon sx={{ color: '#ff9800', mr: 1 }} />
+            <EmailIcon sx={{ color: isAnchored ? '#ff9800' : '#666', mr: 1 }} />
           ) : (
-            <EventIcon sx={{ color: '#ff9800', mr: 1 }} />
+            <EventIcon sx={{ color: isAnchored ? '#ff9800' : '#666', mr: 1 }} />
           )}
           
-          <Typography variant="h6" sx={{ color: '#ef6c00', fontWeight: 'bold', flexGrow: 1 }}>
-            {isEmail ? 'Email Draft' : 'Calendar Event Draft'}
+          <Typography variant="h6" sx={{ color: isAnchored ? '#ef6c00' : '#555', fontWeight: 'bold', flexGrow: 1 }}>
+            {isSent 
+              ? (isEmail ? 'Email' : 'Calendar Event')
+              : (isEmail ? 'Email Draft' : 'Calendar Event Draft')
+            }
           </Typography>
 
           {/* Status indicator */}
-          {validation && (
-            <Box>
-              {isComplete ? (
-                <Chip
-                  icon={<CheckCircleIcon />}
-                  label="Ready to Send"
-                  color="success"
-                  size="small"
-                />
-              ) : (
-                <Chip
-                  icon={<WarningIcon />}
-                  label="Needs Info"
-                  color="warning"
-                  size="small"
-                />
-              )}
-            </Box>
-          )}
+          <Box>
+            {isSent ? (
+              <Chip
+                icon={<CheckCircleIcon />}
+                label={isEmail ? "Email sent" : "Event created"}
+                sx={{ 
+                  backgroundColor: isAnchored ? '#e8f5e8' : '#e0e0e0',
+                  color: isAnchored ? '#2e7d32' : '#666',
+                  '& .MuiChip-icon': {
+                    color: isAnchored ? '#2e7d32' : '#666'
+                  }
+                }}
+                size="small"
+              />
+            ) : validation && isComplete ? (
+              <Chip
+                icon={<CheckCircleIcon />}
+                label="Ready to Send"
+                color="success"
+                size="small"
+              />
+            ) : validation && !isComplete ? (
+              <Chip
+                icon={<WarningIcon />}
+                label="Needs Info"
+                color="warning"
+                size="small"
+              />
+            ) : null}
+          </Box>
         </Box>
 
         {/* Draft Content */}
@@ -286,43 +301,48 @@ const DraftCard = ({
           </Box>
         )}
 
-        <Divider sx={{ my: 1.5, borderColor: isAnchored ? '#ffcc02' : '#ccc' }} />
+        {/* Show divider and action buttons only if not sent */}
+        {!isSent && (
+          <>
+            <Divider sx={{ my: 1.5, borderColor: isAnchored ? '#ffcc02' : '#ccc' }} />
 
-        {/* Action buttons */}
-        <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', alignItems: 'center' }}>
-          <IconButton
-            size="small"
-            onClick={handleAnchor}
-            sx={{
-              color: isAnchored ? '#ff9800' : '#666',
-              '&:hover': {
-                color: '#ff9800',
-                backgroundColor: 'rgba(255, 152, 0, 0.1)'
-              }
-            }}
-          >
-            <AnchorIcon />
-          </IconButton>
+            {/* Action buttons */}
+            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', alignItems: 'center' }}>
+              <IconButton
+                size="small"
+                onClick={handleAnchor}
+                sx={{
+                  color: isAnchored ? '#ff9800' : '#666',
+                  '&:hover': {
+                    color: '#ff9800',
+                    backgroundColor: 'rgba(255, 152, 0, 0.1)'
+                  }
+                }}
+              >
+                <AnchorIcon />
+              </IconButton>
 
-          <Button
-            variant="contained"
-            size="small"
-            startIcon={isSending ? <CircularProgress size={16} color="inherit" /> : <SendIcon />}
-            onClick={handleSend}
-            disabled={!isComplete || isSending}
-            sx={{
-              backgroundColor: isComplete ? '#4caf50' : '#ff9800',
-              '&:hover': {
-                backgroundColor: isComplete ? '#388e3c' : '#f57c00'
-              },
-              '&:disabled': {
-                backgroundColor: '#ccc'
-              }
-            }}
-          >
-            {isSending ? 'Sending...' : (isComplete ? 'Send' : 'Needs Info')}
-          </Button>
-        </Box>
+              <Button
+                variant="contained"
+                size="small"
+                startIcon={isSending ? <CircularProgress size={16} color="inherit" /> : <SendIcon />}
+                onClick={handleSend}
+                disabled={!isComplete || isSending}
+                sx={{
+                  backgroundColor: isComplete ? '#4caf50' : '#ff9800',
+                  '&:hover': {
+                    backgroundColor: isComplete ? '#388e3c' : '#f57c00'
+                  },
+                  '&:disabled': {
+                    backgroundColor: '#ccc'
+                  }
+                }}
+              >
+                {isSending ? 'Sending...' : (isComplete ? 'Send' : 'Needs Info')}
+              </Button>
+            </Box>
+          </>
+        )}
       </Paper>
     </Fade>
   );
