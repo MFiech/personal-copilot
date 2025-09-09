@@ -1,14 +1,23 @@
-name: Email Flow QA Tests
+name: Email Flow QA Tests (Focused)
 
-# Trigger on pushes to main and all pull requests
+# Focused email testing - runs on email-specific changes for rapid feedback
+# For comprehensive testing, see comprehensive-tests.yml
 on:
   push:
     branches: [ main ]
+    paths:
+      # Only run on email-specific changes for focused testing
+      - 'backend/tests/test_email_*.py'
+      - 'backend/models/email.py'
+      - 'backend/services/*email*.py'
+      - '.github/workflows/email-flow-qa.yml'
   pull_request:
     branches: [ main ]
-    # Also trigger on specific paths that affect email functionality
     paths:
-      - 'backend/**'
+      # Only run on email-specific changes for focused testing
+      - 'backend/tests/test_email_*.py'
+      - 'backend/models/email.py' 
+      - 'backend/services/*email*.py'
       - '.github/workflows/email-flow-qa.yml'
 
 # Allow manual triggering for testing
@@ -178,6 +187,9 @@ jobs:
         echo "  - Error handling and edge cases"
         echo "  - Performance with large email batches"
         echo "  - All external API calls properly mocked for CI/CD"
+        echo ""
+        echo "💡 Note: This is a focused email test suite."
+        echo "   For comprehensive testing across all components, see comprehensive-tests.yml"
 
   # Job to check if tests are required (for PR status checks)
   email-tests-required:
@@ -190,11 +202,15 @@ jobs:
       run: |
         if [ "${{ needs.email-flow-tests.result }}" = "success" ]; then
           echo "✅ All email flow tests passed!"
+          echo "🎯 Focused email functionality verified successfully."
           exit 0
         else
           echo "❌ Email flow tests failed!"
           echo "This indicates a potential regression in email functionality."
           echo "Please review the test failures before merging."
+          echo ""
+          echo "💡 Note: This workflow focuses on email functionality only."
+          echo "   The comprehensive test suite will run on broader changes."
           exit 1
         fi
 
