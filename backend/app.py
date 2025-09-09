@@ -3201,8 +3201,13 @@ def send_draft(draft_id):
         try:
             if draft.draft_type == 'email':
                 # Send email via Composio
-                # Note: This is a placeholder - you'll need to implement send_email in ComposioService
-                result = {"error": "Email sending not yet implemented in ComposioService"}
+                result = tooling_service.send_email(
+                    to_emails=composio_params['to_emails'],
+                    subject=composio_params.get('subject'),
+                    body=composio_params.get('body'),
+                    cc_emails=composio_params.get('cc_emails'),
+                    bcc_emails=composio_params.get('bcc_emails')
+                )
                 
             elif draft.draft_type == 'calendar_event':
                 # Create calendar event via Composio
@@ -3218,20 +3223,22 @@ def send_draft(draft_id):
                 return jsonify({'error': f'Unknown draft type: {draft.draft_type}'}), 400
             
             # Check result and update draft status
-            if 'error' in result:
+            if not result.get('success', True) or 'error' in result:
                 # Mark draft as error
+                error_msg = result.get('error', 'Unknown error')
                 draft_service.close_draft(draft_id, 'composio_error')
                 return jsonify({
                     'success': False,
-                    'error': f'Composio execution failed: {result["error"]}'
+                    'error': f'Composio execution failed: {error_msg}'
                 }), 500
             else:
                 # Mark draft as completed
                 draft_service.close_draft(draft_id, 'closed')
+                success_msg = result.get('message', f'{draft.draft_type.replace("_", " ").title()} executed successfully')
                 return jsonify({
                     'success': True,
                     'result': result,
-                    'message': f'{draft.draft_type.replace("_", " ").title()} executed successfully'
+                    'message': success_msg
                 })
                 
         except Exception as composio_error:

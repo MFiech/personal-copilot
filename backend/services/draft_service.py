@@ -212,10 +212,15 @@ class DraftService:
             # Convert to email parameters
             to_emails = [email["email"] for email in draft.to_emails if email.get("email")]
             
+            # Note: Current draft model only supports to_emails
+            # CC/BCC support can be added later when the model is extended
+            
             return {
-                "to": to_emails,
+                "to_emails": to_emails,
                 "subject": draft.subject,
                 "body": draft.body,
+                "cc_emails": None,  # Not supported in current draft model
+                "bcc_emails": None,  # Not supported in current draft model
                 "attachments": draft.attachments or []
             }
         

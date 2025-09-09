@@ -33,6 +33,7 @@ import DialogContentText from '@mui/material/DialogContentText';
 import DialogTitle from '@mui/material/DialogTitle';
 import ToolResults from './components/ToolResults';
 import EmailSidebar from './components/EmailSidebar';
+import DraftCard from './components/DraftCard';
 import './App.css';
 import { useSnackbar } from './components/SnackbarProvider';
 import { DraftService, formatDraftDisplayText, getMissingFieldsText } from './utils/draftService';
@@ -254,6 +255,9 @@ function App() {
   const [draftValidation, setDraftValidation] = useState(null);
   const [isSendingDraft, setIsSendingDraft] = useState(false);
 
+  // Draft cards state - tracks drafts per message
+  const [messageDrafts, setMessageDrafts] = useState({});
+
   const { showSnackbar } = useSnackbar();
 
   // Fetch threads on initial mount
@@ -286,8 +290,9 @@ function App() {
       // Clear messages when on root path
       setMessages([]);
     }
-    // Clear anchor when switching threads
+    // Clear anchor and draft cards when switching threads
     setAnchoredItem(null);
+    setMessageDrafts({});
   }, [threadId]);
 
   // Handle clicking outside menu to close it
@@ -408,11 +413,63 @@ function App() {
       }
       
       if (isMobile) setDrawerOpen(false);
+      
+      // Load any existing drafts for this thread after messages are loaded
+      loadThreadDrafts(threadId);
     } catch (error) {
       console.error('Error loading thread:', error);
       setMessages([]);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Load existing drafts for a thread
+  const loadThreadDrafts = async (threadId) => {
+    try {
+      const response = await fetch(`http://localhost:5001/drafts/thread/${threadId}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.drafts) {
+          const newMessageDrafts = {};
+          data.drafts.forEach(draft => {
+            if (draft.message_id) {
+              newMessageDrafts[draft.message_id] = draft;
+            }
+          });
+          setMessageDrafts(newMessageDrafts);
+          console.log(`[App.js] Loaded ${data.drafts.length} existing drafts for thread ${threadId}`);
+        }
+      }
+    } catch (error) {
+      console.log('[App.js] Error loading thread drafts:', error);
+    }
+  };
+
+  // Refresh all existing draft cards with latest data
+  const refreshAllDraftCards = async () => {
+    if (!threadId) return;
+    
+    try {
+      const response = await fetch(`http://localhost:5001/drafts/thread/${threadId}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.drafts) {
+          setMessageDrafts(prev => {
+            const updated = { ...prev };
+            data.drafts.forEach(draft => {
+              if (draft.message_id && updated[draft.message_id]) {
+                // Only update if this message already has a draft card
+                updated[draft.message_id] = draft;
+              }
+            });
+            return updated;
+          });
+          console.log(`[App.js] Refreshed ${data.drafts.length} draft cards with latest data`);
+        }
+      }
+    } catch (error) {
+      console.log('[App.js] Error refreshing draft cards:', error);
     }
   };
 
@@ -515,18 +572,23 @@ function App() {
         }, 500); // Small delay to ensure backend processing is complete
       }
       
-      // Check if a draft was created and auto-anchor it
+      // Refresh all draft cards in case LLM updated existing drafts
+      setTimeout(() => {
+        refreshAllDraftCards();
+      }, 500);
+      
+      // Check if a draft was created and display it immediately
       if (data.draft_created) {
         console.log('[App.js] Draft created detected:', data.draft_created);
         
-        // Immediately check for and anchor the draft
+        // Immediately check for and display the draft
         setTimeout(() => {
-          checkForDraftInMessage(data.draft_created.user_message_id);
+          checkForDraftInMessage(data.draft_created.user_message_id, true);
         }, 100); // Small delay to ensure database update
       } else {
         // Fallback: Check if a draft was created for the user message
         setTimeout(() => {
-          checkForDraftInMessage(userMessageId);
+          checkForDraftInMessage(userMessageId, true);
         }, 500); // Longer delay for fallback detection
       }
       
@@ -616,6 +678,7 @@ function App() {
   // Start a new thread
   const startNewThread = () => {
     setMessages([]);
+    setMessageDrafts({});
     navigate('/');
     setPendingConfirmation(null);
     if (isMobile) setDrawerOpen(false);
@@ -1023,23 +1086,32 @@ function App() {
   };
 
   // Check for draft associated with user message
-  const checkForDraftInMessage = async (messageId) => {
+  const checkForDraftInMessage = async (messageId, displayDraft = false) => {
     try {
       const response = await DraftService.getDraftByMessage(messageId);
       if (response.success) {
         const draft = response.draft;
         
-        // Auto-anchor this draft
-        const anchorData = {
-          id: draft.draft_id,
-          type: 'draft',
-          data: draft
-        };
-        
-        setAnchoredItem(anchorData);
-        await fetchDraftValidation(draft.draft_id);
-        
-        console.log('[App.js] Auto-anchored draft:', draft.draft_id);
+        if (displayDraft) {
+          // Add draft to messageDrafts for immediate display
+          setMessageDrafts(prev => ({
+            ...prev,
+            [messageId]: draft
+          }));
+          console.log('[App.js] Added draft to display:', draft.draft_id);
+        } else {
+          // Auto-anchor this draft (legacy behavior)
+          const anchorData = {
+            id: draft.draft_id,
+            type: 'draft',
+            data: draft
+          };
+          
+          setAnchoredItem(anchorData);
+          await fetchDraftValidation(draft.draft_id);
+          
+          console.log('[App.js] Auto-anchored draft:', draft.draft_id);
+        }
         return true;
       }
     } catch (error) {
@@ -1100,6 +1172,36 @@ function App() {
       }
     }, 100);
   };
+
+  // Draft card handlers
+  const handleDraftCardAnchor = (anchorData) => {
+    // Toggle anchor: if already anchored to this draft, unanchor it
+    if (anchoredItem?.type === 'draft' && anchoredItem?.id === anchorData.id) {
+      handleAnchorChange(null); // Unanchor
+    } else {
+      handleAnchorChange(anchorData); // Anchor
+    }
+    // Draft cards remain permanently visible - no removal from messageDrafts
+  };
+
+  const handleDraftCardSent = (draftId) => {
+    // Remove from messageDrafts after successful send
+    setMessageDrafts(prev => {
+      const updated = { ...prev };
+      Object.keys(updated).forEach(messageId => {
+        if (updated[messageId].draft_id === draftId) {
+          delete updated[messageId];
+        }
+      });
+      return updated;
+    });
+    
+    // Refresh thread to show any new messages
+    if (threadId) {
+      loadThread(threadId);
+    }
+  };
+
 
   const DeleteConfirmationDialog = () => (
     <Dialog
@@ -1516,33 +1618,6 @@ function App() {
                       <ContentCopyIcon fontSize="inherit" />
                     </IconButton>
                     
-                    {/* Anchor button - only for user messages */}
-                    {message.role === 'user' && (
-                      <IconButton 
-                        size="small" 
-                        onClick={async () => {
-                          // Check if this message has a draft
-                          const response = await DraftService.getDraftByMessage(message.id);
-                          if (response.success) {
-                            // Anchor by message, not by draft
-                            handleAnchorChange({ id: message.id, type: 'message', data: { message_id: message.id } });
-                          } else {
-                            showSnackbar('No draft found for this message', 'info');
-                          }
-                        }}
-                        sx={{ 
-                          p: 0.5,
-                          color: anchoredItem?.type === 'message' && anchoredItem?.id === message.id ? '#ff9800' : 'text.secondary',
-                          '&:hover': { 
-                            color: '#ff9800',
-                            bgcolor: 'action.hover'
-                          }
-                        }}
-                      >
-                        <AnchorIcon fontSize="inherit" />
-                      </IconButton>
-                    )}
-                    
                     {/* Repeat button - only for user messages */}
                     {message.role === 'user' && (
                       <IconButton 
@@ -1561,6 +1636,24 @@ function App() {
                       </IconButton>
                     )}
                   </Box>
+                  
+                  {/* Draft Card - only for user messages that have drafts */}
+                  {message.role === 'user' && messageDrafts[message.id] && (
+                    <Box sx={{ 
+                      width: '100%',
+                      maxWidth: 'calc(80% - 16px)',
+                      alignSelf: 'flex-end'
+                    }}>
+                      <DraftCard
+                        draft={messageDrafts[message.id]}
+                        messageId={message.id}
+                        isAnchored={anchoredItem?.type === 'draft' && anchoredItem?.id === messageDrafts[message.id]?.draft_id}
+                        onAnchor={handleDraftCardAnchor}
+                        onSend={handleDraftCardSent}
+                        showSnackbar={showSnackbar}
+                      />
+                    </Box>
+                  )}
                 </Box>
               ))
             )}

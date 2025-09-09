@@ -776,6 +776,107 @@ class ComposioService:
         )
         return response.get("successful", False)
 
+    def send_email(self, to_emails, subject, body, cc_emails=None, bcc_emails=None, attachments=None):
+        """
+        Send an email using Composio Gmail API.
+        
+        Args:
+            to_emails: List of recipient email addresses or single string
+            subject: Email subject line
+            body: Email body content (plain text with line breaks preserved)
+            cc_emails: Optional list of CC recipients
+            bcc_emails: Optional list of BCC recipients
+            attachments: Optional list of attachments (not implemented yet)
+        
+        Returns:
+            dict: Response from Composio API with success/error status
+        """
+        if not self.client_available or not self.gmail_account_id:
+            return {"error": "Gmail not connected or unavailable"}
+        
+        # Handle recipient email - use first email as primary recipient
+        if isinstance(to_emails, list) and to_emails:
+            primary_recipient = to_emails[0]
+            # Put additional recipients in CC if they exist
+            additional_recipients = to_emails[1:] if len(to_emails) > 1 else []
+        else:
+            primary_recipient = to_emails if isinstance(to_emails, str) else str(to_emails)
+            additional_recipients = []
+        
+        # Extract email addresses from objects if needed
+        if isinstance(primary_recipient, dict):
+            primary_recipient = primary_recipient.get('email', str(primary_recipient))
+        
+        # Build parameters for Composio Gmail API
+        params = {
+            "recipient_email": primary_recipient,
+            "subject": subject or "No Subject",
+            "body": body or "",
+            "is_html": False  # Plain text with line breaks
+        }
+        
+        # Add CC recipients (combine additional to_emails with explicit cc_emails)
+        cc_list = []
+        if additional_recipients:
+            for email in additional_recipients:
+                if isinstance(email, dict):
+                    cc_list.append(email.get('email', str(email)))
+                else:
+                    cc_list.append(str(email))
+        
+        if cc_emails:
+            for email in cc_emails:
+                if isinstance(email, dict):
+                    cc_list.append(email.get('email', str(email)))
+                else:
+                    cc_list.append(str(email))
+        
+        if cc_list:
+            params["cc"] = cc_list
+        
+        # Add BCC recipients if provided
+        if bcc_emails:
+            bcc_list = []
+            for email in bcc_emails:
+                if isinstance(email, dict):
+                    bcc_list.append(email.get('email', str(email)))
+                else:
+                    bcc_list.append(str(email))
+            params["bcc"] = bcc_list
+        
+        print(f"[DEBUG] Sending email with params: {params}")
+        
+        try:
+            response = self._execute_action(
+                action=Action.GMAIL_SEND_EMAIL,
+                params=params
+            )
+            
+            if response and response.get("successful"):
+                print(f"[DEBUG] Email sent successfully")
+                return {
+                    "success": True,
+                    "message": f"Email sent successfully to {primary_recipient}" + (f" and {len(cc_list)} others" if cc_list else ""),
+                    "data": response.get("data", {})
+                }
+            else:
+                error_msg = response.get("error", "Unknown error") if response else "No response received"
+                print(f"[ERROR] Failed to send email: {error_msg}")
+                return {
+                    "success": False,
+                    "error": f"Failed to send email: {error_msg}"
+                }
+                
+        except Exception as e:
+            error_msg = f"Exception while sending email: {str(e)}"
+            print(f"[ERROR] {error_msg}")
+            import traceback
+            print(f"[ERROR] Traceback: {traceback.format_exc()}")
+            return {
+                "success": False,
+                "error": error_msg
+            }
+
     def get_upcoming_events(self, days=7, max_results=10, **kwargs):
         """
         Legacy method for backwards compatibility. 
