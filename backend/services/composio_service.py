@@ -13,6 +13,110 @@ from services.langfuse_client import create_langfuse_client
 from utils.langfuse_helpers import get_gmail_query_builder_prompt, get_query_classification_prompt, get_calendar_intent_analysis_prompt
 
 class ComposioService:
+    # Environment flag for verbose logging
+    VERBOSE_COMPOSIO_LOGS = os.getenv("VERBOSE_COMPOSIO_LOGS", "false").lower() == "true"
+    
+    @staticmethod
+    def _strip_html(text):
+        """Remove HTML tags from text and clean it up"""
+        if not text:
+            return ""
+        # Remove HTML tags
+        clean = re.sub('<.*?>', '', str(text))
+        # Replace common HTML entities
+        clean = clean.replace('&nbsp;', ' ').replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
+        # Clean up whitespace
+        clean = ' '.join(clean.split())
+        return clean
+    
+    @staticmethod
+    def _format_calendar_for_log(events):
+        """Extract essential calendar fields for logging"""
+        if not events:
+            return []
+        
+        formatted = []
+        for event in events[:3]:  # Limit to first 3 events
+            attendees = []
+            if event.get("attendees"):
+                attendees = [a.get("email", "Unknown") for a in event["attendees"]]
+            
+            formatted.append({
+                "name": event.get("summary", "Untitled")[:50],
+                "description": (event.get("description", "")[:100] + "..." if len(event.get("description", "")) > 100 else event.get("description", "")),
+                "attendees": attendees[:3],  # Max 3 attendees
+                "location": event.get("location", "No location")[:50],
+                "start": event.get("start", {}).get("dateTime", "No time"),
+                "end": event.get("end", {}).get("dateTime", "No time")
+            })
+        return formatted
+    
+    @staticmethod
+    def _format_email_for_log(emails):
+        """Extract essential email fields for logging (NO HTML)"""
+        if not emails:
+            return []
+        
+        formatted = []
+        for email in emails[:3]:  # Limit to first 3 emails
+            # Get from address
+            from_addr = "Unknown"
+            if email.get("from"):
+                from_addr = email["from"]
+            
+            # Get to addresses
+            to_addrs = []
+            if email.get("to"):
+                if isinstance(email["to"], list):
+                    to_addrs = email["to"][:3]  # Max 3 recipients
+                else:
+                    to_addrs = [email["to"]]
+            
+            # Get body and strip HTML completely
+            body = email.get("body", "")
+            clean_body = ComposioService._strip_html(body)[:100]  # Max 100 chars, no HTML
+            if len(clean_body) >= 100:
+                clean_body += "..."
+            
+            formatted.append({
+                "from": from_addr,
+                "to": to_addrs,
+                "subject": (email.get("subject", "No subject")[:50] + "..." if len(email.get("subject", "")) > 50 else email.get("subject", "No subject")),
+                "body_preview": clean_body
+            })
+        return formatted
+    
+    @staticmethod
+    def _log_composio_response(operation_type, data, action_name=None):
+        """Centralized logging for Composio responses"""
+        if ComposioService.VERBOSE_COMPOSIO_LOGS:
+            # Full verbose logging for development
+            print(f"🔴 [COMPOSIO] Full {operation_type} response: {data}")
+        else:
+            # Simplified logging for production
+            if operation_type == "calendar":
+                if isinstance(data, dict) and "items" in data:
+                    events = data["items"]
+                    simplified = ComposioService._format_calendar_for_log(events)
+                    print(f"🔴 [COMPOSIO] Calendar ({len(events)} events): {simplified}")
+                else:
+                    print(f"🔴 [COMPOSIO] Calendar response: {str(data)[:200]}...")
+            
+            elif operation_type == "email":
+                if isinstance(data, list):
+                    simplified = ComposioService._format_email_for_log(data)
+                    print(f"🔴 [COMPOSIO] Email ({len(data)} emails): {simplified}")
+                else:
+                    print(f"🔴 [COMPOSIO] Email response: {str(data)[:200]}...")
+            
+            elif operation_type == "action":
+                action_info = f" [{action_name}]" if action_name else ""
+                print(f"🔴 [COMPOSIO] Action{action_info}: {str(data)[:200]}...")
+            
+            else:
+                # Generic simplified logging
+                print(f"🔴 [COMPOSIO] {operation_type}: {str(data)[:200]}...")
+
     def __init__(self, api_key: str):
         """
         Initializes the new Composio client with MCP (Model Context Protocol) support.
@@ -292,11 +396,11 @@ class ComposioService:
                 if isinstance(response, dict):
                     response_keys = list(response.keys()) if response else []
                     print(f"🔴 [COMPOSIO] Response is dict with keys: {response_keys}")
-                    # Always log the full response for delete operations
-                    print(f"🔴 [COMPOSIO] Full response: {response}")
+                    # Use simplified logging instead of full dump
+                    self._log_composio_response("action", response, str(action))
                 else:
                     print(f"🔴 [COMPOSIO] Response attributes: {dir(response) if hasattr(response, '__dict__') else 'No attributes'}")
-                    print(f"🔴 [COMPOSIO] Action execution response: {str(response)[:500]}...")
+                    self._log_composio_response("action", response, str(action))
             except Exception as log_error:
                 print(f"🔴 [COMPOSIO] Could not log response safely: {log_error}")
             
@@ -304,7 +408,7 @@ class ComposioService:
             if hasattr(response, 'successful'):
                 print(f"🔴 [COMPOSIO] Response has 'successful' attribute: {response.successful}")
                 result = {"successful": response.successful, "data": response.data if hasattr(response, 'data') else response}
-                print(f"🔴 [COMPOSIO] Returning result: {result}")
+                self._log_composio_response("result", result)
                 return result
             elif isinstance(response, dict):
                 # Handle dict response with potential typos in keys
@@ -318,7 +422,7 @@ class ComposioService:
                     success_value = response[success_key]
                     print(f"🔴 [COMPOSIO] Found success key '{success_key}': {success_value}")
                     result = {"successful": success_value, "data": response.get('data', response)}
-                    print(f"🔴 [COMPOSIO] Returning dict result: {result}")
+                    self._log_composio_response("result", result)
                     return result
                 else:
                     print(f"🔴 [COMPOSIO] No success key found in dict response, checking for errors")
@@ -328,13 +432,13 @@ class ComposioService:
                     else:
                         print(f"🔴 [COMPOSIO] No error found, assuming success")
                         result = {"successful": True, "data": response}
-                    print(f"🔴 [COMPOSIO] Returning dict result: {result}")
+                    self._log_composio_response("result", result)
                     return result
             else:
                 print(f"🔴 [COMPOSIO] Response doesn't have 'successful' attribute, assuming success")
                 # Assume success if no error was thrown
                 result = {"successful": True, "data": response}
-                print(f"🔴 [COMPOSIO] Returning assumed success result: {result}")
+                self._log_composio_response("result", result)
                 return result
             
         except Exception as e:
@@ -776,6 +880,107 @@ class ComposioService:
         )
         return response.get("successful", False)
 
+    def send_email(self, to_emails, subject, body, cc_emails=None, bcc_emails=None, attachments=None):
+        """
+        Send an email using Composio Gmail API.
+        
+        Args:
+            to_emails: List of recipient email addresses or single string
+            subject: Email subject line
+            body: Email body content (plain text with line breaks preserved)
+            cc_emails: Optional list of CC recipients
+            bcc_emails: Optional list of BCC recipients
+            attachments: Optional list of attachments (not implemented yet)
+        
+        Returns:
+            dict: Response from Composio API with success/error status
+        """
+        if not self.client_available or not self.gmail_account_id:
+            return {"error": "Gmail not connected or unavailable"}
+        
+        # Handle recipient email - use first email as primary recipient
+        if isinstance(to_emails, list) and to_emails:
+            primary_recipient = to_emails[0]
+            # Put additional recipients in CC if they exist
+            additional_recipients = to_emails[1:] if len(to_emails) > 1 else []
+        else:
+            primary_recipient = to_emails if isinstance(to_emails, str) else str(to_emails)
+            additional_recipients = []
+        
+        # Extract email addresses from objects if needed
+        if isinstance(primary_recipient, dict):
+            primary_recipient = primary_recipient.get('email', str(primary_recipient))
+        
+        # Build parameters for Composio Gmail API
+        params = {
+            "recipient_email": primary_recipient,
+            "subject": subject or "No Subject",
+            "body": body or "",
+            "is_html": False  # Plain text with line breaks
+        }
+        
+        # Add CC recipients (combine additional to_emails with explicit cc_emails)
+        cc_list = []
+        if additional_recipients:
+            for email in additional_recipients:
+                if isinstance(email, dict):
+                    cc_list.append(email.get('email', str(email)))
+                else:
+                    cc_list.append(str(email))
+        
+        if cc_emails:
+            for email in cc_emails:
+                if isinstance(email, dict):
+                    cc_list.append(email.get('email', str(email)))
+                else:
+                    cc_list.append(str(email))
+        
+        if cc_list:
+            params["cc"] = cc_list
+        
+        # Add BCC recipients if provided
+        if bcc_emails:
+            bcc_list = []
+            for email in bcc_emails:
+                if isinstance(email, dict):
+                    bcc_list.append(email.get('email', str(email)))
+                else:
+                    bcc_list.append(str(email))
+            params["bcc"] = bcc_list
+        
+        print(f"[DEBUG] Sending email with params: {params}")
+        
+        try:
+            response = self._execute_action(
+                action=Action.GMAIL_SEND_EMAIL,
+                params=params
+            )
+            
+            if response and response.get("successful"):
+                print(f"[DEBUG] Email sent successfully")
+                return {
+                    "success": True,
+                    "message": f"Email sent successfully to {primary_recipient}" + (f" and {len(cc_list)} others" if cc_list else ""),
+                    "data": response.get("data", {})
+                }
+            else:
+                error_msg = response.get("error", "Unknown error") if response else "No response received"
+                print(f"[ERROR] Failed to send email: {error_msg}")
+                return {
+                    "success": False,
+                    "error": f"Failed to send email: {error_msg}"
+                }
+                
+        except Exception as e:
+            error_msg = f"Exception while sending email: {str(e)}"
+            print(f"[ERROR] {error_msg}")
+            import traceback
+            print(f"[ERROR] Traceback: {traceback.format_exc()}")
+            return {
+                "success": False,
+                "error": error_msg
+            }
+
     def get_upcoming_events(self, days=7, max_results=10, **kwargs):
         """
         Legacy method for backwards compatibility. 
@@ -821,10 +1026,15 @@ class ComposioService:
             params=params
         )
         if response and response.get("successful"):
-            print(f"[DEBUG] GOOGLECALENDAR_EVENTS_LIST successful, data keys: {list(response.get('data', {}).keys()) if isinstance(response.get('data'), dict) else 'Not a dict'}")
-            return {"data": response.get("data", {})}
+            data = response.get("data", {})
+            print(f"[DEBUG] GOOGLECALENDAR_EVENTS_LIST successful, data keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
+            # Use simplified logging for calendar data
+            self._log_composio_response("calendar", data)
+            return {"data": data}
         else:
-            print(f"[ERROR] GOOGLECALENDAR_EVENTS_LIST failed - Response: {response}")
+            print(f"[ERROR] GOOGLECALENDAR_EVENTS_LIST failed")
+            if response:
+                self._log_composio_response("error", response)
             return {"error": response.get("error") if response else "No response received"}
 
     def find_events(self, query=None, calendar_id="primary", time_min=None, time_max=None, 
@@ -993,21 +1203,21 @@ class ComposioService:
             params=params
         )
         
-        print(f"🔴 [COMPOSIO] Raw response from _execute_action: {response}")
+        self._log_composio_response("calendar_delete", response, "DELETE_EVENT")
         
         success = response and response.get("successful", False)
         print(f"🔴 [COMPOSIO] Final success result: {success}")
         
         if not success:
-            print(f"🔴 [COMPOSIO] Delete failed - response details: {response}")
-            if response:
-                print(f"🔴 [COMPOSIO] Response keys: {list(response.keys()) if isinstance(response, dict) else 'Not a dict'}")
+            print(f"🔴 [COMPOSIO] Delete failed")
+            if response and isinstance(response, dict):
+                print(f"🔴 [COMPOSIO] Response keys: {list(response.keys())}")
                 if 'error' in response:
                     print(f"🔴 [COMPOSIO] Error details: {response['error']}")
                 if 'data' in response:
-                    print(f"🔴 [COMPOSIO] Response data: {response['data']}")
+                    self._log_composio_response("error_data", response['data'])
         else:
-            print(f"🔴 [COMPOSIO] Delete appears successful - response data: {response.get('data', 'No data field')}")
+            print(f"🔴 [COMPOSIO] Delete appears successful")
         
         return success
 
@@ -1429,11 +1639,21 @@ class ComposioService:
         keywords = parameters.get("keywords", "")
         time_range = parameters.get("time_range")
         
+        # Handle keywords being a list (from LLM responses) or string
+        if isinstance(keywords, list):
+            keywords = " ".join(keywords) if keywords else ""
+        elif keywords is None:
+            keywords = ""
+        
         # Convert date_range to time_min/time_max
         time_min, time_max = None, None
         if date_range:
-            time_min, time_max = self._extract_time_range(date_range.lower())
-            print(f"[DEBUG] Date range '{date_range}' converted to time_min='{time_min}', time_max='{time_max}'")
+            # Handle date_range being a list
+            if isinstance(date_range, list):
+                date_range = date_range[0] if date_range else ""
+            if date_range:
+                time_min, time_max = self._extract_time_range(date_range.lower())
+                print(f"[DEBUG] Date range '{date_range}' converted to time_min='{time_min}', time_max='{time_max}'")
         
         # Only use fallback keyword extraction if LLM analysis was incomplete (no date_range AND no keywords)
         # If LLM provided date_range but no keywords, that's intentional for date-only queries

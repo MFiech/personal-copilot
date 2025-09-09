@@ -206,6 +206,7 @@ MANDATORY EXTRACTION GUIDELINES:
 
 IMPORTANT NOTES:
 - Only detect draft intent when user explicitly mentions "draft" or wants to "prepare" something
+- DO NOT detect draft intent for search/view requests ("show me", "pull all", "find events")
 - Extract partial information - it's okay if some fields are missing
 - Normalize dates to YYYY-MM-DD format and times to HH:MM:SS format
 - For contacts, extract both names and email addresses if provided
@@ -248,6 +249,12 @@ User: "Thanks. Let's send the invitation to Paweł's email. It's stawskipawel@gm
 Response: {{"is_draft_intent": true, "draft_data": {{"draft_type": "calendar_event", "extracted_info": {{"attendees": ["Paweł Stawski (stawskipawel@gmail.com)"]}}}}}}
 
 User: "What's the weather like?"
+Response: {{"is_draft_intent": false, "draft_data": null}}
+
+User: "pull all events for current week"
+Response: {{"is_draft_intent": false, "draft_data": null}}
+
+User: "show me my calendar"
 Response: {{"is_draft_intent": false, "draft_data": null}}
 
 YOUR RESPONSE (JSON only):"""

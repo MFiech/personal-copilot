@@ -37,9 +37,9 @@ class TestCalendarEdgeCases:
         """Test handling when Composio service is completely unavailable"""
         from app import app
         
-        with patch('services.composio_service.ComposioService') as mock_service:
-            # Mock service initialization failure
-            mock_service.side_effect = Exception("Composio service initialization failed")
+        with patch('app.tooling_service') as mock_tooling_service:
+            # Mock service as unavailable
+            mock_tooling_service.process_query.side_effect = Exception("Composio service initialization failed")
             
             with app.test_client() as client:
                 response = client.post('/chat', data=json.dumps({
@@ -61,13 +61,11 @@ class TestCalendarEdgeCases:
         """Test handling of Composio authentication failures"""
         from app import app
         
-        with patch('services.composio_service.ComposioService') as mock_service:
-            mock_instance = Mock()
-            mock_service.return_value = mock_instance
-            mock_instance.calendar_account_id = None
-            mock_instance.client_available = True
+        with patch('app.tooling_service') as mock_tooling_service:
+            mock_tooling_service.calendar_account_id = None
+            mock_tooling_service.client_available = True
             
-            mock_instance.process_query.return_value = {
+            mock_tooling_service.process_query.return_value = {
                 'source_type': 'google-calendar', 
                 'content': 'I couldn\'t process your calendar request: Google Calendar account not connected',
                 'data': {'items': []}
@@ -91,13 +89,11 @@ class TestCalendarEdgeCases:
         """Test handling of Composio API rate limiting"""
         from app import app
         
-        with patch('services.composio_service.ComposioService') as mock_service:
-            mock_instance = Mock()
-            mock_service.return_value = mock_instance
-            mock_instance.calendar_account_id = 'test_account'
-            mock_instance.client_available = True
+        with patch('app.tooling_service') as mock_tooling_service:
+            mock_tooling_service.calendar_account_id = 'test_account'
+            mock_tooling_service.client_available = True
             
-            mock_instance.process_query.return_value = {
+            mock_tooling_service.process_query.return_value = {
                 'source_type': 'google-calendar',
                 'content': 'I couldn\'t process your calendar request: Rate limit exceeded for calendar API',
                 'data': {'items': []}
@@ -121,14 +117,12 @@ class TestCalendarEdgeCases:
         """Test handling of malformed Composio responses"""
         from app import app
         
-        with patch('services.composio_service.ComposioService') as mock_service:
-            mock_instance = Mock()
-            mock_service.return_value = mock_instance
-            mock_instance.calendar_account_id = 'test_account'
-            mock_instance.client_available = True
+        with patch('app.tooling_service') as mock_tooling_service:
+            mock_tooling_service.calendar_account_id = 'test_account'
+            mock_tooling_service.client_available = True
             
             # Return completely malformed response
-            mock_instance.process_query.return_value = {
+            mock_tooling_service.process_query.return_value = {
                 'unexpected_field': 'corrupted_data',
                 'malformed': True
             }

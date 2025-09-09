@@ -24,7 +24,7 @@ class TestCalendarComprehensive:
     """Comprehensive calendar integration tests"""
     
     def test_calendar_nested_response_structure_regression(
-        self, test_db, clean_collections, mock_openai_client, mock_claude_llm
+        self, test_db, clean_collections, mock_all_llm_services
     ):
         """
         CRITICAL REGRESSION TEST: Ensure nested Composio response structure is handled.
@@ -34,14 +34,12 @@ class TestCalendarComprehensive:
         from app import app
         
         # Create mock with the exact nested structure that was causing issues
-        with patch('services.composio_service.ComposioService') as mock_service:
-            mock_instance = Mock()
-            mock_service.return_value = mock_instance
-            mock_instance.calendar_account_id = '06747a1e-ff62-4c16-9869-4c214eebc920'
-            mock_instance.client_available = True
+        with patch('app.tooling_service') as mock_tooling_service:
+            mock_tooling_service.calendar_account_id = '06747a1e-ff62-4c16-9869-4c214eebc920'
+            mock_tooling_service.client_available = True
             
             # Configure the nested response structure (the bug we fixed)
-            mock_instance.process_query.return_value = {
+            mock_tooling_service.process_query.return_value = {
                 'source_type': 'google-calendar',
                 'content': 'Events fetched.',
                 'data': {
@@ -106,19 +104,17 @@ class TestCalendarComprehensive:
                 print("✅ REGRESSION TEST PASSED: Nested response structure handled correctly")
                 
     def test_calendar_multiple_events_extraction(
-        self, test_db, clean_collections, mock_openai_client
+        self, test_db, clean_collections, mock_all_llm_services
     ):
         """Test extraction of multiple events from nested structure"""
         from app import app
         
-        with patch('services.composio_service.ComposioService') as mock_service:
-            mock_instance = Mock()
-            mock_service.return_value = mock_instance
-            mock_instance.calendar_account_id = 'test_account'
-            mock_instance.client_available = True
+        with patch('app.tooling_service') as mock_tooling_service:
+            mock_tooling_service.calendar_account_id = 'test_account'
+            mock_tooling_service.client_available = True
             
             # Multiple events in nested structure
-            mock_instance.process_query.return_value = {
+            mock_tooling_service.process_query.return_value = {
                 'source_type': 'google-calendar',
                 'content': 'Events fetched.',
                 'data': {
@@ -171,19 +167,17 @@ class TestCalendarComprehensive:
                 print("✅ TEST PASSED: Multiple events extracted correctly")
                 
     def test_calendar_empty_response_handling(
-        self, test_db, clean_collections, mock_openai_client
+        self, test_db, clean_collections, mock_all_llm_services
     ):
         """Test handling of empty calendar responses"""
         from app import app
         
-        with patch('services.composio_service.ComposioService') as mock_service:
-            mock_instance = Mock()
-            mock_service.return_value = mock_instance
-            mock_instance.calendar_account_id = 'test_account'
-            mock_instance.client_available = True
+        with patch('app.tooling_service') as mock_tooling_service:
+            mock_tooling_service.calendar_account_id = 'test_account'
+            mock_tooling_service.client_available = True
             
             # Empty calendar response
-            mock_instance.process_query.return_value = {
+            mock_tooling_service.process_query.return_value = {
                 'source_type': 'google-calendar',
                 'content': 'Events fetched.',
                 'data': {
@@ -209,19 +203,17 @@ class TestCalendarComprehensive:
                 print("✅ TEST PASSED: Empty calendar response handled correctly")
                 
     def test_calendar_error_response_handling(
-        self, test_db, clean_collections, mock_openai_client
+        self, test_db, clean_collections, mock_all_llm_services
     ):
         """Test handling of calendar error responses"""
         from app import app
         
-        with patch('services.composio_service.ComposioService') as mock_service:
-            mock_instance = Mock()
-            mock_service.return_value = mock_instance
-            mock_instance.calendar_account_id = None  # Not connected
-            mock_instance.client_available = True
+        with patch('app.tooling_service') as mock_tooling_service:
+            mock_tooling_service.calendar_account_id = None  # Not connected
+            mock_tooling_service.client_available = True
             
             # Error response
-            mock_instance.process_query.return_value = {
+            mock_tooling_service.process_query.return_value = {
                 'source_type': 'google-calendar',
                 'content': 'I couldn\'t process your calendar request: Google Calendar account not connected',
                 'data': {'items': []}
@@ -242,19 +234,17 @@ class TestCalendarComprehensive:
                 print("✅ TEST PASSED: Calendar error handled gracefully")
                 
     def test_calendar_backward_compatibility(
-        self, test_db, clean_collections, mock_openai_client
+        self, test_db, clean_collections, mock_all_llm_services
     ):
         """Test backward compatibility with direct items structure"""
         from app import app
         
-        with patch('services.composio_service.ComposioService') as mock_service:
-            mock_instance = Mock()
-            mock_service.return_value = mock_instance
-            mock_instance.calendar_account_id = 'test_account'
-            mock_instance.client_available = True
+        with patch('app.tooling_service') as mock_tooling_service:
+            mock_tooling_service.calendar_account_id = 'test_account'
+            mock_tooling_service.client_available = True
             
             # Direct items structure (legacy)
-            mock_instance.process_query.return_value = {
+            mock_tooling_service.process_query.return_value = {
                 'source_type': 'google-calendar',
                 'content': 'Events fetched.',
                 'data': {
@@ -287,19 +277,17 @@ class TestCalendarComprehensive:
                 print("✅ TEST PASSED: Backward compatibility maintained")
                 
     def test_calendar_creation_response_handling(
-        self, test_db, clean_collections, mock_openai_client
+        self, test_db, clean_collections, mock_all_llm_services
     ):
         """Test handling of calendar event creation responses"""
         from app import app
         
-        with patch('services.composio_service.ComposioService') as mock_service:
-            mock_instance = Mock()
-            mock_service.return_value = mock_instance
-            mock_instance.calendar_account_id = 'test_account'
-            mock_instance.client_available = True
+        with patch('app.tooling_service') as mock_tooling_service:
+            mock_tooling_service.calendar_account_id = 'test_account'
+            mock_tooling_service.client_available = True
             
             # Event creation response
-            mock_instance.process_query.return_value = {
+            mock_tooling_service.process_query.return_value = {
                 'source_type': 'google-calendar',
                 'content': 'Successfully created calendar event',
                 'data': {
