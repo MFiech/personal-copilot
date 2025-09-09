@@ -59,8 +59,8 @@ class TestOptimizedEmailIntegration:
         assert mock_composio_service_comprehensive is not None
         
         with app.test_client() as client:
-            # Make request to email endpoint
-            response = client.post('/process-user-query', 
+            # Make request to chat endpoint
+            response = client.post('/chat', 
                 json={
                     'query': test_query,
                     'thread_id': test_thread_id
@@ -114,7 +114,7 @@ class TestOptimizedCalendarIntegration:
         calendar_query = "What meetings do I have this week?"
         
         with app.test_client() as client:
-            response = client.post('/process-user-query',
+            response = client.post('/chat',
                 json={
                     'query': calendar_query,
                     'thread_id': test_thread_id
@@ -165,7 +165,7 @@ class TestOptimizedCalendarIntegration:
         from app import app
         
         with app.test_client() as client:
-            response = client.post('/process-user-query',
+            response = client.post('/chat',
                 json={
                     'query': creation_query,
                     'thread_id': test_thread_id
@@ -219,15 +219,15 @@ class TestOptimizedDataProcessing:
             # Verify we can create Email objects from mock data
             mock_message = messages[0]
             email = Email(
-                message_id=mock_message['messageId'],
+                email_id=mock_message['messageId'],
                 thread_id=mock_message['thread_id'],
                 subject=mock_message['subject'],
                 content=mock_message['messageText'],
-                sender=mock_message['from']['email'],
-                date_received=mock_message['date']
+                from_email=mock_message['from']['email'],
+                date=mock_message['date']
             )
             
-            assert email.message_id == 'mock_email_123'
+            assert email.email_id == 'mock_email_123'
             print("✅ Email data processing tested with mocks")
 
 
