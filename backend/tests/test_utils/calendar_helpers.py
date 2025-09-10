@@ -251,6 +251,13 @@ def create_mock_calendar_creation_response(
         **kwargs
     )
     
+    # Safely parse date and time from start_time
+    if 'T' in start_time:
+        date_part, time_part = start_time.split('T', 1)
+    else:
+        date_part = start_time
+        time_part = '15:00:00+02:00'  # Default time if not provided
+    
     return {
         'source_type': 'google-calendar',
         'content': f'Successfully created calendar event \'{title}\'',
@@ -261,8 +268,8 @@ def create_mock_calendar_creation_response(
         'action_performed': 'create',
         'event_details': {
             'title': title,
-            'date': start_time.split('T')[0],
-            'start_time': start_time.split('T')[1],
+            'date': date_part,
+            'start_time': time_part,
             'location': kwargs.get('location')
         }
     }

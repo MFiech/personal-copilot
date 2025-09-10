@@ -34,7 +34,7 @@ class TestCalendarIntegrationFlow:
     
     def test_full_calendar_query_to_response_pipeline(
         self, test_db, clean_collections, mock_composio_calendar_service, 
-        mock_openai_client, calendar_test_queries
+        mock_all_llm_services, calendar_test_queries
     ):
         """
         CRITICAL INTEGRATION TEST: Complete user query → calendar response pipeline.
@@ -109,7 +109,7 @@ class TestCalendarIntegrationFlow:
             
     def test_calendar_search_this_week_flow(
         self, test_db, clean_collections, mock_composio_calendar_service, 
-        mock_openai_client, calendar_test_queries
+        mock_all_llm_services, calendar_test_queries
     ):
         """Test specific 'this week' calendar search flow"""
         from app import app
@@ -143,7 +143,7 @@ class TestCalendarIntegrationFlow:
                 
     def test_calendar_creation_flow(
         self, test_db, clean_collections, mock_composio_calendar_service, 
-        mock_openai_client, calendar_test_queries
+        mock_all_llm_services, calendar_test_queries
     ):
         """Test calendar event creation flow"""
         from app import app
@@ -171,7 +171,7 @@ class TestCalendarIntegrationFlow:
             
     def test_mixed_email_and_calendar_query(
         self, test_db, clean_collections, mock_composio_calendar_service, 
-        mock_openai_client
+        mock_all_llm_services
     ):
         """Test handling queries that could be both email and calendar related"""
         from app import app
@@ -200,7 +200,7 @@ class TestCalendarIntegrationFlow:
             
     def test_calendar_search_results_formatting(
         self, test_db, clean_collections, mock_composio_calendar_service, 
-        mock_openai_client, sample_calendar_events
+        mock_all_llm_services, sample_calendar_events
     ):
         """Test that calendar search results are properly formatted for frontend"""
         from app import app
@@ -333,7 +333,7 @@ class TestCalendarFrontendIntegration:
     
     def test_calendar_events_frontend_format(
         self, test_db, clean_collections, mock_composio_calendar_service, 
-        mock_openai_client, sample_calendar_events
+        mock_all_llm_services, sample_calendar_events
     ):
         """Test calendar events are formatted correctly for frontend consumption"""
         from app import app
@@ -377,7 +377,7 @@ class TestCalendarFrontendIntegration:
                 
     def test_calendar_creation_frontend_response(
         self, test_db, clean_collections, mock_composio_calendar_service, 
-        mock_openai_client
+        mock_all_llm_services
     ):
         """Test calendar creation response formatted for frontend"""
         from app import app
@@ -402,7 +402,7 @@ class TestCalendarFrontendIntegration:
             
     def test_calendar_error_frontend_response(
         self, test_db, clean_collections, mock_composio_calendar_service, 
-        mock_openai_client, mock_composio_calendar_errors
+        mock_all_llm_services, mock_composio_calendar_errors
     ):
         """Test calendar error responses are handled gracefully for frontend"""
         from app import app
