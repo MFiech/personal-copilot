@@ -44,8 +44,7 @@ class TestCalendarRegression:
         """
         from app import app
         
-        # Configure LLM to return appropriate calendar response
-        mock_all_llm_services['claude'].invoke.return_value.content = "Here are your scheduled plans for this week: I found 2 calendar events."
+        # Let smart LLM mock detect events from context
         
         # Mock Composio service with nested structure response
         with patch('services.composio_service.ComposioService') as mock_service:
@@ -163,8 +162,7 @@ class TestCalendarRegression:
         empty array due to incorrect structure parsing.
         """
         
-        # Configure LLM to return appropriate calendar response
-        mock_all_llm_services['claude'].invoke.return_value.content = "I found 3 meetings scheduled for this week: Regression Test Meeting 1, 2, and 3."
+        # Let smart LLM mock detect events from context
         from app import app
         
         with patch('services.composio_service.ComposioService') as mock_service:
@@ -358,8 +356,7 @@ class TestCalendarResponseLoggingRegression:
         """
         from app import app
         
-        # Configure LLM to return appropriate response for unknown structure
-        mock_all_llm_services['claude'].invoke.return_value.content = "I encountered an unusual response format from the calendar service, but no events were found."
+        # Let smart LLM mock detect events from context
         
         # Test unknown future response structure
         future_response_structure = {
@@ -416,8 +413,7 @@ class TestCalendarErrorHandlingRegression:
         """Test handling when calendar is not connected"""
         from app import app
         
-        # Configure LLM to return appropriate not connected response
-        mock_all_llm_services['claude'].invoke.return_value.content = "Your Google Calendar is not connected. Please connect your calendar to view events."
+        # Let smart LLM mock detect error from context
         
         with patch('services.composio_service.ComposioService') as mock_service:
             mock_instance = Mock()
@@ -451,8 +447,7 @@ class TestCalendarErrorHandlingRegression:
         """Test handling when Composio service is completely unavailable"""
         from app import app
         
-        # Configure LLM to return appropriate service unavailable response
-        mock_all_llm_services['claude'].invoke.return_value.content = "I'm currently unable to access the calendar service. Please try again later."
+        # Let smart LLM mock detect error from context
         
         with patch('services.composio_service.ComposioService') as mock_service:
             mock_instance = Mock()

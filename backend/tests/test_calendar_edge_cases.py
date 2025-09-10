@@ -37,8 +37,7 @@ class TestCalendarEdgeCases:
         """Test handling when Composio service is completely unavailable"""
         from app import app
         
-        # Configure LLM to return an appropriate error response
-        mock_all_llm_services['claude'].invoke.return_value.content = "I'm sorry, I'm having trouble accessing the calendar service right now. Please try again later."
+        # Let smart LLM mock detect error from context
         
         with patch('app.tooling_service') as mock_tooling_service:
             # Mock service as unavailable
@@ -64,8 +63,7 @@ class TestCalendarEdgeCases:
         """Test handling of Composio authentication failures"""
         from app import app
         
-        # Configure LLM to return an appropriate auth error response
-        mock_all_llm_services['claude'].invoke.return_value.content = "Your Google Calendar account is not connected. Please connect your account to view calendar events."
+        # Let smart LLM mock detect error from context
         
         with patch('app.tooling_service') as mock_tooling_service:
             mock_tooling_service.calendar_account_id = None
@@ -95,8 +93,7 @@ class TestCalendarEdgeCases:
         """Test handling of Composio API rate limiting"""
         from app import app
         
-        # Configure LLM to return an appropriate rate limit response
-        mock_all_llm_services['claude'].invoke.return_value.content = "I'm currently experiencing rate limiting from the calendar service. Please try again in a few minutes."
+        # Let smart LLM mock detect error from context
         
         with patch('app.tooling_service') as mock_tooling_service:
             mock_tooling_service.calendar_account_id = 'test_account'
@@ -126,8 +123,7 @@ class TestCalendarEdgeCases:
         """Test handling of malformed Composio responses"""
         from app import app
         
-        # Configure LLM to return a generic response when data is malformed
-        mock_all_llm_services['claude'].invoke.return_value.content = "I encountered an issue retrieving your calendar data. Please try again or check your calendar connection."
+        # Let smart LLM mock detect error from context
         
         with patch('app.tooling_service') as mock_tooling_service:
             mock_tooling_service.calendar_account_id = 'test_account'

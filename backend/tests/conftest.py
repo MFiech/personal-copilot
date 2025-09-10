@@ -269,14 +269,37 @@ def mock_all_llm_services():
             mock_response = Mock()
             prompt_str = str(prompt).lower()
             
-            if 'create' in prompt_str and ('calendar' in prompt_str or 'event' in prompt_str or 'meeting' in prompt_str):
-                mock_response.content = "Successfully created the calendar event. The meeting has been scheduled as requested."
-            elif 'unavailable' in prompt_str or 'service unavailable' in prompt_str or "couldn't process" in prompt_str:
-                mock_response.content = "I'm currently unable to access the calendar service. Please try again later."
-            elif 'error' in prompt_str and 'calendar' in prompt_str:
+            # Check for error conditions first (highest priority)
+            if ('not connected' in prompt_str or 
+                'account not connected' in prompt_str or
+                'not authenticated' in prompt_str):
+                mock_response.content = "I couldn't access your calendar because your Google Calendar account is not connected. Please connect your calendar account first."
+            elif ('service unavailable' in prompt_str or 
+                  'unavailable' in prompt_str or
+                  'service down' in prompt_str):
+                mock_response.content = "The calendar service is currently unavailable. Please try again later."
+            elif ('rate limit' in prompt_str or 
+                  'quota exceeded' in prompt_str or
+                  'too many requests' in prompt_str):
+                mock_response.content = "You've hit the rate limit for calendar requests. Please try again later."
+            elif ("couldn't process" in prompt_str or
+                  "failed to process" in prompt_str or
+                  "error processing" in prompt_str or
+                  ('error' in prompt_str and 'calendar' in prompt_str)):
                 mock_response.content = "I encountered an error while processing your calendar request. The service couldn't process your request at this time."
-            elif 'calendar' in prompt_str or 'meeting' in prompt_str or 'event' in prompt_str:
-                mock_response.content = "Based on your calendar data, here are your scheduled events. I found the requested calendar information."
+            # Success conditions - be more specific about creation vs viewing
+            elif (('schedule' in prompt_str or 'create event' in prompt_str or 'new meeting' in prompt_str) and 
+                  ('calendar' in prompt_str or 'event' in prompt_str or 'meeting' in prompt_str) and
+                  'show' not in prompt_str and 'error' not in prompt_str):
+                mock_response.content = "Successfully created the calendar event. The meeting has been scheduled as requested."
+            elif ('calendar' in prompt_str or 'meeting' in prompt_str or 'event' in prompt_str):
+                if ('service is currently unavailable' in prompt_str or 
+                    'currently unavailable' in prompt_str):
+                    mock_response.content = "The calendar service is currently unavailable. Please try again later."
+                elif '0 events found' in prompt_str:
+                    mock_response.content = "I couldn't access your calendar because your Google Calendar account is not connected. Please connect your calendar account first."
+                else:
+                    mock_response.content = "Based on your calendar data, here are your scheduled events. I found the requested calendar information."
             else:
                 mock_response.content = "Mock LLM response for testing"
             
