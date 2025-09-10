@@ -262,11 +262,27 @@ def mock_all_llm_services():
          patch('langchain_google_genai.ChatGoogleGenerativeAI') as mock_google, \
          patch('openai.OpenAI') as mock_openai:
         
-        # Mock Claude LLM
+        # Mock Claude LLM with smart responses
         mock_claude = Mock()
-        mock_claude_response = Mock()
-        mock_claude_response.content = "Mock LLM response for testing"
-        mock_claude.invoke.return_value = mock_claude_response
+        def smart_claude_response(prompt):
+            """Provide context-appropriate responses based on prompt content"""
+            mock_response = Mock()
+            prompt_str = str(prompt).lower()
+            
+            if 'create' in prompt_str and ('calendar' in prompt_str or 'event' in prompt_str or 'meeting' in prompt_str):
+                mock_response.content = "Successfully created the calendar event. The meeting has been scheduled as requested."
+            elif 'unavailable' in prompt_str or 'service unavailable' in prompt_str or "couldn't process" in prompt_str:
+                mock_response.content = "I'm currently unable to access the calendar service. Please try again later."
+            elif 'error' in prompt_str and 'calendar' in prompt_str:
+                mock_response.content = "I encountered an error while processing your calendar request. The service couldn't process your request at this time."
+            elif 'calendar' in prompt_str or 'meeting' in prompt_str or 'event' in prompt_str:
+                mock_response.content = "Based on your calendar data, here are your scheduled events. I found the requested calendar information."
+            else:
+                mock_response.content = "Mock LLM response for testing"
+            
+            return mock_response
+        
+        mock_claude.invoke.side_effect = smart_claude_response
         mock_get_llm.return_value = mock_claude
         
         # Mock Gemini LLM  
@@ -276,8 +292,8 @@ def mock_all_llm_services():
         mock_gemini.invoke.return_value = mock_gemini_response
         mock_get_gemini.return_value = mock_gemini
         
-        # Mock traced main LLM call
-        mock_traced_main_llm.return_value = mock_claude_response
+        # Mock traced main LLM call with same smart response logic
+        mock_traced_main_llm.side_effect = smart_claude_response
         
         # Mock LangChain classes
         mock_anthropic.return_value = mock_claude
