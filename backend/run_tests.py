@@ -51,21 +51,25 @@ def main():
     
     success = True
     
-    if args.critical or args.all:
+    if args.all:
+        # Run ALL tests in the test directory
+        success &= run_command(
+            "pytest tests/ -v",
+            "ALL Tests (Complete Test Suite)"
+        )
+    elif args.critical:
         # Run critical email flow tests
         success &= run_command(
             "pytest tests/test_email_data_processing_regression.py tests/test_email_count_verification.py -v",
             "Critical Email Flow Tests"
         )
-    
-    if args.regression or args.all:
+    elif args.regression:
         # Run regression tests
         success &= run_command(
             "pytest -m regression -v",
             "Regression Tests"
         )
-    
-    if args.integration or args.all:
+    elif args.integration:
         # Run integration tests
         success &= run_command(
             "pytest tests/test_email_integration_flow.py -v",

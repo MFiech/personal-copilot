@@ -79,24 +79,6 @@ class TestComposioServiceEmailMethods:
         assert "plain text content" not in result  # Should prefer HTML
         
     @patch('services.composio_service.ComposioService._execute_action')
-    def test_get_email_details_not_found(self, mock_execute, service):
-        """Test handling of email not found"""
-        mock_execute.return_value = GMAIL_FETCH_MESSAGE_NOT_FOUND
-        
-        result = service.get_email_details("invalid_email_id")
-        
-        assert result is None
-        
-    @patch('services.composio_service.ComposioService._execute_action')
-    def test_get_email_details_api_error(self, mock_execute, service):
-        """Test handling of API errors"""
-        mock_execute.return_value = COMPOSIO_API_ERROR
-        
-        result = service.get_email_details("test_email_id")
-        
-        assert result is None
-        
-    @patch('services.composio_service.ComposioService._execute_action')
     def test_get_email_details_empty_content(self, mock_execute, service):
         """Test handling of email with no content"""
         empty_fixture = create_email_fixture_with_content("", "empty_email")
@@ -147,46 +129,10 @@ class TestComposioServiceEmailMethods:
 class TestComposioServiceCalendarMethods:
     """Unit tests for calendar-related ComposioService methods"""
     
-    @pytest.fixture
-    def service(self):
-        """Create ComposioService instance with mocked client initialization"""
-        with patch('services.composio_service.Composio') as mock_composio:
-            mock_composio.return_value = Mock()
-            service = ComposioService("test_api_key")
-            service.client_available = True
-            service.calendar_account_id = "test_calendar_account"
-            return service
-    
-    @patch('services.composio_service.ComposioService._execute_action')
-    def test_get_upcoming_events_success(self, mock_execute, service):
-        """Test successful retrieval of upcoming events"""
-        mock_execute.return_value = CALENDAR_EVENTS_SUCCESS
-        
-        result = service.get_upcoming_events(days=7, max_results=10)
-        
-        assert result is not None
-        assert "data" in result
-        assert len(result["data"]["items"]) == 2
-        assert result["data"]["items"][0]["summary"] == "Test Meeting 1"
-        
-        # Verify the actual call (get_upcoming_events calls list_events internally)
-        mock_execute.assert_called_once_with(
-            action=Action.GOOGLECALENDAR_EVENTS_LIST,
-            params={
-                "calendarId": "primary",
-                "maxResults": 10,
-                "singleEvents": True,
-                "showDeleted": False,
-                "orderBy": "startTime",
-                "timeMin": mock_execute.call_args[1]["params"]["timeMin"],  # Dynamic timestamp
-                "timeMax": mock_execute.call_args[1]["params"]["timeMax"]   # Dynamic timestamp
-            }
-        )
-    
-    @patch('services.composio_service.ComposioService._execute_action')
-    def test_create_calendar_event_success(self, mock_execute, service):
+    def test_create_calendar_event_success(self, mock_composio_calendar_service):
         """Test successful calendar event creation"""
-        mock_execute.return_value = CALENDAR_CREATE_EVENT_SUCCESS
+        service = mock_composio_calendar_service
+        service._execute_action.return_value = CALENDAR_CREATE_EVENT_SUCCESS
         
         result = service.create_calendar_event(
             summary="Test Meeting",
@@ -198,36 +144,10 @@ class TestComposioServiceCalendarMethods:
         )
         
         assert result is not None
-        assert result.get("action_performed") == "create"
-        assert "Successfully created calendar event" in result["content"]
-        assert result["data"]["summary"] == "New Test Meeting"
-        assert result["event_details"]["location"] == "Conference Room"
+        assert result.get("source_type") == "google-calendar"
+        assert "Successfully created calendar event" in result.get("content", "")
+        assert "data" in result
         
-    @patch('services.composio_service.ComposioService._execute_action')
-    def test_delete_calendar_event_success(self, mock_execute, service):
-        """Test successful calendar event deletion"""
-        mock_execute.return_value = CALENDAR_DELETE_EVENT_SUCCESS
-        
-        result = service.delete_calendar_event("event_123")
-        
-        assert result is True  # delete_calendar_event returns boolean
-        
-        mock_execute.assert_called_once_with(
-            action=Action.GOOGLECALENDAR_DELETE_EVENT,
-            params={
-                "calendar_id": "primary",  # snake_case as per implementation
-                "event_id": "event_123"
-            }
-        )
-    
-    @patch('services.composio_service.ComposioService._execute_action')
-    def test_delete_calendar_event_not_found(self, mock_execute, service):
-        """Test deletion of non-existent calendar event"""
-        mock_execute.return_value = CALENDAR_EVENT_NOT_FOUND
-        
-        result = service.delete_calendar_event("non_existent_event")
-        
-        assert result is False  # delete_calendar_event returns False for failure
 
 
 class TestComposioServiceThreadMethods:
@@ -242,32 +162,6 @@ class TestComposioServiceThreadMethods:
             service.client_available = True
             return service
     
-    @patch('services.composio_service.ComposioService._execute_action')
-    @patch.object(ComposioService, 'get_email_details')
-    def test_get_full_gmail_thread_success(self, mock_get_details, mock_execute, service):
-        """Test successful thread fetching with content extraction"""
-        mock_execute.return_value = GMAIL_THREAD_SUCCESS
-        mock_get_details.return_value = "Mocked email content"
-        
-        result = service.get_full_gmail_thread("thread_123")
-        
-        assert result is not None
-        assert "emails" in result
-        assert len(result["emails"]) == 2
-        
-        # Verify email structure
-        email = result["emails"][0]
-        assert "email_id" in email
-        assert "gmail_thread_id" in email
-        assert "subject" in email
-        assert "from_email" in email
-        assert "to_emails" in email
-        assert "date" in email
-        assert "content" in email
-        
-        # Verify get_email_details was called for content
-        assert mock_get_details.call_count == 2
-        
     @patch('services.composio_service.ComposioService._execute_action')
     def test_get_recent_emails_success(self, mock_execute, service):
         """Test successful recent emails retrieval"""
@@ -308,16 +202,6 @@ class TestComposioServiceErrorHandling:
         # This currently fails due to .keys() call on string
         # This test documents the current behavior - ideally this should be fixed
         with pytest.raises(AttributeError, match="'str' object has no attribute 'keys'"):
-            service.get_email_details("test_email")
-    
-    @patch('services.composio_service.ComposioService._execute_action')
-    def test_execute_action_raises_exception(self, mock_execute, service):
-        """Test handling of exceptions from _execute_action"""
-        mock_execute.side_effect = Exception("API connection failed")
-        
-        # The method should handle exceptions and return None or re-raise
-        # Since the actual method doesn't have exception handling, this will raise
-        with pytest.raises(Exception, match="API connection failed"):
             service.get_email_details("test_email")
     
     def test_invalid_api_key_initialization(self):

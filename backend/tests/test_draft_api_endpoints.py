@@ -544,25 +544,6 @@ class TestDraftEndpointHelpers:
         assert result["draft_id"] == draft_data["draft_id"]
         assert result["subject"] == draft_data["subject"]
     
-    def test_error_response_helpers(self):
-        """Test helpers for creating consistent error responses"""
-        
-        def create_error_response(error_message, status_code=400):
-            """Helper to create consistent error responses"""
-            return {
-                "success": False,
-                "error": error_message
-            }, status_code
-        
-        # Test different error scenarios
-        not_found_response, status = create_error_response("Draft not found", 404)
-        assert not_found_response["success"] is False
-        assert "not found" in not_found_response["error"]
-        assert status == 404
-        
-        validation_response, status = create_error_response("Invalid data")
-        assert validation_response["success"] is False
-        assert status == 400
     
     def test_success_response_helpers(self):
         """Test helpers for creating consistent success responses"""

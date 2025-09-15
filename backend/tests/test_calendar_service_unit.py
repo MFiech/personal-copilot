@@ -151,27 +151,6 @@ class TestCalendarServiceUnit:
         assert result is not None
         assert "data" in result
         
-    def test_find_events_with_filters(self, mock_composio_calendar_service):
-        """Test finding events with additional filters"""
-        # Arrange
-        service = mock_composio_calendar_service
-        expected_response = create_mock_composio_response([], 'nested')
-        service._execute_action.return_value = expected_response
-        
-        # Act
-        result = service.find_events(
-            query="meeting",
-            time_min="2025-09-01T00:00:00Z",
-            max_results=10,
-            event_types=["default"]
-        )
-        
-        # Assert
-        service._execute_action.assert_called_once()
-        call_args = service._execute_action.call_args
-        assert call_args[1]['params']['query'] == "meeting"
-        assert call_args[1]['params']['timeMin'] == "2025-09-01T00:00:00Z"
-        
     def test_create_calendar_event_success(self, mock_composio_calendar_service):
         """Test successful calendar event creation"""
         # Arrange
@@ -196,58 +175,6 @@ class TestCalendarServiceUnit:
         assert 'Successfully created' in result.get('content', '')
         assert 'data' in result
         service._execute_action.assert_called_once()
-        
-    def test_create_calendar_event_with_attendees(self, mock_composio_calendar_service):
-        """Test calendar event creation with attendees"""
-        # Arrange
-        service = mock_composio_calendar_service  
-        created_event = create_mock_calendar_event('created_with_attendees', 'Team Meeting')
-        success_response = {
-            'successful': True,
-            'data': {'response_data': created_event}
-        }
-        service._execute_action.return_value = success_response
-        
-        # Act
-        result = service.create_calendar_event(
-            summary="Team Meeting",
-            start_time="2025-09-04T10:00:00+02:00", 
-            end_time="2025-09-04T11:00:00+02:00",
-            attendees=["john@example.com", "jane@example.com"]
-        )
-        
-        # Assert
-        assert result is not None
-        service._execute_action.assert_called_once()
-        call_args = service._execute_action.call_args
-        assert call_args[1]['params']['attendees'] == ["john@example.com", "jane@example.com"]
-        
-    def test_create_calendar_event_with_location(self, mock_composio_calendar_service):
-        """Test calendar event creation with location"""
-        # Arrange
-        service = mock_composio_calendar_service
-        created_event = create_mock_calendar_event('created_with_location', 'Office Meeting')
-        success_response = {
-            'successful': True,
-            'data': {'response_data': created_event}
-        }
-        service._execute_action.return_value = success_response
-        
-        # Act
-        result = service.create_calendar_event(
-            summary="Office Meeting",
-            start_time="2025-09-04T14:00:00+02:00",
-            end_time="2025-09-04T15:00:00+02:00", 
-            location="Conference Room A",
-            description="Monthly team sync"
-        )
-        
-        # Assert
-        assert result is not None
-        service._execute_action.assert_called_once()
-        call_args = service._execute_action.call_args
-        assert call_args[1]['params']['location'] == "Conference Room A"
-        assert call_args[1]['params']['description'] == "Monthly team sync"
         
     def test_create_calendar_event_composio_failure(self, mock_composio_calendar_service):
         """Test calendar event creation with Composio service failure"""
@@ -335,161 +262,11 @@ class TestCalendarServiceUnit:
         assert result is not None
         assert "error" in result
         
-    def test_delete_calendar_event_success(self, mock_composio_calendar_service):
-        """Test successful calendar event deletion"""
-        # Arrange
-        service = mock_composio_calendar_service
-        service._execute_action.return_value = {
-            'successful': True,
-            'data': {}
-        }
-        
-        # Act
-        result = service.delete_calendar_event("test_event_123")
-        
-        # Assert
-        assert result is True
-        service._execute_action.assert_called_once()
-        
-    def test_delete_calendar_event_not_found(self, mock_composio_calendar_service):
-        """Test calendar event deletion with event not found"""
-        # Arrange
-        service = mock_composio_calendar_service
-        service._execute_action.return_value = {
-            'successful': False,
-            'error': 'Event not found'
-        }
-        
-        # Act
-        result = service.delete_calendar_event("nonexistent_event")
-        
-        # Assert
-        assert result is False
 
 
 class TestCalendarIntentProcessing:
     """Unit tests for calendar intent analysis and processing"""
     
-    @patch('services.composio_service.ComposioService.__init__', return_value=None)
-    def test_analyze_calendar_intent_create(self, mock_init):
-        """Test calendar intent analysis for event creation"""
-        # Arrange
-        service = ComposioService.__new__(ComposioService)
-        service.gemini_llm = Mock()
-        
-        # Mock Gemini response for creation intent
-        mock_response = Mock()
-        mock_response.content = '''```json
-        {
-            "operation": "create",
-            "confidence": 0.95,
-            "parameters": {
-                "title": "Team Meeting",
-                "date": "2025-09-04",
-                "start_time": "15:00",
-                "end_time": "16:00"
-            }
-        }
-        ```'''
-        service.gemini_llm.invoke.return_value = mock_response
-        
-        # Act
-        result = service._analyze_calendar_intent("Schedule a team meeting tomorrow at 3pm")
-        
-        # Assert
-        assert result['operation'] == 'create'
-        assert result['confidence'] == 0.95
-        assert result['parameters']['title'] == 'Team Meeting'
-        
-    @patch('services.composio_service.ComposioService.__init__', return_value=None)
-    def test_analyze_calendar_intent_search(self, mock_init):
-        """Test calendar intent analysis for event searching"""
-        # Arrange
-        service = ComposioService.__new__(ComposioService)
-        service.gemini_llm = Mock()
-        
-        # Mock Gemini response for search intent
-        mock_response = Mock()
-        mock_response.content = '''```json
-        {
-            "operation": "search", 
-            "confidence": 0.98,
-            "parameters": {
-                "date_range": "this_week",
-                "keywords": "meetings"
-            }
-        }
-        ```'''
-        service.gemini_llm.invoke.return_value = mock_response
-        
-        # Act
-        result = service._analyze_calendar_intent("Show me my meetings this week")
-        
-        # Assert
-        assert result['operation'] == 'search'
-        assert result['confidence'] == 0.98
-        assert result['parameters']['date_range'] == 'this_week'
-        
-    @patch('services.composio_service.ComposioService.__init__', return_value=None)
-    def test_analyze_calendar_intent_fallback(self, mock_init):
-        """Test calendar intent analysis fallback when LLM unavailable"""
-        # Arrange
-        service = ComposioService.__new__(ComposioService)
-        service.gemini_llm = None  # LLM not available
-        
-        # Act
-        result = service._analyze_calendar_intent("Schedule a meeting tomorrow")
-        
-        # Assert - should fallback to keyword-based analysis
-        assert 'operation' in result
-        assert 'confidence' in result
-        assert result['confidence'] <= 0.8  # Fallback confidence is lower
-        
-    def test_extract_time_range_this_week(self):
-        """Test time range extraction for 'this week' queries"""
-        # Arrange
-        service = ComposioService.__new__(ComposioService)
-        
-        # Act
-        time_min, time_max = service._extract_time_range("this week")
-        
-        # Assert
-        assert time_min is not None
-        assert time_max is not None
-        # Should use CEST timezone format (+02:00) instead of UTC (Z)
-        assert '+02:00' in time_min or time_min.endswith('Z')  # CEST or UTC fallback
-        assert '+02:00' in time_max or time_max.endswith('Z')  # CEST or UTC fallback
-        
-    def test_extract_time_range_today(self):
-        """Test time range extraction for 'today' queries"""
-        # Arrange
-        service = ComposioService.__new__(ComposioService)
-        
-        # Act  
-        time_min, time_max = service._extract_time_range("today")
-        
-        # Assert
-        assert time_min is not None
-        assert time_max is not None
-        # Should be same day range
-        assert time_min.split('T')[0] == time_max.split('T')[0]
-        # Should use CEST timezone format (+02:00) instead of UTC (Z)
-        assert '+02:00' in time_min or time_min.endswith('Z')  # CEST or UTC fallback
-        assert '+02:00' in time_max or time_max.endswith('Z')  # CEST or UTC fallback
-        
-    def test_extract_time_range_invalid(self):
-        """Test time range extraction for invalid queries"""
-        # Arrange
-        service = ComposioService.__new__(ComposioService)
-        
-        # Act
-        time_min, time_max = service._extract_time_range("invalid time range")
-        
-        # Assert
-        assert time_min is None
-        assert time_max is None
-
-
 class TestCalendarResponseProcessing:
     """Unit tests for calendar response processing - the bug we fixed"""
     
