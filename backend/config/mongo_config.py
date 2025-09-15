@@ -16,7 +16,8 @@ load_dotenv()
 
 # MongoDB Configuration
 # Default to MongoDB Atlas if MONGO_URI is provided, otherwise use local MongoDB
-MONGO_URI = os.getenv('MONGO_URI', 'mongodb://localhost:27017')
+# In Docker, use the service name 'mongodb' for internal networking
+MONGO_URI = os.getenv('MONGO_URI', 'mongodb://mongodb:27017')
 MONGO_DB_NAME = os.getenv('MONGO_DB_NAME', 'pm_copilot')
 
 # Collection names
