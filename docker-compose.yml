@@ -36,26 +36,36 @@ services:
       - "com.docker.compose.service=backend"
       - "description=PM Co-Pilot Backend API Server"
 
-  # MongoDB service (optional - only if you want to run MongoDB in Docker)
-  # Uncomment if you don't have MongoDB running locally
-  # mongodb:
-  #   image: mongo:7
-  #   container_name: pm-copilot-mongodb
-  #   ports:
-  #     - "27017:27017"
-  #   environment:
-  #     - MONGO_INITDB_DATABASE=pm_copilot
-  #   volumes:
-  #     - mongodb_data:/data/db
-  #   restart: unless-stopped
-  #   networks:
-  #     - pm-copilot-network
+  # MongoDB service
+  mongodb:
+    image: mongo:7
+    container_name: pm-copilot-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_DATABASE=pm_copilot
+    volumes:
+      - mongodb_data:/data/db
+    restart: unless-stopped
+    networks:
+      - pm-copilot-network
+    # Add health check
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # Labels for better Docker Desktop experience
+    labels:
+      - "com.docker.compose.project=pm-copilot"
+      - "com.docker.compose.service=mongodb"
+      - "description=PM Co-Pilot MongoDB Database"
 
 networks:
   pm-copilot-network:
     driver: bridge
 
-# Uncomment if using MongoDB service
-# volumes:
-#   mongodb_data:
-#     driver: local
+volumes:
+  mongodb_data:
+    driver: local
