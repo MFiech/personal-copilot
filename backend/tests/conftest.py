@@ -123,6 +123,42 @@ def safe_composio_service():
         yield service
 
 
+@pytest.fixture(autouse=True, scope='session')
+def prevent_composio_initialization():
+    """Session-level fixture to prevent all Composio service initialization"""
+    # Set test environment variables early
+    os.environ['TESTING'] = 'true'
+    os.environ['CI'] = 'true'
+    
+    # Mock all Composio classes and toolsets to prevent any real initialization
+    patches = [
+        patch('composio.Composio'),
+        patch('composio.ComposioToolSet'),
+        patch('services.contact_service.ComposioToolSet'),
+        patch('services.composio_service.Composio')
+    ]
+    
+    # Start all patches
+    mocks = []
+    for p in patches:
+        mock = p.start()
+        mock_instance = Mock()
+        mock_instance.execute.side_effect = RuntimeError(
+            "Real Composio API call attempted in test session! All Composio should be mocked."
+        )
+        mock_instance.execute_action.side_effect = RuntimeError(
+            "Real Composio action attempted in test session! All Composio should be mocked."
+        )
+        mock.return_value = mock_instance
+        mocks.append((p, mock))
+    
+    yield mocks
+    
+    # Clean up patches
+    for p, _ in mocks:
+        p.stop()
+
+
 @pytest.fixture(autouse=True)
 def prevent_real_api_calls():
     """Auto-applied fixture to prevent real API calls in all tests"""
