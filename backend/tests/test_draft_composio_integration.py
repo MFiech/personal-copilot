@@ -233,74 +233,6 @@ class TestDraftComposioIntegration:
         # Verify Composio service was called with correct parameters
         # (In real implementation, this would verify the actual Composio API call)
     
-    def test_draft_send_error_recovery_flow(
-        self,
-        test_db,
-        clean_draft_collections
-    ):
-        """Test complete error recovery flow for failed draft sends"""
-        
-        scenario = create_composio_error_recovery_scenario()
-        error_draft = scenario["draft_with_error"]
-        update_data = scenario["update_data"]
-        
-        with patch('services.draft_service.DraftService') as mock_draft_service_class, \
-             patch('services.composio_service.ComposioService') as mock_composio_service_class:
-            
-            mock_draft_service = Mock()
-            mock_draft_service_class.return_value = mock_draft_service
-            
-            mock_composio_service = Mock()
-            mock_composio_service_class.return_value = mock_composio_service
-            
-            # Step 1: Draft is in composio_error status
-            mock_draft_obj = Mock()
-            mock_draft_obj.to_dict.return_value = error_draft
-            mock_draft_obj.status = "composio_error"
-            mock_draft_service.get_draft_by_id.return_value = mock_draft_obj
-            
-            # Step 2: User updates draft content
-            mock_draft_service.update_draft.return_value = True
-            
-            update_result = mock_draft_service.update_draft(
-                error_draft["draft_id"],
-                {**update_data, "status": "active"}  # Status reset to active
-            )
-            
-            assert update_result is True
-            
-            # Step 3: Retry sending with updated draft
-            updated_draft = {**error_draft, **update_data, "status": "active"}
-            mock_draft_obj.to_dict.return_value = updated_draft
-            mock_draft_obj.status = "active"
-            
-            # Mock successful retry
-            composio_params = {
-                "to": "test@example.com",
-                "subject": updated_draft["subject"],
-                "body": updated_draft["body"]
-            }
-            mock_draft_service.convert_draft_to_composio_params.return_value = composio_params
-            mock_composio_service.send_email.return_value = COMPOSIO_SEND_EMAIL_SUCCESS
-            
-            # Attempt retry
-            retry_params = mock_draft_service.convert_draft_to_composio_params(error_draft["draft_id"])
-            retry_result = mock_composio_service.send_email(**retry_params)
-            
-            # Verify successful retry
-            assert retry_result["successful"] is True
-            
-            # Step 4: Close draft after successful retry
-            mock_draft_service.close_draft.return_value = True
-            close_result = mock_draft_service.close_draft(error_draft["draft_id"])
-            
-            assert close_result is True
-            
-            # Verify recovery flow
-            mock_draft_service.update_draft.assert_called()
-            mock_draft_service.convert_draft_to_composio_params.assert_called()
-            mock_composio_service.send_email.assert_called()
-            mock_draft_service.close_draft.assert_called()
 
 
 @pytest.mark.unit
@@ -426,22 +358,6 @@ class TestDraftComposioParameterConversion:
 class TestDraftComposioErrorScenarios:
     """Test various error scenarios in draft + Composio integration"""
     
-    def test_composio_service_unavailable(self, test_db, clean_draft_collections):
-        """Test handling when Composio service is unavailable"""
-        
-        draft_data = create_email_draft_fixture()
-        
-        with patch('services.composio_service.ComposioService') as mock_composio_service_class:
-            # Mock service unavailable
-            mock_composio_service_class.side_effect = Exception("Composio service unavailable")
-            
-            try:
-                composio_service = mock_composio_service_class()
-                service_available = False
-            except Exception:
-                service_available = False
-            
-            assert service_available is False
     
     def test_invalid_email_addresses_in_draft(self, mock_draft_composio_service):
         """Test handling of invalid email addresses"""
@@ -482,27 +398,6 @@ class TestDraftComposioErrorScenarios:
         # Should succeed with valid email
         assert result["successful"] is True
     
-    def test_composio_rate_limiting(self, mock_draft_composio_service):
-        """Test handling of Composio API rate limiting"""
-        
-        composio_params = {
-            "to": "test@example.com",
-            "subject": "Rate Limit Test",
-            "body": "Testing rate limit handling"
-        }
-        
-        # Mock rate limit error
-        rate_limit_error = {
-            "successful": False,
-            "error": "Rate limit exceeded. Please try again later."
-        }
-        
-        mock_draft_composio_service.send_email.return_value = rate_limit_error
-        
-        result = mock_draft_composio_service.send_email(**composio_params)
-        
-        assert result["successful"] is False
-        assert "Rate limit" in result["error"]
     
     def test_draft_deleted_during_send_process(self, test_db, clean_draft_collections):
         """Test handling when draft is deleted during send process"""

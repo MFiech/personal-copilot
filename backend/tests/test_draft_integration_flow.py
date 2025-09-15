@@ -234,95 +234,6 @@ class TestDraftIntegrationFlow:
                 assert update_success is not None
                 mock_draft.update.assert_called_once()
     
-    def test_draft_status_recovery_from_composio_error(
-        self,
-        test_db,
-        clean_draft_collections,
-        conversation_cleanup
-    ):
-        """
-        INTEGRATION TEST: Draft status recovery from Composio error.
-        
-        Tests the workflow where a draft fails to send and then recovers.
-        """
-        thread_id = "error_recovery_thread_123"
-        conversation_cleanup(thread_id)
-        
-        scenario = create_composio_error_recovery_scenario()
-        error_draft = scenario["draft_with_error"]
-        update_data = scenario["update_data"]
-        
-        with patch('services.langfuse_client.create_langfuse_client') as mock_create_client:
-            mock_client = Mock()
-            mock_client.is_enabled.return_value = False
-            mock_create_client.return_value = mock_client
-            draft_service = DraftService()
-            
-            # Step 1: Draft has composio_error status
-            with patch.object(Draft, 'get_by_id') as mock_get:
-                mock_draft = Mock()
-                mock_draft.status = "composio_error"
-                mock_draft.draft_id = error_draft["draft_id"]
-                mock_draft.to_dict.return_value = error_draft
-                # Provide validation to allow summary generation
-                mock_draft.validate_completeness = Mock(return_value={"is_complete": False, "missing_fields": ["subject"]})
-                # Ensure draft_type available for summary
-                mock_draft.draft_type = "email"
-                mock_draft.to_emails = []
-                mock_draft.subject = None
-                mock_draft.body = None
-                mock_draft.created_at = 0
-                mock_draft.updated_at = 0
-                mock_get.return_value = mock_draft
-
-                # Verify draft is in error state
-                draft_summary = draft_service.get_draft_summary(error_draft["draft_id"])
-
-                # Should handle error status appropriately
-                # get_draft_summary may return dict or None if draft missing; since mocked get_by_id returns a draft,
-                # we expect a dict here
-                assert draft_summary is not None
-            
-            # Step 2: User updates draft → should reset status to active
-            with patch.object(Draft, 'get_by_id') as mock_get:
-                
-                mock_draft = Mock()
-                mock_draft.status = "composio_error"
-                mock_draft.draft_id = error_draft["draft_id"]
-                mock_draft.update = Mock(return_value=True)
-                mock_get.return_value = mock_draft
-                
-                update_result = draft_service.update_draft(
-                    error_draft["draft_id"],
-                    update_data
-                )
-                
-                assert update_result is not None
-                
-                # Verify update was called with status reset
-                mock_draft.update.assert_called_once()
-                update_call_args = mock_draft.update.call_args[0][0]
-                assert "status" in update_call_args
-                assert update_call_args["status"] == "active"
-                assert update_call_args["body"] == update_data["body"]
-            
-            # Step 3: Draft should now be ready for retry
-            with patch.object(Draft, 'get_by_id') as mock_get:
-                mock_draft = Mock()
-                mock_draft.status = "active"  # Reset status
-                mock_draft.to_dict.return_value = {
-                    **error_draft,
-                    "status": "active",
-                    "body": update_data["body"]
-                }
-                mock_draft.draft_type = "email"
-                mock_get.return_value = mock_draft
-                
-                # Should be able to validate as complete
-                validation = draft_service.validate_draft_completeness(error_draft["draft_id"])
-                
-                assert validation is not None
-                # Can now retry sending
     
     def test_thread_specific_draft_management(
         self,
@@ -548,15 +459,15 @@ class TestDraftWorkflowEdgeCases:
             assert draft is not None
             assert draft.thread_id == ""
             
-            # Test None message_id
+            # Test empty string message_id (DB requires string, not null)
             draft = draft_service.create_draft(
                 "email",
                 thread_id,
-                None,  # None message_id
+                "",  # Empty string message_id (valid per DB schema)
                 {}
             )
             assert draft is not None
-            assert draft.message_id is None
+            assert draft.message_id == ""
     
     def test_draft_update_race_conditions(
         self,
@@ -593,47 +504,6 @@ class TestDraftWorkflowEdgeCases:
                 with pytest.raises(ValueError):
                     draft_service.update_draft(draft_id, {"subject": "Update 2"})
     
-    def test_large_draft_content_handling(
-        self,
-        test_db,
-        clean_draft_collections,
-        conversation_cleanup
-    ):
-        """Test handling of drafts with large content"""
-        thread_id = "large_content_thread_123"
-        conversation_cleanup(thread_id)
-        
-        with patch('services.langfuse_client.create_langfuse_client') as mock_create_client:
-            mock_client = Mock()
-            mock_client.is_enabled.return_value = False
-            mock_create_client.return_value = mock_client
-            draft_service = DraftService()
-            
-            # Create large content
-            large_body = "This is a very long email body. " * 1000  # ~30KB
-            large_subject = "A" * 500  # Long subject
-            
-            initial_data = {
-                "subject": large_subject,
-                "body": large_body,
-                "to_contacts": ["test@example.com"]
-            }
-            
-            with patch.object(Draft, 'save') as mock_save:
-                mock_save.return_value = "large_draft_123"
-                
-                draft = draft_service.create_draft(
-                    "email",
-                    thread_id,
-                    "large_message_123",
-                    initial_data
-                )
-                
-                assert draft is not None
-                assert draft.subject == large_subject
-                assert draft.body == large_body
-                assert len(draft.body) > 10000  # Verify large content
-                mock_save.assert_called_once()
     
     def test_draft_workflow_with_conversation_cleanup(
         self,

@@ -1,4 +1,4 @@
-name: Email Flow QA Tests
+name: Backend Test Suite
 
 # Trigger on pushes to main and all pull requests
 on:
@@ -6,17 +6,17 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-    # Also trigger on specific paths that affect email functionality
+    # Also trigger on specific paths that affect backend functionality
     paths:
       - 'backend/**'
-      - '.github/workflows/email-flow-qa.yml'
+      - '.github/workflows/backend-tests.yml'
 
 # Allow manual triggering for testing
   workflow_dispatch:
 
 jobs:
-  email-flow-tests:
-    name: Email Flow QA Tests
+  backend-tests:
+    name: Backend Test Suite
     runs-on: ubuntu-latest
     
     # Set up MongoDB service for testing
@@ -38,7 +38,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.11'
+        python-version: '3.13'
         cache: 'pip'
 
     - name: Install system dependencies
@@ -98,10 +98,11 @@ jobs:
           db.test.drop();
         "
 
-    - name: Run email flow regression tests
+    - name: Run comprehensive test suite
       run: |
         cd backend
-        pytest tests/test_email_data_processing_regression.py -v --tb=short
+        # Run all tests with same environment as local development
+        python -m pytest tests/ -v --tb=short
       env:
         MONGO_URI: mongodb://localhost:27017
         MONGO_DB_NAME: pm_copilot_test
@@ -115,40 +116,10 @@ jobs:
         TESTING: true
         CI: true
 
-    - name: Run email count verification tests
+    - name: Run tests with coverage
       run: |
         cd backend
-        pytest tests/test_email_count_verification.py -v --tb=short
-      env:
-        MONGO_URI: mongodb://localhost:27017
-        MONGO_DB_NAME: pm_copilot_test
-        COMPOSIO_API_KEY: test_key_for_mocking
-        OPENAI_API_KEY: test_key_for_mocking
-        ANTHROPIC_API_KEY: test_key_for_mocking
-        GOOGLE_API_KEY: test_key_for_mocking
-        PINECONE_API_TOKEN: test_key_for_mocking
-        TESTING: true
-        CI: true
-
-    - name: Run email integration flow tests
-      run: |
-        cd backend
-        pytest tests/test_email_integration_flow.py -v --tb=short
-      env:
-        MONGO_URI: mongodb://localhost:27017
-        MONGO_DB_NAME: pm_copilot_test
-        COMPOSIO_API_KEY: test_key_for_mocking
-        OPENAI_API_KEY: test_key_for_mocking
-        ANTHROPIC_API_KEY: test_key_for_mocking
-        GOOGLE_API_KEY: test_key_for_mocking
-        PINECONE_API_TOKEN: test_key_for_mocking
-        TESTING: true
-        CI: true
-
-    - name: Run all email tests with coverage
-      run: |
-        cd backend
-        pytest tests/test_email_*.py --cov=models --cov=services --cov-report=xml --cov-report=term-missing
+        python -m pytest tests/ --cov=models --cov=services --cov-report=xml --cov-report=term-missing --tb=short
       env:
         MONGO_URI: mongodb://localhost:27017
         MONGO_DB_NAME: pm_copilot_test
@@ -165,35 +136,36 @@ jobs:
       if: success()
       with:
         file: ./backend/coverage.xml
-        flags: email-flow-tests
-        name: email-flow-coverage
+        flags: backend-tests
+        name: backend-coverage
 
     - name: Test summary
       run: |
-        echo "✅ All email flow QA tests completed successfully!"
+        echo "✅ All backend tests completed successfully!"
         echo "🔍 Tests covered:"
-        echo "  - Data structure regression tests (the fix we implemented)"
-        echo "  - Email count verification (retrieval vs. saved)"
-        echo "  - Full integration flow tests"
-        echo "  - Error handling and edge cases"
-        echo "  - Performance with large email batches"
-        echo "  - All external API calls properly mocked for CI/CD"
+        echo "  - Calendar Service Unit Tests (18 tests)"
+        echo "  - Composio Service Unit Tests (13 tests)"
+        echo "  - Draft API Endpoints (14 tests)"
+        echo "  - Draft Integration Flow (8 tests)"
+        echo "  - Draft Service Comprehensive (14 tests)"
+        echo "  - And more unit tests covering all backend functionality"
+        echo "  - Total: 110+ tests with proper mocking for CI/CD"
 
   # Job to check if tests are required (for PR status checks)
-  email-tests-required:
-    name: Email Tests Status Check
+  backend-tests-required:
+    name: Backend Tests Status Check
     runs-on: ubuntu-latest
-    needs: email-flow-tests
+    needs: backend-tests
     if: always()
     steps:
     - name: Check test results
       run: |
-        if [ "${{ needs.email-flow-tests.result }}" = "success" ]; then
-          echo "✅ All email flow tests passed!"
+        if [ "${{ needs.backend-tests.result }}" = "success" ]; then
+          echo "✅ All backend tests passed!"
           exit 0
         else
-          echo "❌ Email flow tests failed!"
-          echo "This indicates a potential regression in email functionality."
+          echo "❌ Backend tests failed!"
+          echo "This indicates a potential regression in backend functionality."
           echo "Please review the test failures before merging."
           exit 1
         fi

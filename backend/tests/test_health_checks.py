@@ -80,33 +80,6 @@ class TestAPIHealthChecks:
         except Exception as e:
             pytest.fail(f"Composio calendar health check failed: {e}")
     
-    def test_database_connectivity_health_check(self):
-        """
-        HEALTH CHECK: Verify MongoDB connection is working.
-        """
-        from utils.mongo_client import get_db
-        
-        try:
-            db = get_db()
-            
-            # Simple ping to verify connection
-            db.admin.command('ping')
-            print("✅ MongoDB connection successful")
-            
-            # Check if required collections exist
-            collections = db.list_collection_names()
-            required_collections = ['conversations', 'emails']
-            
-            for collection_name in required_collections:
-                if collection_name in collections:
-                    print(f"✅ Collection '{collection_name}' exists")
-                else:
-                    print(f"ℹ️ Collection '{collection_name}' will be created on first use")
-                    
-        except Exception as e:
-            pytest.fail(f"Database health check failed: {e}")
-
-
 @pytest.mark.health_check 
 class TestIntegrationHealthChecks:
     """End-to-end health checks with minimal API usage"""

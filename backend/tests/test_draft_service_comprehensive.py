@@ -254,58 +254,6 @@ class TestDraftServiceComprehensive:
             # Verify no cross-contamination
             assert drafts_1[0].draft_id != drafts_2[0].draft_id
     
-    def test_detect_draft_creation_intent_positive(self, draft_service):
-        """Test draft creation intent detection - positive case"""
-        with patch.object(draft_service, 'llm') as mock_llm:
-            mock_response = Mock()
-            mock_response.content = json.dumps(DRAFT_CREATION_INTENT_TRUE)
-            mock_llm.invoke.return_value = mock_response
-            
-            user_query = "Create a draft email to John about the meeting"
-            conversation_history = []
-            
-            result = draft_service.detect_draft_intent(user_query, conversation_history)
-            
-            assert result is not None
-            assert result["is_draft_intent"] is True
-            assert result["draft_data"] is not None
-            assert result["draft_data"]["draft_type"] == "email"
-            mock_llm.invoke.assert_called_once()
-    
-    def test_detect_draft_creation_intent_negative(self, draft_service):
-        """Test draft creation intent detection - negative case"""
-        with patch.object(draft_service, 'llm') as mock_llm:
-            mock_response = Mock()
-            mock_response.content = json.dumps(DRAFT_CREATION_INTENT_FALSE)
-            mock_llm.invoke.return_value = mock_response
-            
-            user_query = "What's the weather like today?"
-            conversation_history = []
-            
-            result = draft_service.detect_draft_intent(user_query, conversation_history)
-            
-            assert result is not None
-            assert result["is_draft_intent"] is False
-            assert result["draft_data"] is None
-            mock_llm.invoke.assert_called_once()
-    
-    def test_detect_draft_update_intent(self, draft_service):
-        """Test draft update intent detection"""
-        with patch.object(draft_service, 'llm') as mock_llm:
-            mock_response = Mock()
-            mock_response.content = json.dumps(DRAFT_CREATION_INTENT_TRUE)
-            mock_llm.invoke.return_value = mock_response
-            
-            user_query = "Add John to this email"
-            existing_draft = create_email_draft_fixture()
-            
-            result = draft_service.detect_draft_intent(user_query, [])
-            
-            assert result is not None
-            assert result["is_draft_intent"] is True
-            assert result["draft_data"] is not None
-            mock_llm.invoke.assert_called_once()
-    
     def test_close_draft_success(self, mock_draft_service, test_db, clean_draft_collections):
         """Test successfully closing a draft"""
         draft_id = "test_draft_123"

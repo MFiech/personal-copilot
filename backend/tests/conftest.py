@@ -123,6 +123,42 @@ def safe_composio_service():
         yield service
 
 
+@pytest.fixture(autouse=True, scope='session')
+def prevent_composio_initialization():
+    """Session-level fixture to prevent all Composio service initialization"""
+    # Set test environment variables early
+    os.environ['TESTING'] = 'true'
+    os.environ['CI'] = 'true'
+    
+    # Mock all Composio classes and toolsets to prevent any real initialization
+    patches = [
+        patch('composio.Composio'),
+        patch('composio.ComposioToolSet'),
+        patch('services.contact_service.ComposioToolSet'),
+        patch('services.composio_service.Composio')
+    ]
+    
+    # Start all patches
+    mocks = []
+    for p in patches:
+        mock = p.start()
+        mock_instance = Mock()
+        mock_instance.execute.side_effect = RuntimeError(
+            "Real Composio API call attempted in test session! All Composio should be mocked."
+        )
+        mock_instance.execute_action.side_effect = RuntimeError(
+            "Real Composio action attempted in test session! All Composio should be mocked."
+        )
+        mock.return_value = mock_instance
+        mocks.append((p, mock))
+    
+    yield mocks
+    
+    # Clean up patches
+    for p, _ in mocks:
+        p.stop()
+
+
 @pytest.fixture(autouse=True)
 def prevent_real_api_calls():
     """Auto-applied fixture to prevent real API calls in all tests"""
@@ -304,59 +340,24 @@ def mock_all_llm_services():
 # Calendar Testing Fixtures
 @pytest.fixture
 def mock_composio_calendar_service():
-    """Mock Composio calendar service with realistic responses"""
-    with patch('services.composio_service.ComposioService') as mock_service_class:
-        # Create comprehensive mock instance
-        mock_instance = Mock()
-        mock_service_class.return_value = mock_instance
+    """Create real ComposioService instance with mocked _execute_action to prevent API calls"""
+    from services.composio_service import ComposioService
+    
+    # Use the real ComposioService class with a fake API key to prevent initialization
+    with patch.object(ComposioService, '__init__', lambda x, y: None):
+        service = ComposioService("fake_api_key")
         
-        # Import calendar helpers here to avoid circular imports
-        import sys
-        import os
-        backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        sys.path.insert(0, backend_dir)
-        from tests.test_utils.calendar_helpers import (
-            create_mock_calendar_search_response,
-            create_mock_calendar_creation_response
-        )
+        # Set up service properties manually since we bypassed __init__
+        service.calendar_account_id = '06747a1e-ff62-4c16-9869-4c214eebc920'
+        service.client_available = True
+        service.composio = Mock()  # Mock the Composio client
+        service.langfuse_client = Mock()
         
-        # Configure calendar search response (the nested structure we fixed)
-        search_response = create_mock_calendar_search_response('this_week', 2)
+        # Mock the internal _execute_action method - this is what we want to control
+        service._execute_action = Mock()
+        service._log_composio_response = Mock()  # Also mock logging to prevent output
         
-        # Set up account status
-        mock_instance.calendar_account_id = '06747a1e-ff62-4c16-9869-4c214eebc920'
-        mock_instance.client_available = True
-        
-        # Mock all potential methods that could make real API calls
-        mock_instance._execute_action = Mock()
-        mock_instance.composio_client = Mock()
-        
-        # Mock search/list operations
-        mock_instance.process_query.return_value = {
-            'source_type': 'google-calendar',
-            'content': 'Events fetched.',
-            'data': search_response['data'],
-            'search_context': {
-                'date_range': 'this_week',
-                'search_method': 'list_events (time-based)'
-            }
-        }
-        
-        # Mock calendar event creation to prevent real events
-        def mock_create_event(*args, **kwargs):
-            creation_response = create_mock_calendar_creation_response(
-                title=kwargs.get('title', 'Mock Created Event'),
-                start_time=kwargs.get('start_time', '2025-09-04T15:00:00+02:00')
-            )
-            return creation_response
-        
-        mock_instance.create_calendar_event = Mock(side_effect=mock_create_event)
-        
-        # Mock any other calendar operations
-        mock_instance.delete_calendar_event = Mock(return_value={'success': True, 'message': 'Mock event deleted'})
-        mock_instance.update_calendar_event = Mock(return_value={'success': True, 'message': 'Mock event updated'})
-        
-        yield mock_instance
+        return service
 
 
 @pytest.fixture

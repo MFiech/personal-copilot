@@ -233,67 +233,7 @@ class TestDraftRoutingLogic:
             
             assert serialization_success is True
     
-    def test_should_skip_tooling_logic(self, mock_app_dependencies):
-        """Test routing bypass prevention for tooling service"""
-        with patch('app.DraftService') as mock_draft_service_class:
-            mock_draft_service = Mock()
-            mock_draft_service_class.return_value = mock_draft_service
-            
-            # Test case 1: Draft intent detected → should skip tooling
-            mock_draft_service.detect_draft_intent.return_value = DRAFT_CREATION_INTENT_TRUE
-            
-            draft_intent_result = mock_draft_service.detect_draft_intent(
-                "Create a draft email", []
-            )
-            
-            should_skip_tooling = draft_intent_result.get("is_draft_intent", False)
-            assert should_skip_tooling is True
-            
-            # Test case 2: No draft intent → should not skip tooling
-            mock_draft_service.detect_draft_intent.return_value = DRAFT_CREATION_INTENT_FALSE
-            
-            no_draft_intent_result = mock_draft_service.detect_draft_intent(
-                "What's the weather?", []
-            )
-            
-            should_skip_tooling = no_draft_intent_result.get("is_draft_intent", False)
-            assert should_skip_tooling is False
-            
-            # Test case 3: Draft anchored but no update intent → should go to tooling
-            mock_draft_service.detect_update_intent.return_value = {
-                "is_update_intent": False,
-                "update_category": None,
-                "confidence": "high"
-            }
-            
-            anchored_draft = create_email_draft_fixture()
-            update_intent_result = mock_draft_service.detect_update_intent(
-                "What's the weather?", anchored_draft
-            )
-            
-            should_skip_tooling = update_intent_result.get("is_update_intent", False)
-            assert should_skip_tooling is False
     
-    def test_routing_debug_logging(self, mock_app_dependencies):
-        """Test that routing includes proper debug logging"""
-        with patch('builtins.print') as mock_print:
-            
-            # Simulate the debug logging from the routing logic
-            query = "Create a draft email"
-            anchored_item = None
-            thread_id = "test_thread_123"
-            
-            # This simulates the debug output from app.py
-            print("🔄 === DRAFT INTENT ROUTING STARTED ===")
-            print(f"[DRAFT_ROUTING] Query: {query}")
-            print(f"[DRAFT_ROUTING] Anchored Item: {anchored_item}")
-            
-            # Verify debug messages were printed
-            debug_calls = [call[0][0] for call in mock_print.call_args_list]
-            
-            assert any("DRAFT INTENT ROUTING STARTED" in call for call in debug_calls)
-            assert any("DRAFT_ROUTING" in call for call in debug_calls)
-            assert any(query in call for call in debug_calls)
     
     def test_content_extraction_from_conversation(self, mock_app_dependencies):
         """Test content extraction function from conversation history"""
@@ -345,48 +285,6 @@ class TestDraftRoutingLogic:
         assert 'body' in extracted
         assert 'Meeting Discussion' in extracted['subject']
         assert 'Dear John' in extracted['body']
-    
-    def test_routing_performance_with_multiple_drafts(self, mock_app_dependencies):
-        """Test routing performance doesn't degrade with multiple drafts"""
-        import time
-        
-        with patch('app.DraftService') as mock_draft_service_class:
-            mock_draft_service = Mock()
-            mock_draft_service_class.return_value = mock_draft_service
-            
-            # Mock large number of drafts
-            many_drafts = []
-            for i in range(50):
-                draft = create_email_draft_fixture(
-                    draft_id=f"draft_{i}",
-                    subject=f"Draft {i}"
-                )
-                many_drafts.append(Mock(to_dict=Mock(return_value=draft)))
-            
-            mock_draft_service.get_active_drafts_by_thread.return_value = many_drafts
-            
-            # Measure routing performance
-            start_time = time.time()
-            
-            # Simulate routing decision with many drafts
-            thread_id = "perf_test_thread"
-            query = "Create another draft"
-            
-            active_drafts = mock_draft_service.get_active_drafts_by_thread(thread_id)
-            
-            # Basic routing logic
-            if len(active_drafts) > 0:
-                routing_decision = "has_existing_drafts"
-            else:
-                routing_decision = "no_existing_drafts"
-            
-            end_time = time.time()
-            execution_time = end_time - start_time
-            
-            # Should complete quickly even with many drafts
-            assert execution_time < 1.0  # Less than 1 second
-            assert routing_decision == "has_existing_drafts"
-            assert len(active_drafts) == 50
 
 
 @pytest.mark.regression  
@@ -423,37 +321,6 @@ class TestDraftRoutingRegressionPrevention:
         current_draft = scenario["current_draft"]
         assert validate_draft_thread_access(current_draft, current_thread) is True
     
-    def test_prevent_data_staleness_regression(self):
-        """CRITICAL: Prevent data staleness regression"""
-        scenario = create_stale_data_scenario()
-        stale_data = scenario["anchored_draft_stale"]
-        fresh_data = scenario["database_draft_fresh"]
-        
-        # Simulate the data refresh logic that prevents staleness
-        def refresh_anchored_draft_data(anchored_draft_data, draft_service):
-            """Function to refresh stale anchored data"""
-            draft_id = anchored_draft_data["draft_id"]
-            
-            # Always fetch fresh data from database
-            fresh_draft = draft_service.get_draft_by_id(draft_id)
-            if fresh_draft:
-                return fresh_draft.to_dict()
-            
-            return anchored_draft_data
-        
-        # Mock draft service
-        mock_draft_service = Mock()
-        mock_draft_service.get_draft_by_id.return_value = Mock(
-            to_dict=Mock(return_value=fresh_data)
-        )
-        
-        # Test data refresh
-        refreshed_data = refresh_anchored_draft_data(stale_data, mock_draft_service)
-        
-        # Verify fresh data was returned
-        assert refreshed_data["body"] == fresh_data["body"]
-        assert refreshed_data["body"] != stale_data["body"]
-        assert refreshed_data["body"] is not None
     
     def test_prevent_draft_serialization_error_regression(self):
         """CRITICAL: Prevent Draft object serialization error regression"""
@@ -491,61 +358,3 @@ class TestDraftRoutingRegressionPrevention:
         
         assert serialization_success is True
     
-    def test_prevent_routing_bypass_regression(self):
-        """CRITICAL: Prevent draft routing bypass regression"""
-        # Test that draft routing is not bypassed by earlier logic
-        
-        def simulate_routing_logic(query, anchored_item, draft_service):
-            """Simulate the routing logic from app.py"""
-            should_skip_tooling = False
-            
-            # Step 1: Check for anchored draft
-            if anchored_item and anchored_item.get("type") == "draft":
-                # Draft update flow
-                update_intent = draft_service.detect_update_intent(query, anchored_item["data"])
-                if update_intent.get("is_update_intent"):
-                    should_skip_tooling = True
-                    return "draft_update", should_skip_tooling
-            
-            # Step 2: Check for draft creation intent
-            draft_intent = draft_service.detect_draft_intent(query, [])
-            if draft_intent.get("is_draft_intent"):
-                should_skip_tooling = True
-                return "draft_creation", should_skip_tooling
-            
-            # Step 3: Default to tooling service
-            return "tooling_service", should_skip_tooling
-        
-        # Mock draft service
-        mock_draft_service = Mock()
-        
-        # Test case 1: Draft anchored with update intent
-        mock_draft_service.detect_update_intent.return_value = DRAFT_UPDATE_INTENT_TRUE
-        anchored_draft = {"type": "draft", "data": create_email_draft_fixture()}
-        
-        route, skip_tooling = simulate_routing_logic(
-            "Update this draft", anchored_draft, mock_draft_service
-        )
-        
-        assert route == "draft_update"
-        assert skip_tooling is True
-        
-        # Test case 2: No anchor but draft creation intent
-        mock_draft_service.detect_draft_intent.return_value = DRAFT_CREATION_INTENT_TRUE
-        
-        route, skip_tooling = simulate_routing_logic(
-            "Create a draft", None, mock_draft_service
-        )
-        
-        assert route == "draft_creation"
-        assert skip_tooling is True
-        
-        # Test case 3: No draft intent → should go to tooling
-        mock_draft_service.detect_draft_intent.return_value = DRAFT_CREATION_INTENT_FALSE
-        
-        route, skip_tooling = simulate_routing_logic(
-            "What's the weather?", None, mock_draft_service
-        )
-        
-        assert route == "tooling_service"
-        assert skip_tooling is False

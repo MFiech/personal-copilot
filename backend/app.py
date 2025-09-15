@@ -1,10 +1,20 @@
+import warnings
+import os
+
+# Suppress LangChain deprecation warnings BEFORE any imports
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="langchain_pinecone")
+warnings.filterwarnings("ignore", message=".*pydantic_v1.*", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="langchain")
+warnings.filterwarnings("ignore", message=".*migrating_memory.*", category=DeprecationWarning)
+warnings.filterwarnings("ignore", message=".*LangChainDeprecationWarning.*", category=DeprecationWarning)
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import json
 from dotenv import load_dotenv
-import os
 import json
 from datetime import datetime
+
 from langchain_pinecone import PineconeVectorStore
 from langchain_openai import OpenAIEmbeddings
 from langchain_anthropic import ChatAnthropic
