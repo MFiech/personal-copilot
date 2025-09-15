@@ -343,13 +343,40 @@ def create_mock_composio_errors():
     return {
         'auth_error': create_mock_composio_response(error='Google Calendar account not connected'),
         'permission_error': create_mock_composio_response(error='Insufficient permissions to access calendar'),
-        'rate_limit_error': create_mock_composio_response(error='Rate limit exceeded for calendar API'),
+        'rate_limit_error': {
+            'successful': False,
+            'error': 'Rate limit exceeded for calendar API',
+            'data': {'error_type': 'quota_exceeded', 'retry_after': 3600},
+            'source_type': 'google-calendar',
+            'content': 'Rate limit exceeded'
+        },
+        'service_unavailable': {
+            'successful': False,
+            'error': 'Calendar service is currently unavailable',
+            'data': {'error_type': 'service_down', 'status_code': 503},
+            'source_type': 'google-calendar',
+            'content': 'Service unavailable'
+        },
         'invalid_calendar_error': create_mock_composio_response(error='Calendar not found'),
         'timeout_error': create_mock_composio_response(error='Request timeout'),
         'malformed_response': {
             'successful': False,
             'error': 'Invalid response format',
             'data': {'corrupted': 'data'}
+        },
+        'authentication_failure': {
+            'successful': False,
+            'error': 'Authentication failed',
+            'data': {'error_type': 'auth_failed', 'message': 'Invalid credentials'},
+            'source_type': 'google-calendar',
+            'content': 'Authentication failed'
+        },
+        'network_error': {
+            'successful': False,
+            'error': 'Network connection failed',
+            'data': {'error_type': 'network_error', 'timeout': True},
+            'source_type': 'google-calendar',
+            'content': 'Network error'
         }
     }
 
