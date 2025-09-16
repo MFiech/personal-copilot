@@ -454,10 +454,10 @@ class ComposioService:
             "max_results": count
         }
         
-        # Only include query on first request (when no page_token)
-        if not page_token and query:
+        # Always include query if provided (Gmail page tokens don't preserve query context)
+        if query:
             params["query"] = query
-            print(f"[DEBUG] First request with Gmail query: {query}")
+            print(f"[DEBUG] {'First' if not page_token else 'Paginated'} request with Gmail query: {query}")
         
         # Include Gmail's native page_token if provided
         if page_token:
@@ -503,10 +503,10 @@ class ComposioService:
             "max_results": count
         }
         
-        # Only include query on first request (when no page_token)
-        if not page_token and query:
+        # Always include query if provided (Gmail page tokens don't preserve query context)
+        if query:
             params["query"] = query
-            print(f"[DEBUG] First request with query: {query}")
+            print(f"[DEBUG] {'First' if not page_token else 'Paginated'} request with query: {query}")
         
         # Include page_token if provided (should be Gmail's opaque token)
         if page_token:

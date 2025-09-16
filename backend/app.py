@@ -2315,14 +2315,25 @@ def load_more_emails():
         if not tooling_service:
             print("[ERROR] Composio service not initialized for /load_more_emails")
             return jsonify({"error": "Composio service not available"}), 500
-        # For Gmail native tokens, we only need count and page_token
-        # No query modification needed - Gmail token contains all context
+        # Extract original Gmail query from stored params for pagination
+        # Gmail page tokens do NOT preserve query context - we must include the original query
+        original_query = None
+        if original_params and isinstance(original_params, dict):
+            # The stored query should be the processed Gmail query, not the user's natural language
+            original_query = original_params.get('query')
+            print(f"[DEBUG] Extracted stored Gmail query for pagination: {original_query}")
+
         fetch_params_for_composio = {
             "count": limit_per_page,
             "page_token": next_page_token
         }
         
-        print(f"[DEBUG] Using Gmail native token - calling Composio with: {fetch_params_for_composio}")
+        # Include original Gmail query for pagination if available (critical for filter preservation)
+        if original_query:
+            fetch_params_for_composio["query"] = original_query
+            print(f"[DEBUG] Including original Gmail query in pagination: {original_query}")
+        
+        print(f"[DEBUG] Calling Composio with params (including query): {fetch_params_for_composio}")
         tooling_response = tooling_service.get_recent_emails(**fetch_params_for_composio)
 
         print(f"[DEBUG] Composio response for /load_more_emails: {json.dumps(tooling_response)[:500]}")
