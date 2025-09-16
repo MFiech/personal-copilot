@@ -1954,8 +1954,19 @@ class ComposioService:
             response = self.get_recent_emails(query=search_query)
             
             # Store the actual Gmail query used for pagination (not the original user query)
+            print(f"[DEBUG-COMPOSIO] 🔍 About to store Gmail query for pagination:")
+            print(f"[DEBUG-COMPOSIO] 📝 User query: '{query}'")
+            print(f"[DEBUG-COMPOSIO] 🎯 Generated Gmail query: '{search_query}'")
+            print(f"[DEBUG-COMPOSIO] 📦 Response type: {type(response)}")
+            print(f"[DEBUG-COMPOSIO] 🗂️ Response has 'data': {'data' in response if isinstance(response, dict) else 'N/A'}")
+            
             if response and isinstance(response, dict) and 'data' in response:
                 response['original_gmail_query'] = search_query
+                print(f"[DEBUG-COMPOSIO] ✅ Successfully set 'original_gmail_query' to: '{search_query}'")
+                print(f"[DEBUG-COMPOSIO] 🔑 Response keys after setting: {list(response.keys())}")
+            else:
+                print(f"[DEBUG-COMPOSIO] ❌ Failed to set 'original_gmail_query' - response structure invalid")
+                print(f"[DEBUG-COMPOSIO] 📊 Response structure: {response if isinstance(response, dict) else type(response)}")
             if response and isinstance(response, dict) and not response.get("error"):
                 return {
                     "source_type": "mail",
