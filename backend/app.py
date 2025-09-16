@@ -1494,8 +1494,28 @@ def chat():
         # Add pagination metadata if we have email results
         if raw_email_list is not None and 'pagination_data' in locals():
             assistant_message.metadata = assistant_message.metadata or {}
+            
+            # Debug the Gmail query storage process
+            print(f"[DEBUG-APP] 🔍 Gmail Query Storage Debug:")
+            print(f"[DEBUG-APP] 📝 Original user query: '{query}'")
+            print(f"[DEBUG-APP] 📦 raw_tool_results type: {type(raw_tool_results)}")
+            print(f"[DEBUG-APP] 🗂️ raw_tool_results is dict: {isinstance(raw_tool_results, dict)}")
+            
+            if isinstance(raw_tool_results, dict):
+                print(f"[DEBUG-APP] 🔑 raw_tool_results keys: {list(raw_tool_results.keys())}")
+                original_gmail_query = raw_tool_results.get('original_gmail_query')
+                print(f"[DEBUG-APP] 🎯 Found 'original_gmail_query': {original_gmail_query}")
+            else:
+                original_gmail_query = None
+                print(f"[DEBUG-APP] ❌ raw_tool_results is not dict, cannot extract 'original_gmail_query'")
+            
             # Use the Gmail query for pagination, not the original user query
-            gmail_query = raw_tool_results.get('original_gmail_query', query) if raw_tool_results else query
+            gmail_query = original_gmail_query if original_gmail_query else query
+            
+            print(f"[DEBUG-APP] 📊 Final decision:")
+            print(f"[DEBUG-APP] 📥 Will store query: '{gmail_query}'")
+            print(f"[DEBUG-APP] 🏷️ Query source: {'original_gmail_query' if original_gmail_query else 'fallback_to_user_query'}")
+            
             assistant_message.metadata.update({
                 'tool_original_query_params': {'query': gmail_query, 'count': pagination_data['limit']},
                 'tool_current_page_token': pagination_data['page_token'],
@@ -1504,7 +1524,7 @@ def chat():
                 'tool_total_emails_available': pagination_data['total'],
                 'tool_has_more': pagination_data['has_more']
             })
-            print(f"[DEBUG] Added pagination metadata to assistant message: {pagination_data}")
+            print(f"[DEBUG-APP] ✅ Stored pagination metadata with query: '{gmail_query}'")
         assistant_message.save()
         print(f"Assistant message saved. message_id: {assistant_message.message_id}, role: {assistant_message.role}, content: {assistant_message.content[:100] if assistant_message.content else 'None'}...")
 
@@ -2315,20 +2335,42 @@ def load_more_emails():
         if not tooling_service:
             print("[ERROR] Composio service not initialized for /load_more_emails")
             return jsonify({"error": "Composio service not available"}), 500
-        # For Gmail native tokens, we only need count and page_token
-        # No query modification needed - Gmail token contains all context
+        # Extract original Gmail query from stored params for pagination
+        # Gmail page tokens do NOT preserve query context - we must include the original query
+        print(f"[DEBUG-LOAD-MORE] 🔍 Gmail Query Extraction Debug:")
+        print(f"[DEBUG-LOAD-MORE] 📦 original_params type: {type(original_params)}")
+        print(f"[DEBUG-LOAD-MORE] 🗂️ original_params is dict: {isinstance(original_params, dict)}")
+        
+        if isinstance(original_params, dict):
+            print(f"[DEBUG-LOAD-MORE] 🔑 original_params keys: {list(original_params.keys())}")
+            print(f"[DEBUG-LOAD-MORE] 📊 original_params content: {original_params}")
+        
+        original_query = None
+        if original_params and isinstance(original_params, dict):
+            # The stored query should be the processed Gmail query, not the user's natural language
+            original_query = original_params.get('query')
+            print(f"[DEBUG-LOAD-MORE] 🎯 Extracted stored query: '{original_query}'")
+        else:
+            print(f"[DEBUG-LOAD-MORE] ❌ Cannot extract query - invalid original_params structure")
+
         fetch_params_for_composio = {
             "count": limit_per_page,
             "page_token": next_page_token
         }
         
-        print(f"[DEBUG] Using Gmail native token - calling Composio with: {fetch_params_for_composio}")
+        # Include original Gmail query for pagination if available (critical for filter preservation)
+        if original_query:
+            fetch_params_for_composio["query"] = original_query
+            print(f"[DEBUG] Including original Gmail query in pagination: {original_query}")
+        
+        print(f"[DEBUG] Calling Composio with params (including query): {fetch_params_for_composio}")
         tooling_response = tooling_service.get_recent_emails(**fetch_params_for_composio)
 
         print(f"[DEBUG] Composio response for /load_more_emails: {json.dumps(tooling_response)[:500]}")
-        if "error" in tooling_response:
-            print(f"[ERROR] Composio error: {tooling_response.get('error')}")
-            return jsonify({"error": f"Composio error: {tooling_response.get('error')}"}), 500
+        if "error" in tooling_response or not tooling_response.get("data"):
+            error_msg = tooling_response.get('error') or "No data returned from Composio"
+            print(f"[ERROR] Composio error: {error_msg}")
+            return jsonify({"error": f"Failed to load more emails: {error_msg}"}), 500
         new_data = tooling_response.get("data", {})
         if new_data is None:
             new_data = {}

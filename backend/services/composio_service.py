@@ -454,10 +454,10 @@ class ComposioService:
             "max_results": count
         }
         
-        # Only include query on first request (when no page_token)
-        if not page_token and query:
+        # Always include query if provided (Gmail page tokens don't preserve query context)
+        if query:
             params["query"] = query
-            print(f"[DEBUG] First request with Gmail query: {query}")
+            print(f"[DEBUG] {'First' if not page_token else 'Paginated'} request with Gmail query: {query}")
         
         # Include Gmail's native page_token if provided
         if page_token:
@@ -491,8 +491,9 @@ class ComposioService:
                 "has_more": bool(gmail_next_token and len(messages) == count)
             }
         else:
-            print(f"[DEBUG] Gmail request failed: {response.get('error')}")
-            return {"error": response.get("error")}
+            error_msg = response.get('error') or f"Gmail request failed (successful={response.get('successful', 'unknown')})"
+            print(f"[DEBUG] Gmail request failed: {error_msg}")
+            return {"error": error_msg}
 
     def get_recent_emails_with_gmail_tokens(self, count=10, query=None, page_token=None, **kwargs):
         """
@@ -503,10 +504,10 @@ class ComposioService:
             "max_results": count
         }
         
-        # Only include query on first request (when no page_token)
-        if not page_token and query:
+        # Always include query if provided (Gmail page tokens don't preserve query context)
+        if query:
             params["query"] = query
-            print(f"[DEBUG] First request with query: {query}")
+            print(f"[DEBUG] {'First' if not page_token else 'Paginated'} request with query: {query}")
         
         # Include page_token if provided (should be Gmail's opaque token)
         if page_token:
@@ -1954,8 +1955,19 @@ class ComposioService:
             response = self.get_recent_emails(query=search_query)
             
             # Store the actual Gmail query used for pagination (not the original user query)
+            print(f"[DEBUG-COMPOSIO] 🔍 About to store Gmail query for pagination:")
+            print(f"[DEBUG-COMPOSIO] 📝 User query: '{query}'")
+            print(f"[DEBUG-COMPOSIO] 🎯 Generated Gmail query: '{search_query}'")
+            print(f"[DEBUG-COMPOSIO] 📦 Response type: {type(response)}")
+            print(f"[DEBUG-COMPOSIO] 🗂️ Response has 'data': {'data' in response if isinstance(response, dict) else 'N/A'}")
+            
             if response and isinstance(response, dict) and 'data' in response:
                 response['original_gmail_query'] = search_query
+                print(f"[DEBUG-COMPOSIO] ✅ Successfully set 'original_gmail_query' to: '{search_query}'")
+                print(f"[DEBUG-COMPOSIO] 🔑 Response keys after setting: {list(response.keys())}")
+            else:
+                print(f"[DEBUG-COMPOSIO] ❌ Failed to set 'original_gmail_query' - response structure invalid")
+                print(f"[DEBUG-COMPOSIO] 📊 Response structure: {response if isinstance(response, dict) else type(response)}")
             if response and isinstance(response, dict) and not response.get("error"):
                 return {
                     "source_type": "mail",
@@ -1963,7 +1975,8 @@ class ComposioService:
                     "data": response.get("data"),
                     "next_page_token": response.get("next_page_token"),
                     "total_estimate": response.get("total_estimate"),
-                    "has_more": response.get("has_more")
+                    "has_more": response.get("has_more"),
+                    "original_gmail_query": response.get("original_gmail_query")
                 }
             else:
                 error_msg = response.get("error") if response and isinstance(response, dict) else "Unknown error"
