@@ -491,8 +491,9 @@ class ComposioService:
                 "has_more": bool(gmail_next_token and len(messages) == count)
             }
         else:
-            print(f"[DEBUG] Gmail request failed: {response.get('error')}")
-            return {"error": response.get("error")}
+            error_msg = response.get('error') or f"Gmail request failed (successful={response.get('successful', 'unknown')})"
+            print(f"[DEBUG] Gmail request failed: {error_msg}")
+            return {"error": error_msg}
 
     def get_recent_emails_with_gmail_tokens(self, count=10, query=None, page_token=None, **kwargs):
         """

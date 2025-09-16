@@ -2367,9 +2367,10 @@ def load_more_emails():
         tooling_response = tooling_service.get_recent_emails(**fetch_params_for_composio)
 
         print(f"[DEBUG] Composio response for /load_more_emails: {json.dumps(tooling_response)[:500]}")
-        if "error" in tooling_response:
-            print(f"[ERROR] Composio error: {tooling_response.get('error')}")
-            return jsonify({"error": f"Composio error: {tooling_response.get('error')}"}), 500
+        if "error" in tooling_response or not tooling_response.get("data"):
+            error_msg = tooling_response.get('error') or "No data returned from Composio"
+            print(f"[ERROR] Composio error: {error_msg}")
+            return jsonify({"error": f"Failed to load more emails: {error_msg}"}), 500
         new_data = tooling_response.get("data", {})
         if new_data is None:
             new_data = {}
