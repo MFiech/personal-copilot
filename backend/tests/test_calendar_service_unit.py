@@ -176,6 +176,16 @@ class TestCalendarServiceUnit:
         assert 'data' in result
         service._execute_action.assert_called_once()
         
+        # Verify the new parameter structure is used
+        call_args = service._execute_action.call_args
+        params = call_args[1]['params']
+        assert params['calendar_id'] == 'primary'
+        assert params['summary'] == 'New Meeting'
+        assert params['start_datetime'] == '2025-09-04T15:00:00'  # No timezone offset
+        assert params['timezone'] == 'Europe/Warsaw'
+        assert params['event_duration_hour'] == 1  # 1 hour
+        assert params['event_duration_minutes'] == 0  # No remaining minutes
+        
     def test_create_calendar_event_composio_failure(self, mock_composio_calendar_service):
         """Test calendar event creation with Composio service failure"""
         # Arrange
@@ -195,6 +205,43 @@ class TestCalendarServiceUnit:
         # Assert
         assert result is not None
         assert "error" in result
+        
+        # Verify the new parameter structure was attempted even on failure
+        call_args = service._execute_action.call_args
+        params = call_args[1]['params']
+        assert params['calendar_id'] == 'primary'
+        assert params['summary'] == 'Failed Meeting'
+        assert params['start_datetime'] == '2025-09-04T15:00:00'  # No timezone offset
+        assert params['timezone'] == 'Europe/Warsaw'
+        assert params['event_duration_hour'] == 1  # 1 hour
+        assert params['event_duration_minutes'] == 0  # No remaining minutes
+        
+    def test_create_calendar_event_long_duration(self, mock_composio_calendar_service):
+        """Test calendar event creation with duration >= 60 minutes uses event_duration_hour"""
+        # Arrange
+        service = mock_composio_calendar_service
+        created_event = create_mock_calendar_event('long_123', 'Long Meeting')
+        success_response = {
+            'successful': True,
+            'data': {'response_data': created_event}
+        }
+        service._execute_action.return_value = success_response
+        
+        # Act - Create 2.5 hour event
+        result = service.create_calendar_event(
+            summary="Long Meeting",
+            start_time="2025-09-04T14:00:00+02:00",
+            end_time="2025-09-04T16:30:00+02:00"  # 2.5 hours
+        )
+        
+        # Assert
+        assert result is not None
+        call_args = service._execute_action.call_args
+        params = call_args[1]['params']
+        assert params['event_duration_hour'] == 2  # 2 full hours
+        assert params['event_duration_minutes'] == 30  # 30 remaining minutes
+        assert 'start_datetime' in params
+        assert 'timezone' in params
         
     def test_update_calendar_event_success(self, mock_composio_calendar_service):
         """Test successful calendar event update"""
