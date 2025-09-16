@@ -48,39 +48,70 @@ class DraftService:
         Returns:
             Draft: Created draft instance
         """
+        print(f"[DraftService] create_draft called: type={draft_type}, thread_id={thread_id}, message_id={message_id}")
+        print(f"[DraftService] initial_data: {initial_data}")
+        
         if draft_type not in ["email", "calendar_event"]:
-            raise ValueError("draft_type must be 'email' or 'calendar_event'")
+            error_msg = f"draft_type must be 'email' or 'calendar_event', got: {draft_type}"
+            print(f"[DraftService] ❌ {error_msg}")
+            raise ValueError(error_msg)
         
-        # Prepare initial data
-        draft_data = {
-            "draft_type": draft_type,
-            "thread_id": thread_id,
-            "message_id": message_id,
-            "status": "active"
-        }
-        
-        if initial_data:
-            # Process contact names to emails for email drafts
-            if draft_type == "email" and "to_contacts" in initial_data:
-                resolved_emails = self._resolve_contacts_to_emails(initial_data["to_contacts"])
-                draft_data["to_emails"] = resolved_emails
-                del initial_data["to_contacts"]  # Remove the unresolved version
+        try:
+            # Prepare initial data
+            draft_data = {
+                "draft_type": draft_type,
+                "thread_id": thread_id,
+                "message_id": message_id,
+                "status": "active"
+            }
+            print(f"[DraftService] Base draft_data prepared: {draft_data}")
             
-            # Process attendee names to emails for calendar drafts
-            if draft_type == "calendar_event" and "attendee_contacts" in initial_data:
-                resolved_attendees = self._resolve_contacts_to_emails(initial_data["attendee_contacts"])
-                draft_data["attendees"] = resolved_attendees
-                del initial_data["attendee_contacts"]  # Remove the unresolved version
+            if initial_data:
+                print(f"[DraftService] Processing initial_data: {initial_data}")
+                # Process contact names to emails for email drafts
+                if draft_type == "email" and "to_contacts" in initial_data:
+                    print(f"[DraftService] Resolving to_contacts: {initial_data['to_contacts']}")
+                    try:
+                        resolved_emails = self._resolve_contacts_to_emails(initial_data["to_contacts"])
+                        draft_data["to_emails"] = resolved_emails
+                        print(f"[DraftService] Resolved to_emails: {resolved_emails}")
+                        del initial_data["to_contacts"]  # Remove the unresolved version
+                    except Exception as e:
+                        print(f"[DraftService] ⚠️ Error resolving to_contacts: {e}")
+                        # Continue without resolved emails - the draft can still be created
+                
+                # Process attendee names to emails for calendar drafts
+                if draft_type == "calendar_event" and "attendee_contacts" in initial_data:
+                    print(f"[DraftService] Resolving attendee_contacts: {initial_data['attendee_contacts']}")
+                    try:
+                        resolved_attendees = self._resolve_contacts_to_emails(initial_data["attendee_contacts"])
+                        draft_data["attendees"] = resolved_attendees
+                        print(f"[DraftService] Resolved attendees: {resolved_attendees}")
+                        del initial_data["attendee_contacts"]  # Remove the unresolved version
+                    except Exception as e:
+                        print(f"[DraftService] ⚠️ Error resolving attendee_contacts: {e}")
+                        # Continue without resolved attendees - attendees are optional
+                        draft_data["attendees"] = []
+                
+                # Add other initial data
+                draft_data.update(initial_data)
+                print(f"[DraftService] Final draft_data after initial_data merge: {draft_data}")
             
-            # Add other initial data
-            draft_data.update(initial_data)
-        
-        # Create and save draft
-        draft = Draft(**draft_data)
-        draft.save()
-        
-        print(f"[DraftService] Created {draft_type} draft {draft.draft_id} for thread {thread_id}")
-        return draft
+            # Create and save draft
+            print(f"[DraftService] Creating Draft object with data: {draft_data}")
+            draft = Draft(**draft_data)
+            
+            print(f"[DraftService] Draft object created, calling save()...")
+            draft.save()
+            
+            print(f"[DraftService] ✅ Successfully created {draft_type} draft {draft.draft_id} for thread {thread_id}")
+            return draft
+            
+        except Exception as e:
+            print(f"[DraftService] ❌ Error in create_draft: {e}")
+            import traceback
+            print(f"[DraftService] ❌ Traceback: {traceback.format_exc()}")
+            raise e
 
     def update_draft(self, draft_id, updates):
         """
@@ -228,10 +259,17 @@ class DraftService:
             # Convert to calendar event parameters
             attendee_emails = [att["email"] for att in draft.attendees if att.get("email")]
             
+            # Convert naive datetime strings to timezone-aware strings
+            start_time_tz = self._add_timezone_to_datetime(draft.start_time)
+            end_time_tz = self._add_timezone_to_datetime(draft.end_time)
+            
+            print(f"[DraftService] Timezone conversion: {draft.start_time} -> {start_time_tz}")
+            print(f"[DraftService] Timezone conversion: {draft.end_time} -> {end_time_tz}")
+            
             params = {
                 "summary": draft.summary,
-                "start_time": draft.start_time,
-                "end_time": draft.end_time
+                "start_time": start_time_tz,
+                "end_time": end_time_tz
             }
             
             if draft.location:
@@ -245,6 +283,33 @@ class DraftService:
         
         else:
             raise ValueError(f"Unknown draft type: {draft.draft_type}")
+
+    def _add_timezone_to_datetime(self, datetime_str):
+        """
+        Convert a naive datetime string to a timezone-aware string.
+        
+        Args:
+            datetime_str: String in format "YYYY-MM-DD HH:MM:SS"
+        
+        Returns:
+            str: ISO format datetime string with timezone offset (+02:00 for Europe/Warsaw)
+        """
+        if not datetime_str:
+            return datetime_str
+        
+        try:
+            # Parse the naive datetime string
+            dt = datetime.fromisoformat(datetime_str)
+            
+            # Format as ISO string with Europe/Warsaw timezone offset (+02:00)
+            # Note: This assumes standard time. For daylight saving time, it should be +01:00 in winter and +02:00 in summer
+            # For simplicity, using +02:00 (CEST - Central European Summer Time)
+            timezone_aware_str = dt.strftime("%Y-%m-%dT%H:%M:%S+02:00")
+            
+            return timezone_aware_str
+        except Exception as e:
+            print(f"[DraftService] ⚠️ Error converting datetime to timezone-aware: {e}")
+            return datetime_str  # Return original if conversion fails
 
     def _resolve_contacts_to_emails(self, contact_names):
         """
@@ -524,53 +589,87 @@ class DraftService:
         Returns:
             Draft: Created draft instance or None if failed
         """
+        print(f"[DraftService] create_draft_from_detection called with thread_id={thread_id}, message_id={message_id}")
+        print(f"[DraftService] detection_result: {detection_result}")
+        
         if not detection_result.get("is_draft_intent"):
+            print(f"[DraftService] No draft intent detected, returning None")
             return None
         
         draft_data = detection_result.get("draft_data", {})
         draft_type = draft_data.get("draft_type")
         extracted_info = draft_data.get("extracted_info", {})
         
+        print(f"[DraftService] Processing draft_type='{draft_type}', extracted_info={extracted_info}")
+        
         if not draft_type or draft_type not in ["email", "calendar_event"]:
-            print(f"[DraftService] Invalid draft type: {draft_type}")
+            print(f"[DraftService] ❌ Invalid draft type: {draft_type}")
             return None
         
         try:
             # Process extracted information based on draft type
             initial_data = {}
+            print(f"[DraftService] Processing {draft_type} fields...")
             
             if draft_type == "email":
+                print(f"[DraftService] Processing email fields...")
                 # Process email-specific fields
                 if "to_contacts" in extracted_info:
                     initial_data["to_contacts"] = extracted_info["to_contacts"]
+                    print(f"[DraftService] Added to_contacts: {extracted_info['to_contacts']}")
                 if "subject" in extracted_info and extracted_info["subject"]:
                     initial_data["subject"] = extracted_info["subject"]
+                    print(f"[DraftService] Added subject: {extracted_info['subject']}")
                 if "body" in extracted_info and extracted_info["body"]:
                     initial_data["body"] = extracted_info["body"]
+                    print(f"[DraftService] Added body: {extracted_info['body'][:100]}...")
             
             elif draft_type == "calendar_event":
+                print(f"[DraftService] Processing calendar event fields...")
                 # Process calendar-specific fields
                 if "summary" in extracted_info and extracted_info["summary"]:
                     initial_data["summary"] = extracted_info["summary"]
+                    print(f"[DraftService] Added summary: {extracted_info['summary']}")
                 if "start_time" in extracted_info and extracted_info["start_time"]:
                     initial_data["start_time"] = extracted_info["start_time"]
+                    print(f"[DraftService] Added start_time: {extracted_info['start_time']}")
                 if "end_time" in extracted_info and extracted_info["end_time"]:
                     initial_data["end_time"] = extracted_info["end_time"]
-                if "attendees" in extracted_info:
-                    initial_data["attendee_contacts"] = extracted_info["attendees"]
+                    print(f"[DraftService] Added end_time: {extracted_info['end_time']}")
+                if "attendees" in extracted_info and extracted_info["attendees"]:
+                    # Only add attendees if they exist and are not empty
+                    attendees = extracted_info["attendees"]
+                    if attendees:  # Check if attendees list is not empty
+                        initial_data["attendee_contacts"] = attendees
+                        print(f"[DraftService] Added attendee_contacts: {attendees}")
+                    else:
+                        print(f"[DraftService] Skipping empty attendees list")
+                else:
+                    print(f"[DraftService] No attendees provided (optional)")
                 if "location" in extracted_info and extracted_info["location"]:
                     initial_data["location"] = extracted_info["location"]
+                    print(f"[DraftService] Added location: {extracted_info['location']}")
                 if "description" in extracted_info and extracted_info["description"]:
                     initial_data["description"] = extracted_info["description"]
+                    print(f"[DraftService] Added description: {extracted_info['description']}")
+            
+            print(f"[DraftService] Final initial_data for draft creation: {initial_data}")
             
             # Create the draft
+            print(f"[DraftService] Calling create_draft with type={draft_type}, thread_id={thread_id}, message_id={message_id}")
             draft = self.create_draft(draft_type, thread_id, message_id, initial_data)
             
-            print(f"[DraftService] Created draft {draft.draft_id} from detection")
-            return draft
+            if draft:
+                print(f"[DraftService] ✅ Successfully created draft {draft.draft_id} from detection")
+                return draft
+            else:
+                print(f"[DraftService] ❌ create_draft returned None")
+                return None
         
         except Exception as e:
-            print(f"[DraftService] Error creating draft from detection: {e}")
+            print(f"[DraftService] ❌ Error creating draft from detection: {e}")
+            import traceback
+            print(f"[DraftService] ❌ Traceback: {traceback.format_exc()}")
             return None
 
     # ===== NEW SEPARATED DRAFT METHODS =====

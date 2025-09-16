@@ -36,35 +36,53 @@ class Draft:
 
     def save(self):
         """Save draft to MongoDB with validation"""
-        self.updated_at = int(time.time())
+        print(f"[Draft] Saving draft {self.draft_id} to database...")
         
-        draft_data = {
-            'draft_id': self.draft_id,
-            'thread_id': self.thread_id,
-            'message_id': self.message_id,
-            'draft_type': self.draft_type,
-            'status': self.status,
-            'to_emails': self.to_emails,
-            'subject': self.subject,
-            'body': self.body,
-            'attachments': self.attachments,
-            'summary': self.summary,
-            'start_time': self.start_time,
-            'end_time': self.end_time,
-            'attendees': self.attendees,
-            'location': self.location,
-            'description': self.description,
-            'created_at': self.created_at,
-            'updated_at': self.updated_at
-        }
-        
-        # Update if exists, insert if not
-        result = self.collection.update_one(
-            {'draft_id': self.draft_id},
-            {'$set': draft_data},
-            upsert=True
-        )
-        return result.upserted_id or self.draft_id
+        try:
+            self.updated_at = int(time.time())
+            
+            draft_data = {
+                'draft_id': self.draft_id,
+                'thread_id': self.thread_id,
+                'message_id': self.message_id,
+                'draft_type': self.draft_type,
+                'status': self.status,
+                'to_emails': self.to_emails,
+                'subject': self.subject,
+                'body': self.body,
+                'attachments': self.attachments,
+                'summary': self.summary,
+                'start_time': self.start_time,
+                'end_time': self.end_time,
+                'attendees': self.attendees,
+                'location': self.location,
+                'description': self.description,
+                'created_at': self.created_at,
+                'updated_at': self.updated_at
+            }
+            
+            print(f"[Draft] Draft data to save: {draft_data}")
+            print(f"[Draft] Collection: {self.collection}")
+            
+            # Update if exists, insert if not
+            print(f"[Draft] Performing upsert operation...")
+            result = self.collection.update_one(
+                {'draft_id': self.draft_id},
+                {'$set': draft_data},
+                upsert=True
+            )
+            
+            print(f"[Draft] Upsert result: matched_count={result.matched_count}, modified_count={result.modified_count}, upserted_id={result.upserted_id}")
+            
+            saved_id = result.upserted_id or self.draft_id
+            print(f"[Draft] ✅ Successfully saved draft {self.draft_id} to database")
+            return saved_id
+            
+        except Exception as e:
+            print(f"[Draft] ❌ Error saving draft {self.draft_id}: {e}")
+            import traceback
+            print(f"[Draft] ❌ Save traceback: {traceback.format_exc()}")
+            raise e
 
     def update(self, updates):
         """Update specific fields of the draft"""

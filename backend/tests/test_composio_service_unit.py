@@ -148,6 +148,20 @@ class TestComposioServiceCalendarMethods:
         assert "Successfully created calendar event" in result.get("content", "")
         assert "data" in result
         
+        # Verify the new parameter structure is used
+        service._execute_action.assert_called_once()
+        call_args = service._execute_action.call_args
+        params = call_args[1]['params']
+        assert params['calendar_id'] == 'primary'
+        assert params['summary'] == 'Test Meeting'
+        assert params['start_datetime'] == '2025-09-07T10:00:00'  # No timezone offset
+        assert params['timezone'] == 'Europe/Warsaw'
+        assert params['event_duration_hour'] == 1  # 1 hour
+        assert params['event_duration_minutes'] == 0  # No remaining minutes
+        assert params['location'] == 'Conference Room'
+        assert params['description'] == 'Test meeting description'
+        assert params['attendees'] == ['attendee@example.com']
+        
 
 
 class TestComposioServiceThreadMethods:
