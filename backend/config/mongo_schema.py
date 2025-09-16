@@ -789,8 +789,8 @@ DRAFTS_SCHEMA = {
                         "bsonType": "object",
                         "properties": {
                             "email": {
-                                "bsonType": "string",
-                                "description": "Attendee's email address"
+                                "bsonType": ["string", "null"],
+                                "description": "Attendee's email address (optional)"
                             },
                             "name": {
                                 "bsonType": ["string", "null"],

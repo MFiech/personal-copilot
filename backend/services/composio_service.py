@@ -1092,13 +1092,38 @@ class ComposioService:
             for att in attendees:
                 attendee_emails.append(att['email'] if isinstance(att, dict) else att)
         
-        # Build parameters following Composio schema (not Google Calendar API format)
+        # Build parameters following official Composio documentation
+        # https://docs.composio.dev/toolkits/googlecalendar#googlecalendar_create_event
+        
+        # Calculate duration from start and end times
+        from datetime import datetime
+        try:
+            start_dt = datetime.fromisoformat(start_time.replace('+02:00', '')) if '+02:00' in start_time else datetime.fromisoformat(start_time)
+            end_dt = datetime.fromisoformat(end_time.replace('+02:00', '')) if '+02:00' in end_time else datetime.fromisoformat(end_time)
+            duration_minutes = int((end_dt - start_dt).total_seconds() / 60)
+        except:
+            duration_minutes = 60  # Default to 1 hour
+            
+        # Use naive datetime (without timezone offset) and specify timezone separately
+        start_time_naive = start_time.replace('+02:00', '') if '+02:00' in start_time else start_time
+        
         params = {
-            "calendarId": calendar_id,  # GOOGLECALENDAR_CREATE_EVENT expects camelCase
+            "calendar_id": calendar_id,  # Use snake_case as per docs
             "summary": summary,
-            "start_datetime": start_time,  # Flat field format for Composio
-            "end_datetime": end_time       # Flat field format for Composio
+            "start_datetime": start_time_naive,  # RFC3339 format without timezone
+            "timezone": "Europe/Warsaw",  # Explicit timezone parameter
         }
+        
+        # Handle duration: Composio limits event_duration_minutes to ≤59
+        # For events ≥60 minutes, use event_duration_hour parameter instead
+        if duration_minutes >= 60:
+            duration_hours = duration_minutes / 60.0
+            params["event_duration_hour"] = int(duration_hours)  # Use hours for long events
+            # Always specify remaining minutes to avoid Composio's 30-minute default
+            remaining_minutes = duration_minutes % 60
+            params["event_duration_minutes"] = remaining_minutes  # Explicit 0 for exact hours
+        else:
+            params["event_duration_minutes"] = duration_minutes
         
         # Add optional parameters
         if description:
@@ -1540,29 +1565,19 @@ class ComposioService:
             print(f"  Start: {start_dt}")
             print(f"  End: {end_dt}")
             
-            # TIMEZONE FIX v2: Send as local time with timezone offset, but tell Composio the timezone
-            # The issue is Composio treats naive datetime as UTC. We need to be explicit about local time.
-            
-            # Add timezone awareness to show this is local time
+            # FIXED: Use timezone-aware datetimes directly without double conversion
+            # The DraftService already adds timezone info (+02:00), so we use that as-is
             start_dt_tz = start_dt.replace(tzinfo=local_tz)
             end_dt_tz = end_dt.replace(tzinfo=local_tz)
             
-            # Convert to the format that represents the ACTUAL local time we want
-            # But we'll adjust for the fact that Composio seems to expect UTC input
+            # Send timezone-aware datetimes to Composio
+            # This preserves the actual local time the user wants
+            start_datetime = start_dt_tz.isoformat()
+            end_datetime = end_dt_tz.isoformat()
             
-            # Calculate what UTC time would result in our desired local time
-            # If we want 17:00 local (+02:00), we need to send 15:00 UTC so when converted it becomes 17:00 local
-            utc_offset_hours = 2  # For Europe/Warsaw in summer (CEST)
-            
-            adjusted_start_dt = start_dt - timedelta(hours=utc_offset_hours)
-            adjusted_end_dt = end_dt - timedelta(hours=utc_offset_hours)
-            
-            start_datetime = adjusted_start_dt.isoformat()
-            end_datetime = adjusted_end_dt.isoformat()
-            
-            print(f"[DEBUG] Adjusted datetimes (accounting for Composio UTC conversion):")
-            print(f"  Start: {start_datetime} (will become {start_time} local after Composio conversion)")
-            print(f"  End: {end_datetime} (will become {end_time} local after Composio conversion)")
+            print(f"[DEBUG] Timezone-aware datetimes (preserving local time):")
+            print(f"  Start: {start_datetime} (should remain {start_time} local time)")
+            print(f"  End: {end_datetime} (should remain {end_time} local time)")
             
             # Get optional parameters
             location = parameters.get("location")

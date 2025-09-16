@@ -1406,11 +1406,19 @@ def chat():
                         draft_created = existing_draft  # Return existing draft
                 else:
                     # No existing draft found, create new one
-                    draft_created = draft_service.create_draft_from_detection(
-                        thread_id, 
-                        user_message.message_id, 
-                        detection_result
-                    )
+                    try:
+                        draft_created = draft_service.create_draft_from_detection(
+                            thread_id, 
+                            user_message.message_id, 
+                            detection_result
+                        )
+                        if not draft_created:
+                            print(f"[DRAFT] ❌ Draft creation failed - create_draft_from_detection returned None")
+                    except Exception as e:
+                        print(f"[DRAFT] ❌ Exception during draft creation: {e}")
+                        import traceback
+                        print(f"[DRAFT] ❌ Draft creation traceback: {traceback.format_exc()}")
+                        draft_created = None
                 
                 # NOW provide draft context to LLM after creation/update
                 if draft_created:
@@ -1458,6 +1466,12 @@ def chat():
                         response_text = f"I've created a draft for you, but there was an error generating the response. Please check the orange anchor bar for details."
                 else:
                     print(f"[DRAFT] Failed to create/update draft from detection")
+                    # If draft creation failed but we detected intent, provide helpful message
+                    if detection_result and detection_result.get("is_draft_intent"):
+                        draft_type = detection_result.get("draft_data", {}).get("draft_type", "item")
+                        friendly_type = "email" if draft_type == "email" else "calendar event"
+                        response_text = f"I detected that you want to create a {friendly_type} draft, but I encountered an error during creation. Please check the logs for more details and try again."
+                        print(f"[DRAFT] Setting fallback error message: {response_text}")
             else:
                 print(f"[DRAFT] No draft intent detected")
                 
