@@ -1974,7 +1974,8 @@ class ComposioService:
                     "data": response.get("data"),
                     "next_page_token": response.get("next_page_token"),
                     "total_estimate": response.get("total_estimate"),
-                    "has_more": response.get("has_more")
+                    "has_more": response.get("has_more"),
+                    "original_gmail_query": response.get("original_gmail_query")
                 }
             else:
                 error_msg = response.get("error") if response and isinstance(response, dict) else "Unknown error"
