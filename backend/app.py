@@ -2386,7 +2386,7 @@ def load_more_emails():
             print(f"[DEBUG] Including original Gmail query in pagination: {original_query}")
         
         print(f"[DEBUG] Calling Composio with params (including query): {fetch_params_for_composio}")
-        tooling_response = tooling_service.get_recent_emails(**fetch_params_for_composio)
+        tooling_response = tooling_service.get_recent_emails_with_thread_expansion(**fetch_params_for_composio)
 
         print(f"[DEBUG] Composio response for /load_more_emails: {json.dumps(tooling_response)[:500]}")
         if "error" in tooling_response or not tooling_response.get("data"):
