@@ -33,7 +33,7 @@ import DialogContentText from '@mui/material/DialogContentText';
 import DialogTitle from '@mui/material/DialogTitle';
 import ToolResults from './components/ToolResults';
 import ResizableEmailSidebar from './components/ResizableEmailSidebar';
-import DraftCard from './components/DraftCard';
+import SimplifiedDraftCard from './components/SimplifiedDraftCard';
 import './App.css';
 import { useSnackbar } from './components/SnackbarProvider';
 import { DraftService, formatDraftDisplayText, getMissingFieldsText } from './utils/draftService';
@@ -245,7 +245,9 @@ function App() {
     threadEmails: [],
     gmailThreadId: null,
     loading: false,
-    error: null
+    error: null,
+    draft: null,
+    contentType: 'email'
   });
   const [sidebarWidth, setSidebarWidth] = useState(0);
 
@@ -946,7 +948,9 @@ function App() {
       threadEmails: [],
       gmailThreadId: null,
       loading: true,
-      error: null
+      error: null,
+      draft: null,
+      contentType: 'email'
     });
 
     try {
@@ -1010,7 +1014,9 @@ function App() {
           threadEmails: threadEmails,
           gmailThreadId: gmailThreadId,
           loading: false,
-          error: null
+          error: null,
+          draft: null,
+          contentType: 'email'
         });
       } else {
         throw new Error('Failed to retrieve email content');
@@ -1023,7 +1029,9 @@ function App() {
         threadEmails: [],
         gmailThreadId: null,
         loading: false,
-        error: error.message
+        error: error.message,
+        draft: null,
+        contentType: 'email'
       });
     }
   };
@@ -1035,7 +1043,23 @@ function App() {
       threadEmails: [],
       gmailThreadId: null,
       loading: false,
-      error: null
+      error: null,
+      draft: null,
+      contentType: 'email'
+    });
+  };
+
+  const handleDraftClick = (draft) => {
+    // Close any existing sidebar and open with draft content
+    setEmailSidebar({
+      open: true,
+      email: null,
+      threadEmails: [],
+      gmailThreadId: null,
+      loading: false,
+      error: null,
+      draft: draft,
+      contentType: 'draft'
     });
   };
 
@@ -1682,20 +1706,11 @@ function App() {
                   
                   {/* Draft Card - only for user messages that have drafts */}
                   {message.role === 'user' && messageDrafts[message.id] && (
-                    <Box sx={{ 
-                      width: '100%',
-                      maxWidth: 'calc(80% - 16px)',
-                      alignSelf: 'flex-end'
-                    }}>
-                      <DraftCard
-                        draft={messageDrafts[message.id]}
-                        messageId={message.id}
-                        isAnchored={anchoredItem?.type === 'draft' && anchoredItem?.id === messageDrafts[message.id]?.draft_id}
-                        onAnchor={handleDraftCardAnchor}
-                        onSend={handleDraftCardSent}
-                        showSnackbar={showSnackbar}
-                      />
-                    </Box>
+                    <SimplifiedDraftCard
+                      draft={messageDrafts[message.id]}
+                      messageId={message.id}
+                      onDraftClick={handleDraftClick}
+                    />
                   )}
                 </Box>
               ))
@@ -1971,8 +1986,10 @@ function App() {
             email={emailSidebar.email}
             threadEmails={emailSidebar.threadEmails}
             gmailThreadId={emailSidebar.gmailThreadId}
+            draft={emailSidebar.draft}
             loading={emailSidebar.loading}
             error={emailSidebar.error}
+            contentType={emailSidebar.contentType}
             onClose={handleCloseEmailSidebar}
             onWidthChange={setSidebarWidth}
           />

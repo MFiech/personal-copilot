@@ -16,10 +16,12 @@ const ResizableEmailSidebar = ({
   email,
   threadEmails = [],
   gmailThreadId = null,
+  draft = null,
   loading,
   error,
   onClose,
-  onWidthChange
+  onWidthChange,
+  contentType = 'email' // 'email', 'draft', or 'both'
 }) => {
   const [width, setWidth] = useState(420);
   const [isResizing, setIsResizing] = useState(false);
@@ -162,6 +164,177 @@ const ResizableEmailSidebar = ({
     }
   };
 
+  const renderDraftContent = () => {
+    if (!draft) return null;
+
+    const isEmail = draft.draft_type === 'email';
+    const isSent = draft.status === 'closed';
+
+    const formatRecipients = (recipients) => {
+      if (!recipients || recipients.length === 0) return 'Not specified';
+      return recipients.map(recipient => {
+        if (typeof recipient === 'string') return recipient;
+        if (recipient.name && recipient.email) return `${recipient.name} <${recipient.email}>`;
+        return recipient.email || recipient.name || 'Unknown';
+      }).join(', ');
+    };
+
+    return (
+      <Box sx={{ p: 2 }}>
+        {isEmail ? (
+          <>
+            <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+              {isSent ? 'Email' : 'Email Draft'}
+            </Typography>
+
+            {/* To field */}
+            <Box sx={{ mb: 1.5 }}>
+              <Typography variant="body2" sx={{ fontWeight: 500, color: '#5f6368', mb: 0.5 }}>
+                To:
+              </Typography>
+              <Typography variant="body2" sx={{ color: draft.to_emails?.length ? '#202124' : '#d32f2f' }}>
+                {formatRecipients(draft.to_emails)}
+              </Typography>
+            </Box>
+
+            {/* CC/BCC if present */}
+            {draft.cc_emails && draft.cc_emails.length > 0 && (
+              <Box sx={{ mb: 1.5 }}>
+                <Typography variant="body2" sx={{ fontWeight: 500, color: '#5f6368', mb: 0.5 }}>
+                  CC:
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#202124' }}>
+                  {formatRecipients(draft.cc_emails)}
+                </Typography>
+              </Box>
+            )}
+
+            {draft.bcc_emails && draft.bcc_emails.length > 0 && (
+              <Box sx={{ mb: 1.5 }}>
+                <Typography variant="body2" sx={{ fontWeight: 500, color: '#5f6368', mb: 0.5 }}>
+                  BCC:
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#202124' }}>
+                  {formatRecipients(draft.bcc_emails)}
+                </Typography>
+              </Box>
+            )}
+
+            {/* Subject */}
+            <Box sx={{ mb: 1.5 }}>
+              <Typography variant="body2" sx={{ fontWeight: 500, color: '#5f6368', mb: 0.5 }}>
+                Subject:
+              </Typography>
+              <Typography variant="body2" sx={{ color: draft.subject ? '#202124' : '#d32f2f' }}>
+                {draft.subject || 'Not specified'}
+              </Typography>
+            </Box>
+
+            {/* Body */}
+            {draft.body && (
+              <Box sx={{ mb: 1.5 }}>
+                <Typography variant="body2" sx={{ fontWeight: 500, color: '#5f6368', mb: 0.5 }}>
+                  Body:
+                </Typography>
+                <Typography
+                  variant="body2"
+                  component="pre"
+                  sx={{
+                    whiteSpace: 'pre-wrap',
+                    fontFamily: 'inherit',
+                    fontSize: '14px',
+                    lineHeight: 1.6,
+                    wordBreak: 'break-word',
+                    color: '#202124'
+                  }}
+                >
+                  {draft.body}
+                </Typography>
+              </Box>
+            )}
+          </>
+        ) : (
+          <>
+            <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+              {isSent ? 'Calendar Event' : 'Calendar Event Draft'}
+            </Typography>
+
+            {/* Title */}
+            <Box sx={{ mb: 1.5 }}>
+              <Typography variant="body2" sx={{ fontWeight: 500, color: '#5f6368', mb: 0.5 }}>
+                Title:
+              </Typography>
+              <Typography variant="body2" sx={{ color: draft.summary ? '#202124' : '#d32f2f' }}>
+                {draft.summary || 'Not specified'}
+              </Typography>
+            </Box>
+
+            {/* Time */}
+            <Box sx={{ mb: 1.5 }}>
+              <Typography variant="body2" sx={{ fontWeight: 500, color: '#5f6368', mb: 0.5 }}>
+                Time:
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#202124' }}>
+                {draft.start_time && draft.end_time ? (
+                  `${new Date(draft.start_time).toLocaleString()} - ${new Date(draft.end_time).toLocaleString()}`
+                ) : (
+                  <span style={{ color: '#d32f2f' }}>Not specified</span>
+                )}
+              </Typography>
+            </Box>
+
+            {/* Location */}
+            {draft.location && (
+              <Box sx={{ mb: 1.5 }}>
+                <Typography variant="body2" sx={{ fontWeight: 500, color: '#5f6368', mb: 0.5 }}>
+                  Location:
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#202124' }}>
+                  {draft.location}
+                </Typography>
+              </Box>
+            )}
+
+            {/* Attendees */}
+            {draft.attendees && draft.attendees.length > 0 && (
+              <Box sx={{ mb: 1.5 }}>
+                <Typography variant="body2" sx={{ fontWeight: 500, color: '#5f6368', mb: 0.5 }}>
+                  Attendees:
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#202124' }}>
+                  {formatRecipients(draft.attendees)}
+                </Typography>
+              </Box>
+            )}
+
+            {/* Description */}
+            {draft.description && (
+              <Box sx={{ mb: 1.5 }}>
+                <Typography variant="body2" sx={{ fontWeight: 500, color: '#5f6368', mb: 0.5 }}>
+                  Description:
+                </Typography>
+                <Typography
+                  variant="body2"
+                  component="pre"
+                  sx={{
+                    whiteSpace: 'pre-wrap',
+                    fontFamily: 'inherit',
+                    fontSize: '14px',
+                    lineHeight: 1.6,
+                    wordBreak: 'break-word',
+                    color: '#202124'
+                  }}
+                >
+                  {draft.description}
+                </Typography>
+              </Box>
+            )}
+          </>
+        )}
+      </Box>
+    );
+  };
+
   if (!open) return null;
 
   return (
@@ -218,7 +391,7 @@ const ResizableEmailSidebar = ({
 
       {/* Content */}
       <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', width: '100%', overflow: 'hidden' }}>
-        {/* Header with close button and email subject */}
+        {/* Header with close button and title */}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
           <Typography
             variant="h6"
@@ -231,14 +404,17 @@ const ResizableEmailSidebar = ({
               mr: 1
             }}
           >
-            {threadEmails?.[0]?.subject || email?.subject || 'Email'}
+            {contentType === 'draft'
+              ? (draft?.draft_type === 'email' ? 'Email Draft' : 'Event Draft')
+              : (threadEmails?.[0]?.subject || email?.subject || 'Email')
+            }
           </Typography>
           <IconButton onClick={onClose} size="small">
             <CloseIcon />
           </IconButton>
         </Box>
 
-        {/* Email Content Area */}
+        {/* Content Area */}
         <Box sx={{ flexGrow: 1, overflowY: 'auto', overflowX: 'hidden' }}>
           {loading && (
             <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
@@ -252,7 +428,11 @@ const ResizableEmailSidebar = ({
             </Alert>
           )}
 
-          {email && !loading && !error && (
+          {contentType === 'draft' && draft && !loading && !error && (
+            renderDraftContent()
+          )}
+
+          {contentType === 'email' && email && !loading && !error && (
             <Box>
               {/* Thread Emails */}
               {threadEmails && threadEmails.length > 0 ? (
