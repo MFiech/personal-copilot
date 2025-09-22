@@ -325,38 +325,100 @@ CONVERSATION CONTEXT (recent messages):
 
 USER QUERY: "{{user_query}}"
 
-CLASSIFICATION TASK:
-Analyze the user's query considering the conversation context. Classify the intent as one of:
+CRITICAL DISAMBIGUATION RULES:
+1. Questions about what exists/is planned = searching/viewing (not creating)
+2. Commands to add/create/schedule = creating new items
+3. "What do I have..." or "Do I have..." = always searching existing items
+4. Past participles about existing items ("planned", "scheduled", "received") = searching
+5. Consider the full query structure, not just individual keywords
 
-1. "email" - User wants to find, search, or work with emails/messages
-   Examples: "show me emails", "check my inbox", "emails from John", "unread messages"
+FEW-SHOT EXAMPLES:
 
-2. "calendar" - User wants to find, search, or work with calendar events/meetings
-   Examples: "what's on my calendar", "meetings today", "schedule for this week", "upcoming events"
+Example 1:
+Query: "What emails do I have from Sarah?"
+Intent: "email"
+Reasoning: Searching for existing email messages from a specific sender
 
-3. "contact" - User wants to find, search, or get information about contacts/people
-   Examples: "what's the email of John Doe", "contact info for Sarah", "find contact Dawid", "email address of Mike", "all emails of John" (meaning email addresses), "phone number of Sarah"
+Example 2:
+Query: "What do I have planned this week?"
+Intent: "calendar"
+Reasoning: Question about existing calendar events ("what do I have" + "planned")
 
-4. "general" - General questions, conversation, or non-email/calendar/contact requests
-   Examples: "how's the weather", "what is AI", "tell me a joke"
+Example 3:
+Query: "Show me unread emails from today"
+Intent: "email"
+Reasoning: Request to view existing emails with specific filters
 
-IMPORTANT CONTEXT RULES:
-- If previous messages were about emails/calendar/contacts and current query is vague ("and this week?", "show me more", "what about tomorrow?"), inherit that context
-- Time-related queries without explicit service ("today", "this week", "tomorrow") should prefer calendar if recent context suggests it
-- Follow-up questions typically maintain the same intent as previous queries
-- Queries asking for "email of [person]" or "emails of [person]" or "contact info" should be classified as "contact", not "email"
-- "Emails from [person]" or "messages from [person]" should be classified as "email" (searching for messages)
-- "Email addresses of [person]" or "all emails of [person]" should be classified as "contact" (contact information)
+Example 4:
+Query: "Do I have any meetings scheduled with John?"
+Intent: "calendar"
+Reasoning: Question about existing calendar events with specific attendee
+
+Example 5:
+Query: "What's Sarah's email address?"
+Intent: "contact"
+Reasoning: Requesting contact information (email address) for a person
+
+Example 6:
+Query: "Schedule a meeting with the team tomorrow at 3pm"
+Intent: "calendar"
+Reasoning: Command to create new calendar event (imperative "schedule")
+
+Example 7:
+Query: "Find emails about the project proposal"
+Intent: "email"
+Reasoning: Search request for emails with specific content
+
+Example 8:
+Query: "What meetings are planned for this afternoon?"
+Intent: "calendar"
+Reasoning: Question about existing events in specific time range
+
+Example 9:
+Query: "Show me emails I received yesterday"
+Intent: "email"
+Reasoning: Request to view emails from specific time period
+
+Example 10:
+Query: "What's on my calendar for next Monday?"
+Intent: "calendar"
+Reasoning: Question about existing events on specific date
+
+CLASSIFICATION CATEGORIES:
+
+1. "email" - User wants to find, search, view, or work with email messages
+   - Strong indicators: "emails from", "messages", "inbox", "unread", "received", "sent"
+   - Actions: searching, filtering, reading email content
+   - NOT: asking for someone's email address (that's "contact")
+
+2. "calendar" - User wants to find, view, create, or work with calendar events
+   - Strong indicators: "calendar", "meeting", "event", "schedule", "appointment"
+   - Search indicators: "what's planned", "what do I have", "scheduled", "upcoming"
+   - Create indicators: imperative verbs like "schedule", "add", "create", "book"
+
+3. "contact" - User wants contact information or details about people
+   - Strong indicators: "email address", "phone number", "contact info", "email of [person]"
+   - Actions: finding email addresses, phone numbers, or other contact details
+   - NOT: searching for emails from someone (that's "email")
+
+4. "general" - General questions or requests not related to email/calendar/contacts
+   - Examples: weather, definitions, calculations, general knowledge
+
+CONTEXT INHERITANCE RULES:
+- Vague follow-ups ("and tomorrow?", "what about next week?") inherit previous intent
+- Time references without service specification check recent context
+- "Show me more" or "anything else?" maintains previous intent
+- Pronouns ("those", "them", "it") refer to previously discussed items
 
 RESPONSE FORMAT (JSON only):
 {{
   "intent": "email" | "calendar" | "contact" | "general",
-  "confidence": 0.95,
-  "reasoning": "Brief explanation of classification decision",
+  "confidence": 0.00-1.00,
+  "reasoning": "Brief explanation based on indicators and context",
   "parameters": {{
-    "keywords": ["extracted", "keywords"],
-    "time_reference": "today|tomorrow|this week|etc",
-    "person_name": "extracted person name if relevant"
+    "keywords": ["relevant", "search", "terms"],
+    "time_reference": "today|tomorrow|this week|next week|etc",
+    "person_name": "extracted person name if mentioned"
   }}
 }}
 
@@ -374,7 +436,7 @@ Respond with ONLY the JSON object."""
     
     # 7. Calendar Intent Analysis Prompt
     print("\n7. Creating Calendar Intent Analysis prompt...")
-    calendar_intent_prompt = """You are an expert calendar assistant. Analyze the user's query to determine if they want to CREATE a new calendar event or SEARCH for existing events.
+    calendar_intent_prompt = """You are an expert calendar assistant. Analyze the user's query to determine if they want to CREATE a new calendar event or SEARCH/VIEW existing events.
 
 CURRENT CONTEXT:
 - Current date: {{current_date}} ({{current_weekday}})
@@ -385,58 +447,109 @@ CONVERSATION CONTEXT:
 
 USER QUERY: "{{user_query}}"
 
-TASK: Determine the operation type and extract parameters.
+CRITICAL CLASSIFICATION RULES:
+1. Questions about existing events are ALWAYS "search" operations
+2. Past participles like "planned", "scheduled", "booked" referring to existing items indicate "search"
+3. Future actions like "plan a meeting", "schedule for tomorrow" indicate "create"
+4. Queries starting with interrogatives (what, when, where, who, which) typically indicate "search"
+5. Commands or imperatives typically indicate "create"
+
+FEW-SHOT EXAMPLES:
+
+Example 1:
+Query: "What do I have planned this week?"
+Analysis: Question about existing events ("what do I have" + past participle "planned")
+Operation: "search"
+Parameters: {{"date_range": "this week"}}
+
+Example 2:
+Query: "Show me tomorrow's schedule"
+Analysis: Request to view existing events ("show me")
+Operation: "search"
+Parameters: {{"date_range": "tomorrow"}}
+
+Example 3:
+Query: "Schedule a meeting with John for Friday at 2pm"
+Analysis: Command to create new event ("schedule" as imperative verb)
+Operation: "create"
+Parameters: {{"title": "Meeting with John", "date": "2024-01-26", "start_time": "14:00", "end_time": "15:00"}}
+
+Example 4:
+Query: "What's on my calendar today?"
+Analysis: Question about existing events ("what's on")
+Operation: "search"
+Parameters: {{"date_range": "today"}}
+
+Example 5:
+Query: "I need to plan a team standup for tomorrow at 10am"
+Analysis: Statement expressing need to create new event ("need to plan" + future time)
+Operation: "create"
+Parameters: {{"title": "Team standup", "date": "{{tomorrow_date}}", "start_time": "10:00", "end_time": "10:30"}}
+
+Example 6:
+Query: "Do I have any meetings scheduled this afternoon?"
+Analysis: Question about existing events ("Do I have" + "scheduled" referring to existing)
+Operation: "search"
+Parameters: {{"date_range": "today", "time_range": "afternoon", "keywords": "meetings"}}
+
+Example 7:
+Query: "Add dentist appointment next Monday at 3:30pm"
+Analysis: Command to create new event ("add" imperative)
+Operation: "create"
+Parameters: {{"title": "Dentist appointment", "date": "2024-01-29", "start_time": "15:30", "end_time": "16:30"}}
+
+Example 8:
+Query: "What meetings do I have planned with Sarah?"
+Analysis: Question about existing events with specific person
+Operation: "search"
+Parameters: {{"keywords": "Sarah", "date_range": "this week"}}
 
 OPERATIONS:
 1. "create" - User wants to create/schedule/add a new calendar event
-   - Keywords: create, schedule, add, book, set up, plan, new, make
+   - Strong indicators: imperative verbs (schedule, add, create, book, set up, make, put)
+   - Context: "I need to...", "Please...", "Can you...", "Let's..."
    - Extract: title, date, time, location, description, attendees
 
-2. "search" - User wants to find/view existing calendar events  
-   - Keywords: show, find, what's, check, list, view, see
+2. "search" - User wants to find/view/check existing calendar events
+   - Strong indicators: question words (what, when, where, who, which, do I have)
+   - Phrases: "what's planned", "what do I have", "show me", "list", "view", "check", "find"
+   - Past participles referring to existing: "scheduled", "planned", "booked"
    - Extract: date_range, keywords, attendee_filter
 
 PARAMETER EXTRACTION RULES:
 For CREATE operations:
-- title: Event title/summary (required)
-- date: Event date in YYYY-MM-DD format (required) 
+- title: Event title/summary (required) - extract the main subject
+- date: Event date in YYYY-MM-DD format (required)
 - start_time: Start time in HH:MM format (required)
 - end_time: End time in HH:MM format (optional, default +1 hour)
 - location: Event location (optional)
 - description: Event description (optional)
-- attendees: List of email addresses (optional)
+- attendees: List of email addresses or names (optional)
 
 For SEARCH operations:
-- date_range: today/tomorrow/this week/next week/etc
-- keywords: Search terms for event content
-- time_range: morning/afternoon/evening
+- date_range: today/tomorrow/this week/next week/this month/specific date
+- keywords: Search terms from the query (event names, people, topics)
+- time_range: morning/afternoon/evening/night
+- attendee_filter: Names or emails of specific attendees to filter by
 
 DATE/TIME PARSING:
 - "Friday" = next Friday if today is not Friday, today if today is Friday
 - "tomorrow" = {{tomorrow_date}}
 - "today" = {{current_date}}
+- "this week" = current calendar week
+- "next week" = following calendar week
 - "5pm" = "17:00", "5:30pm" = "17:30"
 - "noon" = "12:00", "midnight" = "00:00"
+- Morning = 06:00-12:00, Afternoon = 12:00-18:00, Evening = 18:00-23:00
 - If no time specified for create, use "09:00" as default
 
 RESPONSE FORMAT (JSON only):
 {{
   "operation": "create" | "search",
-  "confidence": 0.95,
+  "confidence": 0.00-1.00,
+  "reasoning": "Brief explanation of classification",
   "parameters": {{
-    // For create:
-    "title": "Event title",
-    "date": "YYYY-MM-DD", 
-    "start_time": "HH:MM",
-    "end_time": "HH:MM",
-    "location": "location",
-    "description": "description",
-    "attendees": ["email1@domain.com"]
-    
-    // For search:
-    "date_range": "today|tomorrow|this week",
-    "keywords": "search terms",
-    "time_range": "morning|afternoon|evening"
+    // Include relevant parameters based on operation
   }}
 }}
 

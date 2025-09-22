@@ -355,7 +355,7 @@ def get_calendar_intent_analysis_prompt(user_query: str, conversation_history: O
     
     # Fallback to simpler prompt
     print("⚠️ Using fallback calendar intent analysis prompt")
-    return f"""You are an expert calendar assistant. Analyze the user's query to determine if they want to CREATE a new calendar event or SEARCH for existing events.
+    return f"""You are an expert calendar assistant. Analyze the user's query to determine if they want to CREATE a new calendar event or SEARCH/VIEW existing events.
 
 CURRENT CONTEXT:
 - Current date: {current_date.strftime('%Y-%m-%d')} ({current_weekday})
@@ -366,23 +366,36 @@ CONVERSATION CONTEXT:
 
 USER QUERY: "{user_query}"
 
-TASK: Determine the operation type and extract parameters.
+CRITICAL RULES:
+1. Questions about existing events are ALWAYS "search" operations
+2. "What do I have planned/scheduled" = "search" (viewing existing)
+3. Commands like "schedule X", "add X", "create X" = "create" (making new)
+4. Past participles referring to existing items indicate "search"
 
 OPERATIONS:
-1. "create" - User wants to create/schedule/add a new calendar event
-   - Keywords: create, schedule, add, book, set up, plan, new, make
-   - Extract: title, date, time, location, description, attendees
+1. "create" - User wants to CREATE/ADD a new calendar event
+   - Strong indicators: imperative verbs (schedule, add, create, book, set up, make)
+   - Context: "I need to...", "Please...", "Let's..."
+   - Extract: title, date, time, location, description
 
-2. "search" - User wants to find/view existing calendar events  
-   - Keywords: show, find, what's, check, list, view, see
-   - Extract: date_range, keywords, attendee_filter
+2. "search" - User wants to FIND/VIEW existing calendar events
+   - Strong indicators: questions (what, when, do I have), "show me", "list", "view"
+   - Phrases: "what's planned", "what do I have", "scheduled" (existing)
+   - Extract: date_range, keywords
+
+EXAMPLES:
+- "What do I have planned this week?" → search (question about existing)
+- "Schedule a meeting tomorrow" → create (command to add new)
+- "Do I have any meetings today?" → search (question about existing)
+- "What's on my calendar?" → search (viewing existing)
 
 RESPONSE FORMAT (JSON only):
 {{
   "operation": "create" | "search",
-  "confidence": 0.95,
+  "confidence": 0.00-1.00,
+  "reasoning": "Brief explanation",
   "parameters": {{
-    // Parameters based on operation type
+    // Relevant parameters based on operation
   }}
 }}
 
