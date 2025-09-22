@@ -32,7 +32,7 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogTitle from '@mui/material/DialogTitle';
 import ToolResults from './components/ToolResults';
-import EmailSidebar from './components/EmailSidebar';
+import ResizableEmailSidebar from './components/ResizableEmailSidebar';
 import DraftCard from './components/DraftCard';
 import './App.css';
 import { useSnackbar } from './components/SnackbarProvider';
@@ -247,6 +247,7 @@ function App() {
     loading: false,
     error: null
   });
+  const [sidebarWidth, setSidebarWidth] = useState(0);
 
   // Anchor state - thread-level
   const [anchoredItem, setAnchoredItem] = useState(null);
@@ -1261,9 +1262,29 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Box sx={{ display: 'flex', height: '100vh', backgroundColor: theme.palette.background.default }}>
-        {/* Sidebar */}
-        <Drawer
+      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: theme.palette.background.default }}>
+        {/* Full-width Header for Toggle and Title - only show when there are messages */}
+        {messages.length > 0 && (
+          <Box sx={{
+            p: 2,
+            display: 'flex',
+            alignItems: 'center',
+            borderBottom: `1px solid ${theme.palette.divider}`,
+            backgroundColor: 'white',
+            zIndex: 1100,
+            marginLeft: (!isMobile && drawerOpen) ? (sidebarCollapsed ? `${drawerWidthCollapsed}px` : `${drawerWidth}px`) : 0,
+            transition: 'margin-left 0.2s ease'
+          }}>
+            <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+              {currentThreadTitle}
+            </Typography>
+          </Box>
+        )}
+
+        {/* Main content area with sidebar */}
+        <Box sx={{ display: 'flex', flexGrow: 1, overflow: 'hidden' }}>
+          {/* Left Sidebar */}
+          <Drawer
           variant={isMobile ? 'temporary' : 'persistent'}
           open={drawerOpen}
           onClose={() => setDrawerOpen(false)}
@@ -1516,27 +1537,20 @@ function App() {
           </Box>
         </Drawer>
 
-        {/* Main content */}
-        <Box 
-          component="main"
-          sx={{ 
-            flexGrow: 1, // This will now correctly expand to fill available space
-            display: 'flex', 
-            flexDirection: 'column', 
-            height: '100vh',
-            overflow: 'hidden', // For internal content scroll, not page scroll
-            position: 'relative', // For overlay positioning
-          }}
-        >
-          {/* Header for Toggle and Title - only show when there are messages */}
-          {messages.length > 0 && (
-            <Box sx={{ p: 2, display: 'flex', alignItems: 'center', borderBottom: `1px solid ${theme.palette.divider}` }}>
-              <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-                {currentThreadTitle}
-              </Typography>
-               {/* Placeholder for other header items like Upgrade button if they move here */}
-            </Box>
-          )}
+          {/* Main content */}
+          <Box
+            component="main"
+            sx={{
+              flexGrow: 1, // This will now correctly expand to fill available space
+              display: 'flex',
+              flexDirection: 'column',
+              height: '100%',
+              overflow: 'hidden', // For internal content scroll, not page scroll
+              position: 'relative', // For overlay positioning
+              transition: 'margin-right 0.2s ease', // Smooth transition when sidebar opens/closes
+              marginRight: `${sidebarWidth}px`, // Dynamically adjust for sidebar width
+            }}
+          >
 
 
 
@@ -1949,18 +1963,20 @@ function App() {
               onAttachmentClick={handleAttachmentClick}
             />
           )}
-        </Box>
+          </Box>
 
-        {/* Email Sidebar */}
-        <EmailSidebar
-          open={emailSidebar.open}
-          email={emailSidebar.email}
-          threadEmails={emailSidebar.threadEmails}
-          gmailThreadId={emailSidebar.gmailThreadId}
-          loading={emailSidebar.loading}
-          error={emailSidebar.error}
-          onClose={handleCloseEmailSidebar}
-        />
+          {/* Resizable Email Sidebar */}
+          <ResizableEmailSidebar
+            open={emailSidebar.open}
+            email={emailSidebar.email}
+            threadEmails={emailSidebar.threadEmails}
+            gmailThreadId={emailSidebar.gmailThreadId}
+            loading={emailSidebar.loading}
+            error={emailSidebar.error}
+            onClose={handleCloseEmailSidebar}
+            onWidthChange={setSidebarWidth}
+          />
+        </Box>
 
         <DeleteConfirmationDialog />
         
