@@ -171,3 +171,15 @@ cython_debug/
 .pypirc
 
 data/
+
+# Rulebook-AI generated artifacts (can be regenerated)
+.cursor/rules/
+.github/copilot-instructions.md
+WARP.md
+CLAUDE.md
+GEMINI.md
+WINDSURF.md
+CLINE.md
+ROOCODE.md
+KILOCODE.md
+CODEX.md
