@@ -495,6 +495,114 @@ class ComposioService:
             print(f"[DEBUG] Gmail request failed: {error_msg}")
             return {"error": error_msg}
 
+    def get_recent_emails_with_thread_expansion(self, count=10, query=None, page_token=None, **kwargs):
+        """
+        Enhanced version that automatically expands threads for search results.
+        Gets initial search results, then fetches complete thread context for all found threads.
+        """
+        print(f"[DEBUG] Starting thread expansion for query: {query}")
+
+        # 1. Get initial search results (existing logic)
+        initial_results = self.get_recent_emails(count, query, page_token, **kwargs)
+
+        if not initial_results or initial_results.get("error") or not initial_results.get("data", {}).get("messages"):
+            print(f"[DEBUG] No initial results or error, returning as-is")
+            return initial_results
+
+        initial_messages = initial_results["data"]["messages"]
+        print(f"[DEBUG] Got {len(initial_messages)} initial messages")
+
+        # 2. Extract unique thread IDs from search results
+        thread_ids = set()
+        for message in initial_messages:
+            thread_id = message.get("threadId")
+            if thread_id:
+                thread_ids.add(thread_id)
+                print(f"[DEBUG] Found thread ID: {thread_id}")
+
+        print(f"[DEBUG] Found {len(thread_ids)} unique threads to expand")
+
+        if not thread_ids:
+            print(f"[DEBUG] No thread IDs found, returning initial results")
+            return initial_results
+
+        # 3. For each thread, get ALL messages (metadata only, no content)
+        all_messages = []
+        expanded_threads_count = 0
+
+        for thread_id in thread_ids:
+            print(f"[DEBUG] Expanding thread: {thread_id}")
+            thread_messages = self._get_thread_messages_metadata(thread_id)
+            if thread_messages:
+                all_messages.extend(thread_messages)
+                expanded_threads_count += 1
+                print(f"[DEBUG] Added {len(thread_messages)} messages from thread {thread_id}")
+
+        # 4. Deduplicate messages by messageId
+        unique_messages = self._deduplicate_messages(all_messages)
+        print(f"[DEBUG] After deduplication: {len(unique_messages)} unique messages")
+
+        # 5. Update the response structure
+        enhanced_result = {
+            "data": {"messages": unique_messages},
+            "thread_expanded": True,
+            "original_count": len(initial_messages),
+            "expanded_count": len(unique_messages),
+            "threads_expanded": expanded_threads_count,
+            "next_page_token": initial_results.get("next_page_token"),
+            "total_estimate": initial_results.get("total_estimate"),
+            "has_more": initial_results.get("has_more")
+        }
+
+        print(f"[DEBUG] Thread expansion complete: {len(initial_messages)} → {len(unique_messages)} messages")
+        return enhanced_result
+
+    def _get_thread_messages_metadata(self, thread_id):
+        """
+        Get all messages in thread - METADATA ONLY (no content).
+        Uses GMAIL_FETCH_MESSAGE_BY_THREAD_ID with minimal format.
+        """
+        print(f"[DEBUG] Fetching metadata for thread: {thread_id}")
+
+        try:
+            response = self._execute_action(
+                action=Action.GMAIL_FETCH_MESSAGE_BY_THREAD_ID,
+                params={
+                    "thread_id": thread_id,
+                    "user_id": "me"
+                }
+            )
+
+            if response.get("successful"):
+                data = response.get("data", {})
+                messages = data.get("messages", [])
+                print(f"[DEBUG] Successfully fetched {len(messages)} messages from thread {thread_id}")
+                return messages
+            else:
+                print(f"[DEBUG] Failed to fetch thread {thread_id}: {response.get('error', 'Unknown error')}")
+                return []
+
+        except Exception as e:
+            print(f"[ERROR] Exception fetching thread {thread_id}: {e}")
+            return []
+
+    def _deduplicate_messages(self, messages):
+        """
+        Remove duplicate messages based on messageId.
+        Keeps the most complete version of each message.
+        """
+        seen_ids = set()
+        unique_messages = []
+
+        for message in messages:
+            message_id = message.get("messageId") or message.get("id")
+            if message_id and message_id not in seen_ids:
+                seen_ids.add(message_id)
+                unique_messages.append(message)
+
+        print(f"[DEBUG] Deduplication: {len(messages)} → {len(unique_messages)} messages")
+        return unique_messages
+
     def get_recent_emails_with_gmail_tokens(self, count=10, query=None, page_token=None, **kwargs):
         """
         Test version using pure Gmail pageToken approach.
@@ -1967,7 +2075,7 @@ class ComposioService:
             # Use LLM to build intelligent Gmail query
             search_query = self.build_gmail_query_with_llm(query, thread_history)
             print(f"[DEBUG] Using Gmail query: '{search_query}'")
-            response = self.get_recent_emails(query=search_query)
+            response = self.get_recent_emails_with_thread_expansion(query=search_query)
             
             # Store the actual Gmail query used for pagination (not the original user query)
             print(f"[DEBUG-COMPOSIO] 🔍 About to store Gmail query for pagination:")

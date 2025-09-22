@@ -2386,9 +2386,15 @@ def load_more_emails():
             print(f"[DEBUG] Including original Gmail query in pagination: {original_query}")
         
         print(f"[DEBUG] Calling Composio with params (including query): {fetch_params_for_composio}")
-        tooling_response = tooling_service.get_recent_emails(**fetch_params_for_composio)
+        tooling_response = tooling_service.get_recent_emails_with_thread_expansion(**fetch_params_for_composio)
 
-        print(f"[DEBUG] Composio response for /load_more_emails: {json.dumps(tooling_response)[:500]}")
+        # Debug logging with safe JSON serialization (handles MagicMock in tests)
+        try:
+            print(f"[DEBUG] Composio response for /load_more_emails: {json.dumps(tooling_response)[:500]}")
+        except TypeError as e:
+            # Handle MagicMock objects in tests that aren't JSON serializable
+            print(f"[DEBUG] Composio response for /load_more_emails (non-JSON): {str(tooling_response)[:500]}")
+            print(f"[DEBUG] JSON serialization skipped due to: {str(e)}")
         if "error" in tooling_response or not tooling_response.get("data"):
             error_msg = tooling_response.get('error') or "No data returned from Composio"
             print(f"[ERROR] Composio error: {error_msg}")
