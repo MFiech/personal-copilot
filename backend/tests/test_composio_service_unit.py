@@ -277,6 +277,142 @@ class TestFixtureValidation:
         assert decoded == content
 
 
+class TestComposioServiceThreadExpansion:
+    """Unit tests for email thread expansion functionality"""
+    
+    @pytest.fixture
+    def service(self):
+        """Create ComposioService instance with mocked client initialization"""
+        with patch('services.composio_service.Composio') as mock_composio:
+            mock_composio.return_value = Mock()
+            service = ComposioService("test_api_key")
+            service.client_available = True
+            return service
+    
+    @patch('services.composio_service.ComposioService._execute_action')
+    def test_get_recent_emails_with_thread_expansion_basic(self, mock_execute, service):
+        """Test that thread expansion fetches all messages from discovered threads"""
+        
+        # Mock initial search response (2 messages from different threads)
+        initial_response = {
+            "successful": True,
+            "data": {
+                "messages": [
+                    {"messageId": "msg1", "threadId": "thread_123"},
+                    {"messageId": "msg2", "threadId": "thread_456"}
+                ]
+            }
+        }
+        
+        # Mock thread expansion responses
+        thread_123_response = {
+            "successful": True,
+            "data": {
+                "messages": [
+                    {"messageId": "msg1", "threadId": "thread_123"},
+                    {"messageId": "msg1_old", "threadId": "thread_123"}  # Older message
+                ]
+            }
+        }
+        
+        thread_456_response = {
+            "successful": True,
+            "data": {
+                "messages": [
+                    {"messageId": "msg2", "threadId": "thread_456"},
+                    {"messageId": "msg2_old", "threadId": "thread_456"}  # Older message
+                ]
+            }
+        }
+        
+        # Setup sequential mock responses
+        mock_execute.side_effect = [initial_response, thread_123_response, thread_456_response]
+        
+        result = service.get_recent_emails_with_thread_expansion(query="today")
+        
+        # Assertions
+        assert result["thread_expanded"] is True
+        assert result["original_count"] == 2
+        assert result["expanded_count"] == 4  # 2 original + 2 older messages
+        assert result["threads_expanded"] == 2
+        assert len(result["data"]["messages"]) == 4
+    
+    @patch('services.composio_service.ComposioService._execute_action')
+    def test_thread_expansion_deduplication(self, mock_execute, service):
+        """Test that duplicate messages are properly removed during thread expansion"""
+        
+        # Initial response with 1 message
+        initial_response = {
+            "successful": True,
+            "data": {
+                "messages": [{"messageId": "msg1", "threadId": "thread_123"}]
+            }
+        }
+        
+        # Thread response includes the same message (duplicate) + new one
+        thread_response = {
+            "successful": True,
+            "data": {
+                "messages": [
+                    {"messageId": "msg1", "threadId": "thread_123"},  # Duplicate
+                    {"messageId": "msg1_old", "threadId": "thread_123"}  # New
+                ]
+            }
+        }
+        
+        mock_execute.side_effect = [initial_response, thread_response]
+        
+        result = service.get_recent_emails_with_thread_expansion(query="today")
+        
+        # Should deduplicate msg1
+        assert len(result["data"]["messages"]) == 2  # Not 3
+        message_ids = [msg["messageId"] for msg in result["data"]["messages"]]
+        assert "msg1" in message_ids
+        assert "msg1_old" in message_ids
+        assert message_ids.count("msg1") == 1  # No duplicates
+    
+    @patch('services.composio_service.ComposioService._execute_action')
+    def test_thread_expansion_handles_thread_fetch_errors(self, mock_execute, service):
+        """Test graceful handling when individual thread fetches fail"""
+        
+        # Initial response with 2 threads
+        initial_response = {
+            "successful": True,
+            "data": {
+                "messages": [
+                    {"messageId": "msg1", "threadId": "thread_good"},
+                    {"messageId": "msg2", "threadId": "thread_bad"}
+                ]
+            }
+        }
+        
+        # First thread succeeds
+        good_thread_response = {
+            "successful": True,
+            "data": {
+                "messages": [
+                    {"messageId": "msg1", "threadId": "thread_good"},
+                    {"messageId": "msg1_old", "threadId": "thread_good"}
+                ]
+            }
+        }
+        
+        # Second thread fails
+        bad_thread_response = {
+            "successful": False,
+            "error": "Thread not found"
+        }
+        
+        mock_execute.side_effect = [initial_response, good_thread_response, bad_thread_response]
+        
+        result = service.get_recent_emails_with_thread_expansion(query="today")
+        
+        # Should still return results from successful thread + original messages
+        assert result["thread_expanded"] is True
+        assert result["threads_expanded"] == 1  # Only 1 thread expanded successfully
+        assert len(result["data"]["messages"]) >= 2  # At least original messages remain
+
+
 # Prevent real API calls during testing
 @pytest.fixture(autouse=True)
 def prevent_real_composio_calls():
