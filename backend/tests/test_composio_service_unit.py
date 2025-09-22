@@ -25,6 +25,8 @@ from tests.fixtures.composio_responses import (
     GMAIL_FETCH_MESSAGE_NOT_FOUND,
     GMAIL_SEARCH_EMAILS_SUCCESS,
     GMAIL_THREAD_SUCCESS,
+    GMAIL_MOVE_TO_TRASH_SUCCESS,
+    GMAIL_MOVE_TO_TRASH_FAILURE,
     CALENDAR_EVENTS_SUCCESS,
     CALENDAR_CREATE_EVENT_SUCCESS,
     CALENDAR_DELETE_EVENT_SUCCESS,
@@ -124,6 +126,62 @@ class TestComposioServiceEmailMethods:
         # Should fall back to messageText or snippet
         assert result is not None
         assert "simple test email" in result
+    
+    @patch('services.composio_service.ComposioService._execute_action')
+    def test_delete_email_success(self, mock_execute, service):
+        """Test successful email deletion (move to trash)"""
+        mock_execute.return_value = GMAIL_MOVE_TO_TRASH_SUCCESS
+        
+        result = service.delete_email("19971444a7ca648b")
+        
+        assert result is True
+        mock_execute.assert_called_once_with(
+            action=Action.GMAIL_MOVE_TO_TRASH,
+            params={"message_id": "19971444a7ca648b"}
+        )
+    
+    @patch('services.composio_service.ComposioService._execute_action')
+    def test_delete_email_correct_action_called(self, mock_execute, service):
+        """Test that correct Gmail action is used for deletion"""
+        mock_execute.return_value = GMAIL_MOVE_TO_TRASH_SUCCESS
+        
+        service.delete_email("test_message_id")
+        
+        # Verify GMAIL_MOVE_TO_TRASH is called, not any permanent delete action
+        mock_execute.assert_called_once()
+        call_args = mock_execute.call_args
+        assert call_args[1]["action"] == Action.GMAIL_MOVE_TO_TRASH
+        assert call_args[1]["params"]["message_id"] == "test_message_id"
+    
+    @patch('services.composio_service.ComposioService._execute_action')
+    def test_delete_email_no_permanent_delete(self, mock_execute, service):
+        """Test that delete_email never uses permanent delete actions"""
+        mock_execute.return_value = GMAIL_MOVE_TO_TRASH_SUCCESS
+        
+        # Call with various parameters - should always use trash
+        service.delete_email("msg1")
+        service.delete_email("msg2", some_param="value")  # Test **kwargs
+        
+        # Both calls should use GMAIL_MOVE_TO_TRASH
+        assert mock_execute.call_count == 2
+        for call in mock_execute.call_args_list:
+            assert call[1]["action"] == Action.GMAIL_MOVE_TO_TRASH
+            # Ensure no permanent delete actions are used
+            assert "PERMANENTLY" not in str(call[1]["action"])
+            assert "DELETE_EMAIL" not in str(call[1]["action"]) or "TRASH" in str(call[1]["action"])
+    
+    @patch('services.composio_service.ComposioService._execute_action')
+    def test_delete_email_failure(self, mock_execute, service):
+        """Test handling of failed email deletion"""
+        mock_execute.return_value = GMAIL_MOVE_TO_TRASH_FAILURE
+        
+        result = service.delete_email("nonexistent_message")
+        
+        assert result is False
+        mock_execute.assert_called_once_with(
+            action=Action.GMAIL_MOVE_TO_TRASH,
+            params={"message_id": "nonexistent_message"}
+        )
 
 
 class TestComposioServiceCalendarMethods:

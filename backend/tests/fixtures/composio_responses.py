@@ -260,6 +260,23 @@ CALENDAR_CREATE_EVENT_SUCCESS = {
     "logId": "log_create123"
 }
 
+GMAIL_MOVE_TO_TRASH_SUCCESS = {
+    "successful": True,
+    "data": {
+        "message": "Message moved to trash successfully",
+        "messageId": "19971444a7ca648b"
+    },
+    "error": None,
+    "logId": "log_gmail_trash123"
+}
+
+GMAIL_MOVE_TO_TRASH_FAILURE = {
+    "successful": False,
+    "error": "Message not found or already deleted",
+    "data": None,
+    "logId": "log_gmail_trash_fail123"
+}
+
 CALENDAR_DELETE_EVENT_SUCCESS = {
     "successful": True,
     "data": {

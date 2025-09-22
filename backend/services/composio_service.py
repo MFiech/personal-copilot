@@ -981,13 +981,16 @@ class ComposioService:
             print(f"[DEBUG] get_full_gmail_thread - Action not successful: {response.get('error', 'Unknown error')}")
             return None
 
-    def delete_email(self, message_id, permanently=False, **kwargs):
-        action = Action.GMAIL_DELETE_EMAIL_PERMANENTLY if permanently else Action.GMAIL_TRASH_EMAIL
+    def delete_email(self, message_id, **kwargs):
+        """Delete email by moving it to trash (never permanently delete)"""
+        print(f"[DEBUG] Moving email {message_id} to trash")
         response = self._execute_action(
-            action=action,
+            action=Action.GMAIL_MOVE_TO_TRASH,
             params={"message_id": message_id}
         )
-        return response.get("successful", False)
+        success = response.get("successful", False)
+        print(f"[DEBUG] Trash email result: {success}")
+        return success
 
     def send_email(self, to_emails, subject, body, cc_emails=None, bcc_emails=None, attachments=None):
         """

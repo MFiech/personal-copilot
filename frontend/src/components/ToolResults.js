@@ -207,13 +207,92 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
   // Note: handleEmailDeleted function removed as it's not currently used
   // but kept for potential future implementation
 
-  const handleBulkDeleteEmails = () => {
-    const updatedEmails = emails.filter(email => 
-      !selectedEmails.includes(email.email_id || email._id)
+  const handleBulkDeleteEmails = async () => {
+    const selectedEmailData = emails.filter(email => 
+      selectedEmails.includes(email.email_id || email._id)
     );
-    setSelectedEmails([]);
-    if (onUpdate) {
-      onUpdate(messageId, { ...results, emails: updatedEmails });
+    
+    if (selectedEmailData.length === 0) {
+      if (showSnackbar) {
+        showSnackbar('No emails selected for deletion', 'warning');
+      }
+      return;
+    }
+    
+    try {
+      if (showSnackbar) {
+        showSnackbar(`Moving ${selectedEmailData.length} emails to trash...`, 'info');
+      }
+      
+      // Prepare items for bulk delete API
+      const itemsToDelete = selectedEmailData.map(email => ({
+        item_id: email.email_id || email._id,
+        item_type: 'email'
+      }));
+      
+      console.log('Bulk deleting emails:', itemsToDelete);
+      
+      // Use the bulk delete endpoint for better performance
+      const response = await fetch('http://localhost:5001/bulk_delete_items', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message_id: messageId,
+          thread_id: threadId,
+          items: itemsToDelete
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        // Count successful deletions
+        const successfulDeletions = result.results ? result.results.filter(r => r.deleted).length : 0;
+        const failedDeletions = result.results ? result.results.filter(r => !r.deleted).length : 0;
+        
+        // Update UI by removing successfully deleted emails
+        if (successfulDeletions > 0) {
+          const successfullyDeletedIds = result.results
+            ? result.results.filter(r => r.deleted).map(r => r.item_id)
+            : selectedEmails; // Fallback: assume all were successful if no detailed results
+          
+          const updatedEmails = emails.filter(email => {
+            const emailId = email.email_id || email._id;
+            return !successfullyDeletedIds.includes(emailId);
+          });
+          
+          if (onUpdate) {
+            onUpdate(messageId, { ...results, emails: updatedEmails });
+          }
+        }
+        
+        // Clear selection
+        setSelectedEmails([]);
+        
+        // Show result feedback
+        if (showSnackbar) {
+          if (failedDeletions === 0) {
+            showSnackbar(`Successfully moved ${successfulDeletions} emails to trash`, 'success');
+          } else if (successfulDeletions === 0) {
+            showSnackbar(`Failed to delete ${failedDeletions} emails`, 'error');
+          } else {
+            showSnackbar(`Moved ${successfulDeletions} emails to trash, failed to delete ${failedDeletions}`, 'warning');
+          }
+        }
+      } else {
+        console.error('Bulk delete failed:', result.error);
+        if (showSnackbar) {
+          showSnackbar(`Failed to delete emails: ${result.error}`, 'error');
+        }
+      }
+      
+    } catch (error) {
+      console.error('Error in bulk email deletion:', error);
+      if (showSnackbar) {
+        showSnackbar('Error during bulk email deletion', 'error');
+      }
     }
   };
 
@@ -273,6 +352,49 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
       await summarizeSingleEmail(emailId);
     } catch (error) {
       // Error handling is done in summarizeSingleEmail
+    }
+  };
+
+  const handleSingleEmailDelete = async (emailId) => {
+    try {
+      console.log('Deleting single email:', emailId);
+      
+      const response = await fetch('http://localhost:5001/delete_email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email_id: emailId,
+          thread_id: threadId,
+          message_id: messageId
+        })
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        if (showSnackbar) {
+          showSnackbar('Email moved to trash successfully', 'success');
+        }
+        // Remove the email from the UI by updating the results
+        const updatedEmails = emails.filter(email => 
+          (email.email_id || email._id) !== emailId
+        );
+        if (onUpdate) {
+          onUpdate(messageId, { ...results, emails: updatedEmails });
+        }
+      } else {
+        console.error('Failed to delete email:', result.error);
+        if (showSnackbar) {
+          showSnackbar(`Failed to delete email: ${result.error}`, 'error');
+        }
+      }
+    } catch (error) {
+      console.error('Error deleting email:', error);
+      if (showSnackbar) {
+        showSnackbar('Error deleting email', 'error');
+      }
     }
   };
 
@@ -408,7 +530,7 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
                       {selectedEmails.some(emailId => summarizingEmails.has(emailId)) ? 'SUMMARIZING...' : 'SUMMARIZE'}
                     </button>
                     <button onClick={handleBulkDeleteEmails} className="action-text-btn delete-text-btn">
-                      DELETE
+                      MOVE TO TRASH ({selectedEmails.length})
                     </button>
                   </>
                 )}
@@ -547,10 +669,9 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
                                 className="hover-icon-btn delete-hover-btn"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  console.log('Delete single email:', emailId);
-                                  // TODO: Implement single email delete
+                                  handleSingleEmailDelete(emailId);
                                 }}
-                                title="Delete"
+                                title="Move to trash"
                               >
                                 <DeleteOutlinedIcon />
                               </button>
