@@ -1574,16 +1574,24 @@ def chat():
                     "status": "updated",
                     "updates": updates,
                     "update_category": update_category,
-                    "message": message
+                    "message": message,
+                    "draft_data": convert_objectid_to_str(draft_created.to_dict())
                 }
+                # Flag for frontend to auto-anchor this updated draft
+                response_data["auto_anchor_draft"] = True
+                print(f"[DRAFT] Added updated draft data to response for auto-anchoring: {draft_created.draft_id}")
             else:
-                # Draft was created
+                # Draft was created - include full draft data for immediate anchoring
                 response_data["draft_created"] = {
                     "draft_id": draft_created.draft_id,
                     "draft_type": draft_created.draft_type,
                     "user_message_id": user_message.message_id,
-                    "status": "created"
+                    "status": "created",
+                    "draft_data": convert_objectid_to_str(draft_created.to_dict())
                 }
+                # Flag for frontend to auto-anchor this draft
+                response_data["auto_anchor_draft"] = True
+                print(f"[DRAFT] Added draft data to response for auto-anchoring: {draft_created.draft_id}")
         
         # If we have email results, add them in the proper tile format for the frontend
         if raw_email_list is not None:

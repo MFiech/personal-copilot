@@ -577,9 +577,38 @@ function App() {
         refreshAllDraftCards();
       }, 500);
       
-      // Check if a draft was created and display it immediately
-      if (data.draft_created) {
-        console.log('[App.js] Draft created detected:', data.draft_created);
+      // Handle draft creation with immediate anchoring
+      if (data.draft_created && data.auto_anchor_draft) {
+        console.log('[App.js] Draft created with auto-anchor flag:', data.draft_created);
+        
+        // Immediately anchor the created draft
+        const anchorData = {
+          id: data.draft_created.draft_id,
+          type: 'draft',
+          data: data.draft_created.draft_data
+        };
+        handleAnchorChange(anchorData);
+        fetchDraftValidation(data.draft_created.draft_id);
+        console.log('[App.js] Auto-anchored created draft:', data.draft_created.draft_id);
+        
+        // Also display the draft card
+        setTimeout(() => {
+          checkForDraftInMessage(data.draft_created.user_message_id, true);
+        }, 100); // Small delay to ensure database update
+      } else if (data.draft_updated && data.auto_anchor_draft) {
+        console.log('[App.js] Draft updated with auto-anchor flag:', data.draft_updated);
+        
+        // Immediately anchor the updated draft
+        const anchorData = {
+          id: data.draft_updated.draft_id,
+          type: 'draft',
+          data: data.draft_updated.draft_data
+        };
+        handleAnchorChange(anchorData);
+        fetchDraftValidation(data.draft_updated.draft_id);
+        console.log('[App.js] Auto-anchored updated draft:', data.draft_updated.draft_id);
+      } else if (data.draft_created) {
+        console.log('[App.js] Draft created (no auto-anchor):', data.draft_created);
         
         // Immediately check for and display the draft
         setTimeout(() => {
