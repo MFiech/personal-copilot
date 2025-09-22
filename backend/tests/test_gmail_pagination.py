@@ -215,8 +215,8 @@ class TestLoadMoreEmailsEndpoint:
     @patch('app.tooling_service')
     def test_load_more_uses_processed_gmail_query(self, mock_tooling_service, app_client, mock_conversation_with_pagination):
         """Test that /load_more_emails uses processed Gmail query, not natural language query"""
-        # Setup - Mock the tooling service response
-        mock_tooling_service.get_recent_emails.return_value = {
+        # Setup - Mock the tooling service response for the correct method
+        mock_tooling_service.get_recent_emails_with_thread_expansion.return_value = {
             "data": {
                 "messages": [
                     {
@@ -242,8 +242,8 @@ class TestLoadMoreEmailsEndpoint:
         assert response.status_code == 200
         
         # Verify that tooling service was called with processed Gmail query (not natural language)
-        mock_tooling_service.get_recent_emails.assert_called_once()
-        call_args = mock_tooling_service.get_recent_emails.call_args[1]
+        mock_tooling_service.get_recent_emails_with_thread_expansion.assert_called_once()
+        call_args = mock_tooling_service.get_recent_emails_with_thread_expansion.call_args[1]
         
         # This is the critical test - should use processed Gmail query with date filters
         assert call_args['query'] == 'after:2025/09/13 before:2025/09/17'
@@ -281,7 +281,7 @@ class TestLoadMoreEmailsEndpoint:
     def test_load_more_with_natural_language_fallback(self, mock_tooling_service, app_client, mock_conversation_with_natural_language_fallback):
         """Test that /load_more_emails handles natural language query fallback gracefully"""
         # Setup
-        mock_tooling_service.get_recent_emails.return_value = {
+        mock_tooling_service.get_recent_emails_with_thread_expansion.return_value = {
             "data": {"messages": []},
             "next_page_token": None,
             "total_estimate": 15
@@ -297,8 +297,8 @@ class TestLoadMoreEmailsEndpoint:
         assert response.status_code == 200
         
         # Verify it uses the stored query (even if it's natural language)
-        mock_tooling_service.get_recent_emails.assert_called_once()
-        call_args = mock_tooling_service.get_recent_emails.call_args[1]
+        mock_tooling_service.get_recent_emails_with_thread_expansion.assert_called_once()
+        call_args = mock_tooling_service.get_recent_emails_with_thread_expansion.call_args[1]
         assert call_args['query'] == 'show my emails from/to @kiwi.com'
         assert call_args['page_token'] == 'kiwi_page_token_123'
 
@@ -330,7 +330,7 @@ class TestLoadMoreEmailsEndpoint:
         assert 'Pagination parameters missing' in response_data['message']
         
         # Verify tooling service was not called
-        mock_tooling_service.get_recent_emails.assert_not_called()
+        mock_tooling_service.get_recent_emails_with_thread_expansion.assert_not_called()
 
 
 @pytest.mark.optimized
