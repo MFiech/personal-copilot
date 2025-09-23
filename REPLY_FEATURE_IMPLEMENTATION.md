@@ -28,20 +28,20 @@ Implement email reply functionality using Composio's `GMAIL_REPLY_TO_THREAD` act
 ## Phase 2: Backend - Reply Detection & Execution
 
 ### Tasks:
-- [ ] **2.1** Add reply method to Composio Service (`backend/services/composio_service.py`):
-  - [ ] Create `reply_to_thread()` method using `GMAIL_REPLY_TO_THREAD` action
-  - [ ] Handle parameters: thread_id, recipient_email, message_body, cc, bcc, extra_recipients
+- [x] **2.1** Add reply method to Composio Service (`backend/services/composio_service.py`):
+  - [x] Create `reply_to_thread()` method using `GMAIL_REPLY_TO_THREAD` action
+  - [x] Handle parameters: thread_id, recipient_email, message_body, cc, bcc, extra_recipients
 
-- [ ] **2.2** Update Draft Send Endpoint (`backend/app.py` - `/drafts/<draft_id>/send`):
-  - [ ] Check if draft has `gmail_thread_id`
-  - [ ] If yes → call `reply_to_thread()`
-  - [ ] If no → use existing `send_email()` (current behavior)
+- [x] **2.2** Update Draft Send Endpoint (`backend/app.py` - `/drafts/<draft_id>/send`):
+  - [x] Check if draft has `gmail_thread_id`
+  - [x] If yes → call `reply_to_thread()`
+  - [x] If no → use existing `send_email()` (current behavior)
 
-- [ ] **2.3** Modify Draft Creation Logic (`backend/app.py` - chat endpoint):
-  - [ ] Check if `anchored_item` exists and type is 'email'
-  - [ ] Extract `gmail_thread_id` from anchored email
-  - [ ] Pass email thread context to LLM for reply generation
-  - [ ] Auto-populate recipients (To: original sender, CC: original recipients)
+- [x] **2.3** Modify Draft Creation Logic (`backend/app.py` - chat endpoint):
+  - [x] Check if `anchored_item` exists and type is 'email'
+  - [x] Extract `gmail_thread_id` from anchored email
+  - [x] Pass email thread context to LLM for reply generation
+  - [x] Auto-populate recipients (To: original sender, CC: original recipients)
 
 ---
 

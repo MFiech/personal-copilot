@@ -651,6 +651,23 @@ class DraftService:
                 if "body" in extracted_info and extracted_info["body"]:
                     initial_data["body"] = extracted_info["body"]
                     print(f"[DraftService] Added body: {extracted_info['body'][:100]}...")
+
+                # Handle reply-specific fields
+                if "gmail_thread_id" in extracted_info:
+                    initial_data["gmail_thread_id"] = extracted_info["gmail_thread_id"]
+                    print(f"[DraftService] Added gmail_thread_id: {extracted_info['gmail_thread_id']}")
+
+                if "reply_to_email_id" in extracted_info:
+                    initial_data["reply_to_email_id"] = extracted_info["reply_to_email_id"]
+                    print(f"[DraftService] Added reply_to_email_id: {extracted_info['reply_to_email_id']}")
+
+                if "cc_emails" in extracted_info:
+                    initial_data["cc_emails"] = extracted_info["cc_emails"]
+                    print(f"[DraftService] Added cc_emails: {extracted_info['cc_emails']}")
+
+                if "bcc_emails" in extracted_info:
+                    initial_data["bcc_emails"] = extracted_info["bcc_emails"]
+                    print(f"[DraftService] Added bcc_emails: {extracted_info['bcc_emails']}")
             
             elif draft_type == "calendar_event":
                 print(f"[DraftService] Processing calendar event fields...")

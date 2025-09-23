@@ -1093,6 +1093,98 @@ class ComposioService:
                 "error": error_msg
             }
 
+    def reply_to_thread(self, thread_id, recipient_email, message_body, cc_emails=None, bcc_emails=None, extra_recipients=None):
+        """
+        Reply to an existing Gmail thread using Composio's GMAIL_REPLY_TO_THREAD action.
+
+        Args:
+            thread_id: Gmail thread ID to reply to
+            recipient_email: Primary recipient email address
+            message_body: Email body content (plain text with line breaks preserved)
+            cc_emails: Optional list of CC recipients
+            bcc_emails: Optional list of BCC recipients
+            extra_recipients: Optional list of additional recipients
+
+        Returns:
+            dict: Response from Composio API with success/error status
+        """
+        if not self.client_available or not self.gmail_account_id:
+            return {"error": "Gmail not connected or unavailable"}
+
+        # Build parameters for Composio GMAIL_REPLY_TO_THREAD
+        params = {
+            "thread_id": thread_id,
+            "recipient_email": recipient_email,
+            "message_body": message_body,
+            "is_html": False  # Plain text with line breaks
+        }
+
+        # Add CC recipients if provided
+        if cc_emails:
+            cc_list = []
+            for email in cc_emails:
+                if isinstance(email, dict):
+                    cc_list.append(email.get('email', str(email)))
+                else:
+                    cc_list.append(str(email))
+            if cc_list:
+                params["cc"] = cc_list
+
+        # Add BCC recipients if provided
+        if bcc_emails:
+            bcc_list = []
+            for email in bcc_emails:
+                if isinstance(email, dict):
+                    bcc_list.append(email.get('email', str(email)))
+                else:
+                    bcc_list.append(str(email))
+            if bcc_list:
+                params["bcc"] = bcc_list
+
+        # Add extra recipients if provided
+        if extra_recipients:
+            extra_list = []
+            for email in extra_recipients:
+                if isinstance(email, dict):
+                    extra_list.append(email.get('email', str(email)))
+                else:
+                    extra_list.append(str(email))
+            if extra_list:
+                params["extra_recipients"] = extra_list
+
+        print(f"[DEBUG] Replying to thread {thread_id} with params: {params}")
+
+        try:
+            response = self._execute_action(
+                action=Action.GMAIL_REPLY_TO_THREAD,
+                params=params
+            )
+
+            if response and response.get("successful"):
+                print(f"[DEBUG] Reply sent successfully to thread {thread_id}")
+                return {
+                    "success": True,
+                    "message": f"Reply sent successfully to {recipient_email}",
+                    "data": response.get("data", {})
+                }
+            else:
+                error_msg = response.get("error", "Unknown error") if response else "No response received"
+                print(f"[ERROR] Failed to send reply: {error_msg}")
+                return {
+                    "success": False,
+                    "error": f"Failed to send reply: {error_msg}"
+                }
+
+        except Exception as e:
+            error_msg = f"Exception while sending reply: {str(e)}"
+            print(f"[ERROR] {error_msg}")
+            import traceback
+            print(f"[ERROR] Traceback: {traceback.format_exc()}")
+            return {
+                "success": False,
+                "error": error_msg
+            }
+
     def get_upcoming_events(self, days=7, max_results=10, **kwargs):
         """
         Legacy method for backwards compatibility. 

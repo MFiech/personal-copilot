@@ -1407,9 +1407,44 @@ def chat():
                 else:
                     # No existing draft found, create new one
                     try:
+                        # Check if this is a reply to an anchored email
+                        if anchored_item and anchored_item.get('type') == 'email':
+                            print(f"[DRAFT] Detected anchored email - preparing reply context")
+                            anchored_email = anchored_item.get('data', {})
+                            gmail_thread_id = anchored_email.get('gmail_thread_id') or anchored_email.get('metadata', {}).get('thread_id')
+
+                            if gmail_thread_id:
+                                print(f"[DRAFT] Adding reply context: gmail_thread_id={gmail_thread_id}")
+
+                                # Inject reply context into detection_result
+                                if 'draft_data' not in detection_result:
+                                    detection_result['draft_data'] = {}
+                                if 'extracted_info' not in detection_result['draft_data']:
+                                    detection_result['draft_data']['extracted_info'] = {}
+
+                                # Add reply-specific fields
+                                detection_result['draft_data']['extracted_info']['gmail_thread_id'] = gmail_thread_id
+                                detection_result['draft_data']['extracted_info']['reply_to_email_id'] = anchored_item.get('id')
+
+                                # Auto-populate recipients: To = original sender, CC = original recipients
+                                from_email = anchored_email.get('from_email', {})
+                                to_emails = anchored_email.get('to_emails', [])
+
+                                # Set primary recipient to original sender
+                                if from_email:
+                                    detection_result['draft_data']['extracted_info']['to_contacts'] = [from_email]
+                                    print(f"[DRAFT] Auto-populated To: {from_email}")
+
+                                # Set CC to original recipients
+                                if to_emails:
+                                    detection_result['draft_data']['extracted_info']['cc_emails'] = to_emails
+                                    print(f"[DRAFT] Auto-populated CC: {to_emails}")
+
+                                print(f"[DRAFT] Reply context injected into detection_result")
+
                         draft_created = draft_service.create_draft_from_detection(
-                            thread_id, 
-                            user_message.message_id, 
+                            thread_id,
+                            user_message.message_id,
                             detection_result
                         )
                         if not draft_created:
@@ -3280,14 +3315,28 @@ def send_draft(draft_id):
         
         try:
             if draft.draft_type == 'email':
-                # Send email via Composio
-                result = tooling_service.send_email(
-                    to_emails=composio_params['to_emails'],
-                    subject=composio_params.get('subject'),
-                    body=composio_params.get('body'),
-                    cc_emails=composio_params.get('cc_emails'),
-                    bcc_emails=composio_params.get('bcc_emails')
-                )
+                # Check if this is a reply to a thread
+                if composio_params.get('gmail_thread_id'):
+                    print(f"[DRAFT] Detected reply draft for thread: {composio_params['gmail_thread_id']}")
+
+                    # Use reply_to_thread for thread replies
+                    result = tooling_service.reply_to_thread(
+                        thread_id=composio_params['gmail_thread_id'],
+                        recipient_email=composio_params['to_emails'][0] if composio_params['to_emails'] else None,
+                        message_body=composio_params.get('body'),
+                        cc_emails=composio_params.get('cc_emails'),
+                        bcc_emails=composio_params.get('bcc_emails')
+                    )
+                else:
+                    # Send new email via Composio
+                    print(f"[DRAFT] Sending new email (no thread context)")
+                    result = tooling_service.send_email(
+                        to_emails=composio_params['to_emails'],
+                        subject=composio_params.get('subject'),
+                        body=composio_params.get('body'),
+                        cc_emails=composio_params.get('cc_emails'),
+                        bcc_emails=composio_params.get('bcc_emails')
+                    )
                 
             elif draft.draft_type == 'calendar_event':
                 # Create calendar event via Composio
