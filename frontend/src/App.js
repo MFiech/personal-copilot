@@ -1226,7 +1226,76 @@ function App() {
     });
 
     try {
-      // Fetch combined thread data (emails + drafts)
+      // Use the same approach as handleOpenEmail - fetch Gmail thread specific data
+      if (draft.gmail_thread_id) {
+        // Use new resolve-thread endpoint with pm_thread_id parameter for Gmail thread filtering
+        const resolveResponse = await fetch(
+          `http://localhost:5001/resolve-thread/${draft.gmail_thread_id}?pm_thread_id=${draft.thread_id}`, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        
+        if (resolveResponse.ok) {
+          const resolveData = await resolveResponse.json();
+          if (resolveData.success && resolveData.data) {
+            const { emails = [], drafts = [], pm_copilot_thread_id } = resolveData.data;
+            console.log(`Found ${emails.length} emails and ${drafts.length} drafts for Gmail thread ${draft.gmail_thread_id}`);
+            
+            // Fetch content for emails that don't have it (same as handleOpenEmail)
+            const emailsWithContent = await Promise.all(
+              emails.map(async (emailItem) => {
+                // Check if email already has substantial content
+                const hasContent = emailItem.content && 
+                  (emailItem.content.html?.trim() || 
+                   (emailItem.content.text?.trim() && emailItem.content.text.length > 100));
+                
+                if (hasContent) {
+                  return emailItem; // Already has content
+                }
+                
+                // Fetch content using existing endpoint
+                try {
+                  const contentResponse = await fetch('http://localhost:5001/get_email_content', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email_id: emailItem.email_id }),
+                  });
+                  
+                  if (contentResponse.ok) {
+                    const contentData = await contentResponse.json();
+                    if (contentData.success) {
+                      return { ...emailItem, content: contentData.content };
+                    }
+                  }
+                  console.warn(`Failed to fetch content for email ${emailItem.email_id}`);
+                  return emailItem; // Return original if content fetch fails
+                } catch (error) {
+                  console.warn(`Error fetching content for email ${emailItem.email_id}:`, error);
+                  return emailItem; // Return original if error
+                }
+              })
+            );
+            
+            // Set up sidebar with Gmail thread filtered data
+            setEmailSidebar({
+              open: true,
+              email: emailsWithContent.length > 0 ? emailsWithContent[emailsWithContent.length - 1] : null,
+              threadEmails: emailsWithContent, // Use emails with content from Gmail thread only
+              threadDrafts: drafts,
+              gmailThreadId: draft.gmail_thread_id,
+              pmCopilotThreadId: pm_copilot_thread_id,
+              loading: false,
+              error: null,
+              draft: draft, // Keep the clicked draft as the primary draft
+              contentType: 'combined'
+            });
+            return; // Success, exit early
+          }
+        }
+      }
+      
+      // Fallback to old behavior if Gmail thread filtering fails
+      console.warn('Gmail thread filtering failed, falling back to full PM thread data');
       const response = await fetch(`http://localhost:5001/thread/${draft.thread_id}/combined`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' }
@@ -1242,17 +1311,17 @@ function App() {
         const { emails = [], drafts = [] } = data.data;
         console.log(`Found ${emails.length} emails and ${drafts.length} drafts in thread ${draft.thread_id}`);
         
-        // Set up sidebar with combined data
+        // Set up sidebar with combined data (fallback)
         setEmailSidebar({
           open: true,
-          email: emails.length > 0 ? emails[emails.length - 1] : null, // Show newest email as primary
+          email: emails.length > 0 ? emails[emails.length - 1] : null,
           threadEmails: emails,
           threadDrafts: drafts,
           gmailThreadId: draft.gmail_thread_id,
           pmCopilotThreadId: draft.thread_id,
           loading: false,
           error: null,
-          draft: draft, // Keep the clicked draft as the primary draft
+          draft: draft,
           contentType: 'combined'
         });
       } else {
