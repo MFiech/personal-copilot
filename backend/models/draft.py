@@ -169,6 +169,10 @@ class Draft:
         )
         return result.modified_count > 0
 
+    def is_reply(self):
+        """Check if this draft is a reply to an existing email thread"""
+        return self.gmail_thread_id is not None
+    
     def validate_completeness(self):
         """Check if draft has all required fields for Composio execution"""
         missing_fields = []
