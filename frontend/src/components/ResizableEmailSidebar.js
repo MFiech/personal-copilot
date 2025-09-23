@@ -13,6 +13,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import SendIcon from '@mui/icons-material/Send';
 import DOMPurify from 'dompurify';
+import { DraftService } from '../utils/draftService';
 
 const ResizableEmailSidebar = ({
   open,
@@ -34,6 +35,7 @@ const ResizableEmailSidebar = ({
   const [width, setWidth] = useState(420);
   const [isResizing, setIsResizing] = useState(false);
   const [expandedEmails, setExpandedEmails] = useState(new Set());
+  const [draftValidations, setDraftValidations] = useState(new Map());
   const sidebarRef = useRef(null);
   const resizeHandleRef = useRef(null);
 
@@ -126,6 +128,30 @@ const ResizableEmailSidebar = ({
     });
   };
 
+  // Fetch draft validation
+  const fetchDraftValidation = async (draftId) => {
+    try {
+      const response = await DraftService.validateDraft(draftId);
+      if (response.success) {
+        setDraftValidations(prev => new Map(prev.set(draftId, response.validation)));
+      }
+    } catch (error) {
+      console.error('Error fetching draft validation:', error);
+    }
+  };
+
+  // Effect to fetch validation for all drafts when they change
+  useEffect(() => {
+    const allDrafts = [...threadDrafts];
+    if (draft) allDrafts.push(draft);
+    
+    allDrafts.forEach(draftItem => {
+      if (draftItem?.draft_id && !draftValidations.has(draftItem.draft_id)) {
+        fetchDraftValidation(draftItem.draft_id);
+      }
+    });
+  }, [threadDrafts, draft]);
+
   const shouldShowDraft = () => {
     // Only hide drafts that are sent (status === 'closed') and have a sent_message_id
     if (!draft || draft.status !== 'closed' || !draft.sent_message_id) {
@@ -193,7 +219,8 @@ const ResizableEmailSidebar = ({
 
     const isEmail = draft.draft_type === 'email';
     const isSent = draft.status === 'closed';
-    const isComplete = draftValidation?.is_complete || false;
+    const draftItemValidation = draftValidations.get(draft.draft_id);
+    const isComplete = draftItemValidation?.is_complete || false;
     const isReply = draft.gmail_thread_id ? true : false;
 
     const formatRecipients = (recipients) => {
@@ -381,7 +408,7 @@ const ResizableEmailSidebar = ({
           <Button
             variant="contained"
             startIcon={<SendIcon />}
-            onClick={onSendDraft}
+            onClick={() => onSendDraft()}
             disabled={isSendingDraft}
             sx={{
               mt: 2,
@@ -737,11 +764,11 @@ const ResizableEmailSidebar = ({
                                 </Typography>
                                 
                                 {/* Send Button for active drafts - only show for the primary draft */}
-                                {isDraft && item.status !== 'closed' && onSendDraft && draft && item.draft_id === draft.draft_id && draftValidation?.is_complete && (
+                                {isDraft && item.status !== 'closed' && onSendDraft && draft && item.draft_id === draft.draft_id && draftValidations.get(item.draft_id)?.is_complete && (
                                   <Button
                                     variant="contained"
                                     startIcon={<SendIcon />}
-                                    onClick={() => onSendDraft(item.draft_id)}
+                                    onClick={() => onSendDraft()}
                                     disabled={isSendingDraft}
                                     sx={{
                                       mt: 2,

@@ -6,10 +6,16 @@ import {
   IconButton,
   CircularProgress,
   Alert,
-  Avatar
+  Avatar,
+  Button,
+  Chip
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
+import SendIcon from '@mui/icons-material/Send';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import WarningIcon from '@mui/icons-material/Warning';
 import DOMPurify from 'dompurify';
+import { DraftService } from '../utils/draftService';
 
 const EmailSidebar = ({ 
   open, 
@@ -22,7 +28,9 @@ const EmailSidebar = ({
   draft = null,  // Current draft object
   loading, 
   error, 
-  onClose
+  onClose,
+  onSendDraft = null,  // Callback when draft is sent
+  showSnackbar = null  // Callback to show snackbar messages
 }) => {
   
   // Check if mobile using React state for responsive updates
@@ -30,6 +38,8 @@ const EmailSidebar = ({
   const [expandedEmails, setExpandedEmails] = React.useState(new Set());
   const [emailsWithContent, setEmailsWithContent] = React.useState(new Map());
   const [loadingContent, setLoadingContent] = React.useState(new Set());
+  const [draftValidations, setDraftValidations] = React.useState(new Map());
+  const [sendingDrafts, setSendingDrafts] = React.useState(new Set());
 
   React.useEffect(() => {
     const handleResize = () => {
@@ -215,6 +225,67 @@ const EmailSidebar = ({
     
     return cleanText || 'No content';
   };
+
+  // Fetch draft validation
+  const fetchDraftValidation = async (draftId) => {
+    try {
+      const response = await DraftService.validateDraft(draftId);
+      if (response.success) {
+        setDraftValidations(prev => new Map(prev.set(draftId, response.validation)));
+      }
+    } catch (error) {
+      console.error('Error fetching draft validation:', error);
+    }
+  };
+
+  // Send draft
+  const handleSendDraft = async (draftItem) => {
+    const validation = draftValidations.get(draftItem.draft_id);
+    if (!validation?.is_complete) {
+      if (showSnackbar) {
+        showSnackbar('Draft is incomplete. Please fill missing fields first.', 'warning');
+      }
+      return;
+    }
+    
+    setSendingDrafts(prev => new Set(prev).add(draftItem.draft_id));
+    try {
+      const response = await DraftService.sendDraft(draftItem.draft_id);
+      if (response.success) {
+        if (showSnackbar) {
+          showSnackbar(response.message || 'Draft sent successfully!', 'success');
+        }
+        if (onSendDraft) onSendDraft(draftItem.draft_id);
+      } else {
+        if (showSnackbar) {
+          showSnackbar(response.error || 'Failed to send draft', 'error');
+        }
+      }
+    } catch (error) {
+      console.error('Error sending draft:', error);
+      if (showSnackbar) {
+        showSnackbar(`Failed to send draft: ${error.message}`, 'error');
+      }
+    } finally {
+      setSendingDrafts(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(draftItem.draft_id);
+        return newSet;
+      });
+    }
+  };
+
+  // Effect to fetch validation for all drafts when they change
+  React.useEffect(() => {
+    const allDrafts = [...threadDrafts];
+    if (draft) allDrafts.push(draft);
+    
+    allDrafts.forEach(draftItem => {
+      if (draftItem?.draft_id && !draftValidations.has(draftItem.draft_id)) {
+        fetchDraftValidation(draftItem.draft_id);
+      }
+    });
+  }, [threadDrafts, draft]);
 
 
 
@@ -416,6 +487,50 @@ const EmailSidebar = ({
                               <Box sx={{ mb: 2 }}>
                                 {isEmail ? renderEmailBody(item) : renderDraftBody(item)}
                               </Box>
+                              
+                              {/* Draft send button */}
+                              {isDraft && item.status !== 'closed' && (
+                                <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', alignItems: 'center', mt: 2 }}>
+                                  {(() => {
+                                    const validation = draftValidations.get(item.draft_id);
+                                    const isComplete = validation?.is_complete;
+                                    const isSending = sendingDrafts.has(item.draft_id);
+                                    
+                                    return (
+                                      <>
+                                        {validation && (
+                                          <Chip
+                                            icon={isComplete ? <CheckCircleIcon /> : <WarningIcon />}
+                                            label={isComplete ? "Ready to Send" : "Needs Info"}
+                                            color={isComplete ? "success" : "warning"}
+                                            size="small"
+                                            sx={{ mr: 1 }}
+                                          />
+                                        )}
+                                        <Button
+                                          variant="contained"
+                                          size="small"
+                                          startIcon={isSending ? <CircularProgress size={16} color="inherit" /> : <SendIcon />}
+                                          onClick={() => handleSendDraft(item)}
+                                          disabled={!isComplete || isSending}
+                                          sx={{
+                                            backgroundColor: isComplete ? '#4caf50' : '#ff9800',
+                                            '&:hover': {
+                                              backgroundColor: isComplete ? '#388e3c' : '#f57c00'
+                                            },
+                                            '&:disabled': {
+                                              backgroundColor: '#ccc'
+                                            }
+                                          }}
+                                        >
+                                          {isSending ? 'Sending...' : (isComplete ? 'Send' : 'Needs Info')}
+                                        </Button>
+                                      </>
+                                    );
+                                  })()
+                                )}
+                                </Box>
+                              )}
                             </Box>
                           )}
                         </Box>
@@ -533,6 +648,50 @@ const EmailSidebar = ({
                         <Box sx={{ pl: 6, mb: 2 }}>
                           {renderDraftBody(draft)}
                         </Box>
+                        
+                        {/* Draft send button */}
+                        {draft.status !== 'closed' && (
+                          <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', alignItems: 'center', px: 2, pb: 2 }}>
+                            {(() => {
+                              const validation = draftValidations.get(draft.draft_id);
+                              const isComplete = validation?.is_complete;
+                              const isSending = sendingDrafts.has(draft.draft_id);
+                              
+                              return (
+                                <>
+                                  {validation && (
+                                    <Chip
+                                      icon={isComplete ? <CheckCircleIcon /> : <WarningIcon />}
+                                      label={isComplete ? "Ready to Send" : "Needs Info"}
+                                      color={isComplete ? "success" : "warning"}
+                                      size="small"
+                                      sx={{ mr: 1 }}
+                                    />
+                                  )}
+                                  <Button
+                                    variant="contained"
+                                    size="small"
+                                    startIcon={isSending ? <CircularProgress size={16} color="inherit" /> : <SendIcon />}
+                                    onClick={() => handleSendDraft(draft)}
+                                    disabled={!isComplete || isSending}
+                                    sx={{
+                                      backgroundColor: isComplete ? '#4caf50' : '#ff9800',
+                                      '&:hover': {
+                                        backgroundColor: isComplete ? '#388e3c' : '#f57c00'
+                                      },
+                                      '&:disabled': {
+                                        backgroundColor: '#ccc'
+                                      }
+                                    }}
+                                  >
+                                    {isSending ? 'Sending...' : (isComplete ? 'Send' : 'Needs Info')}
+                                  </Button>
+                                </>
+                              );
+                            })()
+                          )}
+                          </Box>
+                        )}
                       </Box>
                     </Box>
                   )}

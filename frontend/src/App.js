@@ -1289,6 +1289,14 @@ function App() {
               draft: draft, // Keep the clicked draft as the primary draft
               contentType: 'combined'
             });
+            
+            // Auto-anchor the draft when sidebar opens
+            const draftAnchorData = {
+              id: draft.draft_id,
+              type: 'draft',
+              data: draft
+            };
+            handleAnchorChange(draftAnchorData);
             return; // Success, exit early
           }
         }
@@ -1324,6 +1332,14 @@ function App() {
           draft: draft,
           contentType: 'combined'
         });
+        
+        // Auto-anchor the draft when sidebar opens
+        const draftAnchorData = {
+          id: draft.draft_id,
+          type: 'draft',
+          data: draft
+        };
+        handleAnchorChange(draftAnchorData);
       } else {
         throw new Error('Failed to retrieve combined thread data');
       }
