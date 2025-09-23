@@ -1018,6 +1018,14 @@ function App() {
           draft: null,
           contentType: 'email'
         });
+
+        // Auto-anchor the email when sidebar opens
+        const emailAnchorData = {
+          id: emailWithContent.email_id || emailWithContent.id,
+          type: 'email',
+          data: emailWithContent
+        };
+        handleAnchorChange(emailAnchorData);
       } else {
         throw new Error('Failed to retrieve email content');
       }
@@ -1047,6 +1055,9 @@ function App() {
       draft: null,
       contentType: 'email'
     });
+
+    // Clear anchor when sidebar closes
+    handleAnchorChange(null);
   };
 
   const handleDraftClick = (draft) => {
@@ -1061,6 +1072,14 @@ function App() {
       draft: draft,
       contentType: 'draft'
     });
+
+    // Auto-anchor the draft when sidebar opens
+    const draftAnchorData = {
+      id: draft.draft_id,
+      type: 'draft',
+      data: draft
+    };
+    handleAnchorChange(draftAnchorData);
   };
 
   // --- Sync anchor state with URL query params ---
@@ -1105,6 +1124,20 @@ function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.search, threadId]);
+
+  // Sync sidebar draft with anchored draft when it updates
+  useEffect(() => {
+    if (anchoredItem?.type === 'draft' &&
+        emailSidebar.open &&
+        emailSidebar.contentType === 'draft' &&
+        emailSidebar.draft?.draft_id === anchoredItem.id) {
+      // Update sidebar draft with the latest anchored draft data
+      setEmailSidebar(prev => ({
+        ...prev,
+        draft: anchoredItem.data
+      }));
+    }
+  }, [anchoredItem, emailSidebar.open, emailSidebar.contentType, emailSidebar.draft?.draft_id]);
 
   // Update URL when anchor changes
   const handleAnchorChange = (anchorData) => {
@@ -1178,17 +1211,23 @@ function App() {
   // Send draft via Composio
   const handleSendDraft = async () => {
     if (!anchoredItem || anchoredItem.type !== 'draft') return;
-    
+
     setIsSendingDraft(true);
     try {
       const response = await DraftService.sendDraft(anchoredItem.id);
       if (response.success) {
         showSnackbar(response.message || 'Draft sent successfully!', 'success');
-        
+
+        // Close the sidebar
+        handleCloseEmailSidebar();
+
         // Clear the anchored draft
         setAnchoredItem(null);
         setDraftValidation(null);
-        
+
+        // Refresh draft cards to show updated status
+        refreshAllDraftCards();
+
         // Refresh the thread to show any new messages
         if (threadId) {
           loadThread(threadId);
@@ -1710,6 +1749,7 @@ function App() {
                       draft={messageDrafts[message.id]}
                       messageId={message.id}
                       onDraftClick={handleDraftClick}
+                      isAnchored={anchoredItem?.type === 'draft' && anchoredItem?.id === messageDrafts[message.id]?.draft_id}
                     />
                   )}
                 </Box>
@@ -1732,238 +1772,6 @@ function App() {
             )}
           </Box>
 
-          {/* Anchor Information Bar - positioned just above text area */}
-          {anchoredItem && messages.length > 0 && (
-            <Box sx={{ 
-              p: 2, 
-              backgroundColor: '#fff3e0',
-              borderTop: '1px solid #ffcc02',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1
-            }}>
-              <AnchorIcon sx={{ color: '#ff9800' }} />
-              <Box sx={{ flexGrow: 1 }}>
-                {anchoredItem.type === 'draft' ? (
-                  <Box>
-                    <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#ef6c00', mb: 1 }}>
-                      Draft {anchoredItem.data.draft_type === 'email' ? 'Email' : 'Calendar Event'}
-                    </Typography>
-                    
-                    {/* Email Draft Details */}
-                    {anchoredItem.data.draft_type === 'email' && (
-                      <Box sx={{ pl: 1 }}>
-                        <Typography variant="body2" sx={{ mb: 0.5 }}>
-                          <strong>To:</strong> {
-                            anchoredItem.data.to_emails && anchoredItem.data.to_emails.length > 0 
-                              ? anchoredItem.data.to_emails.map(email => {
-                                  if (email.name && email.email) {
-                                    return `${email.name} (${email.email})`;
-                                  } else if (email.email) {
-                                    return email.email;
-                                  } else if (email.name) {
-                                    return email.name;
-                                  } else {
-                                    return 'Unknown recipient';
-                                  }
-                                }).join(', ')
-                              : <span style={{ color: '#d32f2f', fontStyle: 'italic' }}>Not specified</span>
-                          }
-                        </Typography>
-                        <Typography variant="body2" sx={{ mb: 0.5 }}>
-                          <strong>Subject:</strong> {
-                            anchoredItem.data.subject 
-                              ? anchoredItem.data.subject
-                              : <span style={{ color: '#d32f2f', fontStyle: 'italic' }}>Not specified</span>
-                          }
-                        </Typography>
-                        {anchoredItem.data.cc_emails && anchoredItem.data.cc_emails.length > 0 && (
-                          <Typography variant="body2" sx={{ mb: 0.5 }}>
-                            <strong>CC:</strong> {anchoredItem.data.cc_emails.map(email => {
-                              if (email.name && email.email) {
-                                return `${email.name} (${email.email})`;
-                              } else if (email.email) {
-                                return email.email;
-                              } else if (email.name) {
-                                return email.name;
-                              } else {
-                                return 'Unknown recipient';
-                              }
-                            }).join(', ')}
-                          </Typography>
-                        )}
-                        {anchoredItem.data.bcc_emails && anchoredItem.data.bcc_emails.length > 0 && (
-                          <Typography variant="body2" sx={{ mb: 0.5 }}>
-                            <strong>BCC:</strong> {anchoredItem.data.bcc_emails.map(email => {
-                              if (email.name && email.email) {
-                                return `${email.name} (${email.email})`;
-                              } else if (email.email) {
-                                return email.email;
-                              } else if (email.name) {
-                                return email.name;
-                              } else {
-                                return 'Unknown recipient';
-                              }
-                            }).join(', ')}
-                          </Typography>
-                        )}
-                        {anchoredItem.data.body && (
-                          <Typography variant="body2" sx={{ mb: 0.5 }}>
-                            <strong>Body:</strong> {
-                              anchoredItem.data.body.length > 80 
-                                ? anchoredItem.data.body.substring(0, 80) + '...'
-                                : anchoredItem.data.body
-                            }
-                          </Typography>
-                        )}
-                      </Box>
-                    )}
-
-                    {/* Calendar Event Draft Details */}
-                    {anchoredItem.data.draft_type === 'calendar_event' && (
-                      <Box sx={{ pl: 1 }}>
-                        <Typography variant="body2" sx={{ mb: 0.5 }}>
-                          <strong>Title:</strong> {
-                            anchoredItem.data.summary 
-                              ? anchoredItem.data.summary
-                              : <span style={{ color: '#d32f2f', fontStyle: 'italic' }}>Not specified</span>
-                          }
-                        </Typography>
-                        <Typography variant="body2" sx={{ mb: 0.5 }}>
-                          <strong>Start:</strong> {
-                            anchoredItem.data.start_time 
-                              ? (() => {
-                                  try {
-                                    const date = new Date(anchoredItem.data.start_time);
-                                    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                                  } catch (e) {
-                                    return anchoredItem.data.start_time;
-                                  }
-                                })()
-                              : <span style={{ color: '#d32f2f', fontStyle: 'italic' }}>Not specified</span>
-                          }
-                        </Typography>
-                        <Typography variant="body2" sx={{ mb: 0.5 }}>
-                          <strong>End:</strong> {
-                            anchoredItem.data.end_time 
-                              ? (() => {
-                                  try {
-                                    const date = new Date(anchoredItem.data.end_time);
-                                    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                                  } catch (e) {
-                                    return anchoredItem.data.end_time;
-                                  }
-                                })()
-                              : <span style={{ color: '#d32f2f', fontStyle: 'italic' }}>Not specified</span>
-                          }
-                        </Typography>
-                        {anchoredItem.data.location && (
-                          <Typography variant="body2" sx={{ mb: 0.5 }}>
-                            <strong>Location:</strong> {anchoredItem.data.location}
-                          </Typography>
-                        )}
-                        {anchoredItem.data.attendees && anchoredItem.data.attendees.length > 0 && (
-                          <Typography variant="body2" sx={{ mb: 0.5 }}>
-                            <strong>Attendees:</strong> {anchoredItem.data.attendees.map((attendee, index) => {
-                              console.log(`Attendee ${index}:`, attendee, `name: "${attendee.name}", email: "${attendee.email}"`);
-                              if (attendee.name && attendee.email) {
-                                return `${attendee.name} (${attendee.email})`;
-                              } else if (attendee.email) {
-                                return attendee.email;
-                              } else if (attendee.name) {
-                                return `${attendee.name} (no email)`;
-                              } else {
-                                return 'Unknown attendee';
-                              }
-                            }).join(', ')}
-                          </Typography>
-                        )}
-                        {anchoredItem.data.description && (
-                          <Typography variant="body2" sx={{ mb: 0.5 }}>
-                            <strong>Description:</strong> {
-                              anchoredItem.data.description.length > 80 
-                                ? anchoredItem.data.description.substring(0, 80) + '...'
-                                : anchoredItem.data.description
-                            }
-                          </Typography>
-                        )}
-                      </Box>
-                    )}
-                    
-                    {/* Missing fields warning */}
-                    {draftValidation && !draftValidation.is_complete && (
-                      <Typography variant="caption" sx={{ color: '#d32f2f', fontStyle: 'italic', mt: 1, display: 'block' }}>
-                        ⚠️ {getMissingFieldsText(draftValidation)}
-                      </Typography>
-                    )}
-                  </Box>
-                ) : (
-                  <Box>
-                    <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#ef6c00' }}>
-                      Anchored {anchoredItem.type === 'email' ? 'Email' : 'Calendar Event'}:
-                    </Typography>
-                    {anchoredItem.type === 'email' ? (
-                      <Box>
-                        <Typography variant="body2">
-                          <strong>Subject:</strong> {anchoredItem.data.subject || 'No Subject'}
-                        </Typography>
-                        <Typography variant="body2">
-                          <strong>From:</strong> {anchoredItem.data.from_email?.name || anchoredItem.data.from?.name || 'Unknown Sender'}
-                        </Typography>
-                        <Typography variant="body2">
-                          <strong>Date:</strong> {new Date(anchoredItem.data.date).toLocaleDateString()}
-                        </Typography>
-                      </Box>
-                    ) : (
-                      <Box>
-                        <Typography variant="body2">
-                          <strong>Name:</strong> {anchoredItem.data.summary || 'Untitled Event'}
-                        </Typography>
-                        <Typography variant="body2">
-                          <strong>Start:</strong> {new Date(anchoredItem.data.start?.dateTime || anchoredItem.data.start?.date).toLocaleString()}
-                        </Typography>
-                        <Typography variant="body2">
-                          <strong>End:</strong> {new Date(anchoredItem.data.end?.dateTime || anchoredItem.data.end?.date).toLocaleString()}
-                        </Typography>
-                      </Box>
-                    )}
-                  </Box>
-                )}
-              </Box>
-              
-              {/* Action buttons */}
-              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                {anchoredItem.type === 'draft' && (
-                  <Button
-                    variant="contained"
-                    size="small"
-                    startIcon={draftValidation?.is_complete ? <SendIcon /> : <CreateIcon />}
-                    onClick={handleSendDraft}
-                    disabled={isSendingDraft}
-                    sx={{
-                      backgroundColor: draftValidation?.is_complete ? '#4caf50' : '#ff9800',
-                      '&:hover': {
-                        backgroundColor: draftValidation?.is_complete ? '#388e3c' : '#f57c00'
-                      },
-                      '&:disabled': {
-                        backgroundColor: '#ccc'
-                      }
-                    }}
-                  >
-                    {isSendingDraft ? 'Sending...' : 
-                     draftValidation?.is_complete ? 'Send' : 'Needs Info'}
-                  </Button>
-                )}
-                <IconButton 
-                  size="small" 
-                  onClick={() => handleAnchorChange(null)}
-                  sx={{ color: '#ef6c00' }}
-                >
-                  <CloseIcon />
-                </IconButton>
-              </Box>
-            </Box>
-          )}
 
           {/* Input area - only show for chat conversations */}
           {messages.length > 0 && (
@@ -1992,6 +1800,9 @@ function App() {
             contentType={emailSidebar.contentType}
             onClose={handleCloseEmailSidebar}
             onWidthChange={setSidebarWidth}
+            draftValidation={draftValidation}
+            onSendDraft={handleSendDraft}
+            isSendingDraft={isSendingDraft}
           />
         </Box>
 

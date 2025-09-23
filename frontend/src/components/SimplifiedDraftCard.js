@@ -10,7 +10,8 @@ import EventIcon from '@mui/icons-material/Event';
 const SimplifiedDraftCard = ({
   draft,
   messageId,
-  onDraftClick
+  onDraftClick,
+  isAnchored = false
 }) => {
 
   const handleClick = () => {
@@ -60,13 +61,13 @@ const SimplifiedDraftCard = ({
         mb: 1,
         p: 1.5,
         backgroundColor: '#f8f9fa',
-        border: '1px solid #e0e0e0',
+        border: isAnchored ? '2.5px solid #ff9800' : '1px solid #e0e0e0',
         borderRadius: '8px',
         cursor: 'pointer',
         transition: 'all 0.2s ease',
         '&:hover': {
           backgroundColor: '#f0f0f0',
-          borderColor: '#1976d2',
+          borderColor: isAnchored ? '#ff9800' : '#1976d2',
           transform: 'translateY(-1px)',
           boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
         },
@@ -92,7 +93,7 @@ const SimplifiedDraftCard = ({
           }}
         >
           {isSent
-            ? (isEmail ? 'Email' : 'Event')
+            ? (isEmail ? 'Email Sent' : 'Event Created')
             : (isEmail ? 'Email Draft' : 'Event Draft')
           }
         </Typography>

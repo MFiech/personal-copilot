@@ -5,10 +5,13 @@ import {
   IconButton,
   CircularProgress,
   Alert,
-  Avatar
+  Avatar,
+  Chip,
+  Button
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
+import SendIcon from '@mui/icons-material/Send';
 import DOMPurify from 'dompurify';
 
 const ResizableEmailSidebar = ({
@@ -21,7 +24,10 @@ const ResizableEmailSidebar = ({
   error,
   onClose,
   onWidthChange,
-  contentType = 'email' // 'email', 'draft', or 'both'
+  contentType = 'email', // 'email', 'draft', or 'both'
+  draftValidation = null,
+  onSendDraft = null,
+  isSendingDraft = false
 }) => {
   const [width, setWidth] = useState(420);
   const [isResizing, setIsResizing] = useState(false);
@@ -169,6 +175,7 @@ const ResizableEmailSidebar = ({
 
     const isEmail = draft.draft_type === 'email';
     const isSent = draft.status === 'closed';
+    const isComplete = draftValidation?.is_complete || false;
 
     const formatRecipients = (recipients) => {
       if (!recipients || recipients.length === 0) return 'Not specified';
@@ -180,15 +187,33 @@ const ResizableEmailSidebar = ({
     };
 
     return (
-      <Box sx={{ p: 2 }}>
+      <Box
+        sx={{
+          border: '1px solid #e0e0e0',
+          borderRadius: '8px',
+          p: 2,
+          mb: 2,
+          position: 'relative'
+        }}
+      >
+        {/* Status Chip */}
+        <Chip
+          label={isSent ? (isEmail ? 'Email Sent' : 'Event Created') : (isEmail ? 'Email Draft' : 'Event Draft')}
+          size="small"
+          sx={{
+            position: 'absolute',
+            top: 12,
+            right: 12,
+            backgroundColor: isSent ? '#4caf50' : '#ff9800',
+            color: 'white',
+            fontWeight: 500
+          }}
+        />
+
         {isEmail ? (
           <>
-            <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-              {isSent ? 'Email' : 'Email Draft'}
-            </Typography>
-
             {/* To field */}
-            <Box sx={{ mb: 1.5 }}>
+            <Box sx={{ mb: 1.5, mt: 1 }}>
               <Typography variant="body2" sx={{ fontWeight: 500, color: '#5f6368', mb: 0.5 }}>
                 To:
               </Typography>
@@ -255,12 +280,8 @@ const ResizableEmailSidebar = ({
           </>
         ) : (
           <>
-            <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-              {isSent ? 'Calendar Event' : 'Calendar Event Draft'}
-            </Typography>
-
             {/* Title */}
-            <Box sx={{ mb: 1.5 }}>
+            <Box sx={{ mb: 1.5, mt: 1 }}>
               <Typography variant="body2" sx={{ fontWeight: 500, color: '#5f6368', mb: 0.5 }}>
                 Title:
               </Typography>
@@ -330,6 +351,29 @@ const ResizableEmailSidebar = ({
               </Box>
             )}
           </>
+        )}
+
+        {/* Send Button - only show for drafts that are complete and not sent */}
+        {!isSent && isComplete && onSendDraft && (
+          <Button
+            variant="contained"
+            startIcon={<SendIcon />}
+            onClick={onSendDraft}
+            disabled={isSendingDraft}
+            sx={{
+              mt: 2,
+              backgroundColor: '#4caf50',
+              '&:hover': {
+                backgroundColor: '#388e3c'
+              },
+              '&:disabled': {
+                backgroundColor: '#ccc'
+              }
+            }}
+            fullWidth
+          >
+            {isSendingDraft ? 'Sending...' : (isEmail ? 'Send Email' : 'Create Event')}
+          </Button>
         )}
       </Box>
     );
