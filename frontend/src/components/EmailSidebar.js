@@ -15,7 +15,11 @@ const EmailSidebar = ({
   open, 
   email, 
   threadEmails = [],  // Array of emails in the thread
+  threadDrafts = [],  // Array of drafts in the thread  
   gmailThreadId = null,  // Gmail thread ID for context
+  pmCopilotThreadId = null,  // PM Co-Pilot thread ID for context
+  contentType = 'email', // 'email', 'draft', or 'combined'
+  draft = null,  // Current draft object
   loading, 
   error, 
   onClose
@@ -126,6 +130,50 @@ const EmailSidebar = ({
     }
   };
 
+  const renderDraftBody = (draftData) => {
+    if (!draftData || !draftData.body) {
+      return (
+        <Typography variant="body2" color="text.secondary">
+          No content available
+        </Typography>
+      );
+    }
+
+    return (
+      <Typography
+        variant="body2"
+        component="pre"
+        sx={{
+          whiteSpace: 'pre-wrap',
+          fontFamily: 'inherit',
+          fontSize: '14px',
+          lineHeight: 1.6,
+          wordBreak: 'break-word'
+        }}
+      >
+        {draftData.body}
+      </Typography>
+    );
+  };
+
+  const getDraftStatusColor = (status) => {
+    switch (status) {
+      case 'active': return '#1976d2';
+      case 'closed': return '#4caf50';
+      case 'composio_error': return '#f44336';
+      default: return '#757575';
+    }
+  };
+
+  const getDraftStatusLabel = (status) => {
+    switch (status) {
+      case 'active': return 'Draft';
+      case 'closed': return 'Sent';
+      case 'composio_error': return 'Error';
+      default: return 'Draft';
+    }
+  };
+
 
 
   return (
@@ -149,17 +197,20 @@ const EmailSidebar = ({
       }}
     >
       <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%', bgcolor: 'white' }}>
-        {/* Header with close button and email subject */}
+        {/* Header with close button and thread subject */}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
           <Typography variant="h6" sx={{ fontWeight: 600 }}>
-            {threadEmails?.[0]?.subject || email?.subject || 'Email'}
+            {contentType === 'combined' 
+              ? (threadEmails?.[0]?.subject || draft?.subject || 'Thread') 
+              : (threadEmails?.[0]?.subject || email?.subject || draft?.subject || 'Email')
+            }
           </Typography>
           <IconButton onClick={onClose} size="small">
             <CloseIcon />
           </IconButton>
         </Box>
 
-        {/* Gmail-style Thread View */}
+        {/* Combined Thread View (Emails + Drafts) */}
         <Box sx={{ flexGrow: 1, overflowY: 'auto', bgcolor: 'white' }}>
           {loading && (
             <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
@@ -173,166 +224,274 @@ const EmailSidebar = ({
             </Alert>
           )}
 
-          {email && !loading && !error && (
-                <Box>
+          {!loading && !error && (contentType === 'combined' ? (threadEmails.length > 0 || threadDrafts.length > 0) : (email || draft)) && (
+            <Box>
 
 
-              {/* Thread Emails */}
-              {threadEmails && threadEmails.length > 0 ? (
+              {/* Combined View: Display both emails and drafts chronologically */}
+              {contentType === 'combined' ? (
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {threadEmails.map((threadEmail, index) => {
-                    const isExpanded = expandedEmails.has(threadEmail.email_id);
-                    const isCurrentEmail = threadEmail.email_id === email.email_id;
-                    const isLastEmail = index === threadEmails.length - 1;
-                    const isOnlyEmail = threadEmails.length === 1;
-                    
-                    // Auto-expand the last email (newest) or if it's the only email
-                    const shouldAutoExpand = isLastEmail || isOnlyEmail;
-                    const isActuallyExpanded = isExpanded || shouldAutoExpand;
-                    
-                    return (
-                      <Box
-                        key={threadEmail.email_id || index}
-                        sx={{
-                          width: '100%',
-                          borderBottom: '1px solid #e0e0e0',
-                          '&:last-child': { borderBottom: 'none' }
-                        }}
-                      >
-                        {/* Email Header */}
-                        <Box 
+                  {/* Combine emails and drafts, sort by date */}
+                  {[...threadEmails, ...threadDrafts]
+                    .sort((a, b) => new Date(a.date || a.created_at * 1000) - new Date(b.date || b.created_at * 1000))
+                    .map((item, index) => {
+                      const isEmail = !!item.email_id;
+                      const isDraft = !!item.draft_id;
+                      const itemId = isEmail ? item.email_id : item.draft_id;
+                      const isExpanded = expandedEmails.has(itemId);
+                      const isLastItem = index === (threadEmails.length + threadDrafts.length - 1);
+                      
+                      // Auto-expand the last item or if there's only one item
+                      const shouldAutoExpand = isLastItem || (threadEmails.length + threadDrafts.length === 1);
+                      const isActuallyExpanded = isExpanded || shouldAutoExpand;
+                      
+                      return (
+                        <Box
+                          key={itemId || index}
                           sx={{
-                            pt: 2,
-                            pb: 2,
-                            pr: 2,
-                            cursor: 'pointer',
-                            borderRadius: 1
+                            width: '100%',
+                            borderBottom: '1px solid #e0e0e0',
+                            backgroundColor: isDraft ? '#f8f9ff' : 'white',
+                            '&:last-child': { borderBottom: 'none' }
                           }}
-                          onClick={() => toggleEmailExpansion(threadEmail.email_id)}
                         >
-                          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
-                            {/* Avatar */}
-                            <Avatar 
-                              sx={{ 
-                                width: 40, 
-                                height: 40, 
-                                bgcolor: isCurrentEmail ? '#1976d2' : '#5f6368',
-                                fontSize: '16px',
-                                fontWeight: 500
-                              }}
-                            >
-                              {getInitials(
-                                threadEmail.from_email?.name,
-                                threadEmail.from_email?.email
-                              )}
-                            </Avatar>
-                            
-                            {/* Email Info */}
-                            <Box sx={{ flex: 1, minWidth: 0 }}>
-                              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-                                <Typography variant="body1" sx={{ fontWeight: 500, color: '#202124' }}>
-                                  {threadEmail.from_email?.name || threadEmail.from_email?.email || 'Unknown Sender'}
-                                </Typography>
-                                <Typography variant="caption" color="#5f6368">
-                                  {formatDate(threadEmail.date)}
-                                </Typography>
-                              </Box>
+                          {/* Item Header */}
+                          <Box 
+                            sx={{
+                              pt: 2,
+                              pb: 2,
+                              pr: 2,
+                              cursor: 'pointer',
+                              borderRadius: 1
+                            }}
+                            onClick={() => toggleEmailExpansion(itemId)}
+                          >
+                            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+                              {/* Avatar */}
+                              <Avatar 
+                                sx={{ 
+                                  width: 40, 
+                                  height: 40, 
+                                  bgcolor: isDraft ? getDraftStatusColor(item.status) : '#5f6368',
+                                  fontSize: '16px',
+                                  fontWeight: 500
+                                }}
+                              >
+                                {isEmail 
+                                  ? getInitials(item.from_email?.name, item.from_email?.email)
+                                  : 'D' // Draft indicator
+                                }
+                              </Avatar>
                               
-                              {/* From and To fields */}
-                              {isActuallyExpanded && (
-                                <Box sx={{ mb: 1 }}>
-                                  <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500, mb: 0.5 }}>
-                                    From: {threadEmail.from_email?.name || 'Unknown'} &lt;{threadEmail.from_email?.email || 'unknown@example.com'}&gt;
-                                  </Typography>
-                                  <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500 }}>
-                                    To: {threadEmail.to_emails?.map(recipient => 
-                                      `${recipient.name || recipient.email || 'Unknown'} <${recipient.email || 'unknown@example.com'}>`
-                                    ).join(', ') || 'No recipients'}
+                              {/* Item Info */}
+                              <Box sx={{ flex: 1, minWidth: 0 }}>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <Typography variant="body1" sx={{ fontWeight: 500, color: '#202124' }}>
+                                      {isEmail 
+                                        ? (item.from_email?.name || item.from_email?.email || 'Unknown Sender')
+                                        : 'Draft'
+                                      }
+                                    </Typography>
+                                    {isDraft && (
+                                      <Box
+                                        sx={{
+                                          px: 1,
+                                          py: 0.5,
+                                          borderRadius: 1,
+                                          bgcolor: getDraftStatusColor(item.status),
+                                          color: 'white',
+                                          fontSize: '12px',
+                                          fontWeight: 500
+                                        }}
+                                      >
+                                        {getDraftStatusLabel(item.status)}
+                                      </Box>
+                                    )}
+                                  </Box>
+                                  <Typography variant="caption" color="#5f6368">
+                                    {formatDate(isEmail ? item.date : new Date(item.created_at * 1000).toISOString())}
                                   </Typography>
                                 </Box>
-                              )}
-                              
-                              {/* Snippet (when collapsed) */}
-                              {!isActuallyExpanded && threadEmail.content?.text && (
+                                
+                                {/* Expanded details */}
+                                {isActuallyExpanded && (
+                                  <Box sx={{ mb: 1 }}>
+                                    {isEmail ? (
+                                      <>
+                                        <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500, mb: 0.5 }}>
+                                          From: {item.from_email?.name || 'Unknown'} &lt;{item.from_email?.email || 'unknown@example.com'}&gt;
+                                        </Typography>
+                                        <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500 }}>
+                                          To: {item.to_emails?.map(recipient => 
+                                            `${recipient.name || recipient.email || 'Unknown'} <${recipient.email || 'unknown@example.com'}>`
+                                          ).join(', ') || 'No recipients'}
+                                        </Typography>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500, mb: 0.5 }}>
+                                          Subject: {item.subject || 'No subject'}
+                                        </Typography>
+                                        <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500 }}>
+                                          To: {item.to_emails?.map(recipient => 
+                                            `${recipient.name || recipient.email || 'Unknown'} <${recipient.email || 'unknown@example.com'}>`
+                                          ).join(', ') || 'No recipients'}
+                                        </Typography>
+                                      </>
+                                    )}
+                                  </Box>
+                                )}
+                                
+                                {/* Snippet (when collapsed) */}
+                                {!isActuallyExpanded && (
                                   <Typography 
                                     variant="body2" 
-                                  color="#5f6368"
+                                    color="#5f6368"
                                     sx={{ 
                                       overflow: 'hidden',
                                       textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap',
-                                    maxWidth: '100%'
+                                      whiteSpace: 'nowrap',
+                                      maxWidth: '100%'
                                     }}
                                   >
-                                  {threadEmail.content.text.substring(0, 120)}
-                                  {threadEmail.content.text.length > 120 ? '...' : ''}
+                                    {isEmail 
+                                      ? (item.content?.text?.substring(0, 120) || 'No content')
+                                      : (item.body?.substring(0, 120) || 'No content')
+                                    }
+                                    {((isEmail ? item.content?.text?.length : item.body?.length) > 120) ? '...' : ''}
                                   </Typography>
                                 )}
                               </Box>
+                            </Box>
+                          </Box>
+                          
+                          {/* Expanded Content */}
+                          {isActuallyExpanded && (
+                            <Box sx={{ pl: 6, pr: 2, pb: 2 }}>
+                              <Box sx={{ mb: 2 }}>
+                                {isEmail ? renderEmailBody(item) : renderDraftBody(item)}
+                              </Box>
+                            </Box>
+                          )}
+                        </Box>
+                      );
+                    })}
+                </Box>
+              ) : (
+                /* Traditional single email/draft view */
+                <Box>
+                  {email && (
+                    <Box
+                      sx={{
+                        width: '100%',
+                        borderBottom: '1px solid #e0e0e0'
+                      }}
+                    >
+                      <Box sx={{ pt: 2, pb: 2, pr: 2, borderRadius: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, mb: 2 }}>
+                          <Avatar 
+                            sx={{ 
+                              width: 40, 
+                              height: 40, 
+                              bgcolor: '#1976d2',
+                              fontSize: '16px',
+                              fontWeight: 500
+                            }}
+                          >
+                            {getInitials(
+                              email.from_email?.name,
+                              email.from_email?.email
+                            )}
+                          </Avatar>
+                          
+                          <Box sx={{ flex: 1 }}>
+                            <Typography variant="body1" sx={{ fontWeight: 500, color: '#202124', mb: 1 }}>
+                              {email.from_email?.name || email.from_email?.email || 'Unknown Sender'}
+                            </Typography>
+                            <Typography variant="body2" color="#5f6368" sx={{ mb: 1 }}>
+                              {formatDate(email.date)}
+                            </Typography>
+                            
+                            <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500, mb: 0.5 }}>
+                              From: {email.from_email?.name || 'Unknown'} &lt;{email.from_email?.email || 'unknown@example.com'}&gt;
+                            </Typography>
+                            <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500 }}>
+                              To: {email.to_emails?.map(recipient => 
+                                `${recipient.name || recipient.email || 'Unknown'} <${recipient.email || 'unknown@example.com'}>`
+                              ).join(', ') || 'No recipients'}
+                            </Typography>
                           </Box>
                         </Box>
                         
-                        {/* Expanded Email Content */}
-                        {isActuallyExpanded && (
-                          <Box sx={{ pl: 6, pr: 2, pb: 2 }}>
-                            <Box sx={{ mb: 2 }}>
-                              {renderEmailBody(threadEmail)}
+                        <Box sx={{ pl: 6, mb: 2 }}>
+                          {renderEmailBody(email)}
+                        </Box>
+                      </Box>
+                    </Box>
+                  )}
+                  {draft && (
+                    <Box
+                      sx={{
+                        width: '100%',
+                        borderBottom: '1px solid #e0e0e0',
+                        backgroundColor: '#f8f9ff'
+                      }}
+                    >
+                      <Box sx={{ pt: 2, pb: 2, pr: 2, borderRadius: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, mb: 2 }}>
+                          <Avatar 
+                            sx={{ 
+                              width: 40, 
+                              height: 40, 
+                              bgcolor: getDraftStatusColor(draft.status),
+                              fontSize: '16px',
+                              fontWeight: 500
+                            }}
+                          >
+                            D
+                          </Avatar>
+                          
+                          <Box sx={{ flex: 1 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                              <Typography variant="body1" sx={{ fontWeight: 500, color: '#202124' }}>
+                                Draft
+                              </Typography>
+                              <Box
+                                sx={{
+                                  px: 1,
+                                  py: 0.5,
+                                  borderRadius: 1,
+                                  bgcolor: getDraftStatusColor(draft.status),
+                                  color: 'white',
+                                  fontSize: '12px',
+                                  fontWeight: 500
+                                }}
+                              >
+                                {getDraftStatusLabel(draft.status)}
+                              </Box>
                             </Box>
+                            <Typography variant="body2" color="#5f6368" sx={{ mb: 1 }}>
+                              {formatDate(new Date(draft.created_at * 1000).toISOString())}
+                            </Typography>
+                            
+                            <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500, mb: 0.5 }}>
+                              Subject: {draft.subject || 'No subject'}
+                            </Typography>
+                            <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500 }}>
+                              To: {draft.to_emails?.map(recipient => 
+                                `${recipient.name || recipient.email || 'Unknown'} <${recipient.email || 'unknown@example.com'}>`
+                              ).join(', ') || 'No recipients'}
+                            </Typography>
                           </Box>
-                        )}
-                      </Box>
-                    );
-                  })}
-                </Box>
-              ) : (
-                /* Single Email View */
-                <Box
-                  sx={{
-                    width: '100%',
-                    borderBottom: '1px solid #e0e0e0'
-                  }}
-                >
-                  <Box sx={{ pt: 2, pb: 2, pr: 2, borderRadius: 1 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, mb: 2 }}>
-                      <Avatar 
-                        sx={{ 
-                          width: 40, 
-                          height: 40, 
-                          bgcolor: '#1976d2',
-                          fontSize: '16px',
-                          fontWeight: 500
-                        }}
-                      >
-                        {getInitials(
-                          email.from_email?.name,
-                          email.from_email?.email
-                        )}
-                      </Avatar>
-                      
-                      <Box sx={{ flex: 1 }}>
-                        <Typography variant="body1" sx={{ fontWeight: 500, color: '#202124', mb: 1 }}>
-                          {email.from_email?.name || email.from_email?.email || 'Unknown Sender'}
-                        </Typography>
-                        <Typography variant="body2" color="#5f6368" sx={{ mb: 1 }}>
-                          {formatDate(email.date)}
-                        </Typography>
+                        </Box>
                         
-                        {/* From and To fields */}
-                        <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500, mb: 0.5 }}>
-                          From: {email.from_email?.name || 'Unknown'} &lt;{email.from_email?.email || 'unknown@example.com'}&gt;
-                        </Typography>
-                        <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500 }}>
-                          To: {email.to_emails?.map(recipient => 
-                            `${recipient.name || recipient.email || 'Unknown'} <${recipient.email || 'unknown@example.com'}>`
-                          ).join(', ') || 'No recipients'}
-                        </Typography>
+                        <Box sx={{ pl: 6, mb: 2 }}>
+                          {renderDraftBody(draft)}
+                        </Box>
                       </Box>
                     </Box>
-                    
-                    <Box sx={{ pl: 6, mb: 2 }}>
-                      {renderEmailBody(email)}
-                    </Box>
-                  </Box>
+                  )}
                 </Box>
               )}
             </Box>

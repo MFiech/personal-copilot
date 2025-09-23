@@ -243,12 +243,13 @@ def convert_objectid_to_str(obj):
         return [convert_objectid_to_str(item) for item in obj]
     return obj
 
-def save_sent_email_to_db(sent_email_data):
+def save_sent_email_to_db(sent_email_data, pm_copilot_thread_id=None):
     """
     Process and save sent email data from Composio to the emails database.
     
     Args:
         sent_email_data: Email data returned from Composio fetch
+        pm_copilot_thread_id: PM Co-Pilot thread ID to associate the email with
     
     Returns:
         bool: True if saved successfully, False otherwise
@@ -264,12 +265,13 @@ def save_sent_email_to_db(sent_email_data):
         processed_email = {
             'email_id': email_id,
             'gmail_thread_id': sent_email_data.get('threadId'),
-            'subject': None,  # Will be extracted from payload
+            'thread_id': pm_copilot_thread_id or sent_email_data.get('threadId'),  # Use PM Co-Pilot thread ID if provided
+            'subject': sent_email_data.get('subject', ''),  # Default subject
             'from_email': {'email': '', 'name': ''},
             'to_emails': [],
             'cc_emails': [],
             'bcc_emails': [],
-            'date': None,
+            'date': sent_email_data.get('messageTimestamp', datetime.now().isoformat()),  # String format
             'content': {'html': '', 'text': ''},
             'metadata': {
                 'source': 'COMPOSIO_SENT',
@@ -281,31 +283,60 @@ def save_sent_email_to_db(sent_email_data):
             'updated_at': int(time.time())
         }
         
-        # Extract headers and body from payload if available
+        # Use Composio direct fields first, then fall back to headers
+        if sent_email_data.get('subject'):
+            processed_email['subject'] = sent_email_data['subject']
+        if sent_email_data.get('sender'):
+            processed_email['from_email'] = parse_email_header(sent_email_data['sender'])
+        if sent_email_data.get('to'):
+            processed_email['to_emails'] = parse_email_list_header(sent_email_data['to'])
+        
+        # Extract headers from payload as fallback
         payload = sent_email_data.get('payload', {})
         headers = payload.get('headers', [])
         
-        # Process headers
+        # Process headers for missing fields
         for header in headers:
             name = header.get('name', '').lower()
             value = header.get('value', '')
             
-            if name == 'subject':
+            if name == 'subject' and not processed_email['subject']:
                 processed_email['subject'] = value
-            elif name == 'from':
+            elif name == 'from' and not processed_email['from_email']['email']:
                 processed_email['from_email'] = parse_email_header(value)
-            elif name == 'to':
+            elif name == 'to' and not processed_email['to_emails']:
                 processed_email['to_emails'] = parse_email_list_header(value)
             elif name == 'cc':
                 processed_email['cc_emails'] = parse_email_list_header(value)
             elif name == 'bcc':
                 processed_email['bcc_emails'] = parse_email_list_header(value)
             elif name == 'date':
-                processed_email['date'] = parse_email_date(value)
+                # Ensure date is always a string (ISO format) for MongoDB validation
+                parsed_date = parse_email_date(value)
+                if isinstance(parsed_date, datetime):
+                    processed_email['date'] = parsed_date.isoformat()
+                else:
+                    processed_email['date'] = parsed_date or sent_email_data.get('messageTimestamp', datetime.now().isoformat())
         
         # Extract email content (body)
-        body_content = extract_email_body_from_payload(payload)
-        processed_email['content'] = body_content
+        # Use messageText if available, otherwise extract from payload
+        if sent_email_data.get('messageText'):
+            message_text = sent_email_data['messageText']
+            # Check if it's HTML or plain text
+            if message_text.startswith('<') or '<br' in message_text or '<div' in message_text:
+                processed_email['content'] = {
+                    'html': message_text,
+                    'text': message_text  # For now, store HTML as text too
+                }
+            else:
+                processed_email['content'] = {
+                    'html': f'<pre>{message_text}</pre>',
+                    'text': message_text
+                }
+        else:
+            # Fall back to payload extraction
+            body_content = extract_email_body_from_payload(payload)
+            processed_email['content'] = body_content
         
         # Save to database
         emails_collection = get_collection(EMAILS_COLLECTION)
@@ -2971,6 +3002,55 @@ def get_email_thread(gmail_thread_id):
         print(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/thread/<pm_copilot_thread_id>/combined', methods=['GET'])
+def get_combined_thread_data(pm_copilot_thread_id):
+    """Get combined thread data: both emails and drafts for a PM Co-Pilot thread ID"""
+    try:
+        from services.draft_service import DraftService
+        draft_service = DraftService()
+        
+        # Get drafts for this thread  
+        drafts = draft_service.get_all_drafts_by_thread(pm_copilot_thread_id)
+        # Convert Draft objects to dictionaries
+        drafts = [draft.to_dict() for draft in drafts] if drafts else []
+        
+        # Get emails for this thread (by PM Co-Pilot thread_id)
+        emails_collection = get_collection(EMAILS_COLLECTION)
+        emails = list(emails_collection.find({'thread_id': pm_copilot_thread_id}).sort('date', 1))
+        
+        # Process emails to remove ObjectId
+        processed_emails = []
+        for email in emails:
+            email_dict = email.copy()
+            if '_id' in email_dict:
+                email_dict['_id'] = str(email_dict['_id'])
+            processed_emails.append(email_dict)
+        
+        # Filter out drafts that have corresponding sent emails to avoid duplication
+        filtered_drafts = []
+        sent_message_ids = {email.get('email_id') for email in processed_emails}
+        
+        for draft in drafts:
+            # Include draft only if it doesn't have a corresponding sent email
+            if draft.get('sent_message_id') not in sent_message_ids:
+                filtered_drafts.append(draft)
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'thread_id': pm_copilot_thread_id,
+                'emails': processed_emails,
+                'drafts': filtered_drafts,
+                'total_items': len(processed_emails) + len(filtered_drafts)
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"[ERROR] Exception in get_combined_thread_data: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/emails/thread/<gmail_thread_id>/full', methods=['GET'])
 def get_full_email_thread(gmail_thread_id):
     """Get full email thread with processed content"""
@@ -3531,8 +3611,8 @@ def send_draft(draft_id):
                             fetch_result = tooling_service.fetch_sent_email_by_message_id(sent_message_id)
                             
                             if fetch_result.get('success') and fetch_result.get('email_data'):
-                                # Save the sent email to database
-                                save_success = save_sent_email_to_db(fetch_result['email_data'])
+                                # Save the sent email to database with PM Co-Pilot thread ID
+                                save_success = save_sent_email_to_db(fetch_result['email_data'], draft.thread_id)
                                 if save_success:
                                     print(f"[DRAFT] ✅ Sent email {sent_message_id} saved to database")
                                 else:

@@ -18,13 +18,15 @@ const ResizableEmailSidebar = ({
   open,
   email,
   threadEmails = [],
+  threadDrafts = [],
   gmailThreadId = null,
+  pmCopilotThreadId = null,
   draft = null,
   loading,
   error,
   onClose,
   onWidthChange,
-  contentType = 'email', // 'email', 'draft', or 'both'
+  contentType = 'email', // 'email', 'draft', or 'combined'
   draftValidation = null,
   onSendDraft = null,
   isSendingDraft = false
@@ -471,7 +473,9 @@ const ResizableEmailSidebar = ({
           >
             {contentType === 'draft'
               ? (draft?.draft_type === 'email' ? 'Email Draft' : 'Event Draft')
-              : (threadEmails?.[0]?.subject || email?.subject || 'Email')
+              : contentType === 'combined'
+                ? (threadEmails?.[0]?.subject || draft?.subject || 'Thread')
+                : (threadEmails?.[0]?.subject || email?.subject || 'Email')
             }
           </Typography>
           <IconButton onClick={onClose} size="small">
@@ -495,6 +499,274 @@ const ResizableEmailSidebar = ({
 
           {contentType === 'draft' && draft && !loading && !error && (
             renderDraftContent()
+          )}
+
+          {contentType === 'combined' && !loading && !error && (threadEmails.length > 0 || threadDrafts.length > 0) && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {/* Combine emails and drafts, sort by date */}
+              {[...threadEmails, ...threadDrafts]
+                .sort((a, b) => new Date(a.date || a.created_at * 1000) - new Date(b.date || b.created_at * 1000))
+                .map((item, index) => {
+                  const isEmail = !!item.email_id;
+                  const isDraft = !!item.draft_id;
+                  const itemId = isEmail ? item.email_id : item.draft_id;
+                  const isExpanded = expandedEmails.has(itemId);
+                  const isLastItem = index === (threadEmails.length + threadDrafts.length - 1);
+                  
+                  // Auto-expand the last item or if there's only one item
+                  const shouldAutoExpand = isLastItem || (threadEmails.length + threadDrafts.length === 1);
+                  const isActuallyExpanded = isExpanded || shouldAutoExpand;
+                  
+                  const getDraftStatusColor = (status) => {
+                    switch (status) {
+                      case 'active': return '#1976d2';
+                      case 'closed': return '#4caf50';
+                      case 'composio_error': return '#f44336';
+                      default: return '#757575';
+                    }
+                  };
+
+                  const getDraftStatusLabel = (status) => {
+                    switch (status) {
+                      case 'active': return 'Draft';
+                      case 'closed': return 'Sent';
+                      case 'composio_error': return 'Error';
+                      default: return 'Draft';
+                    }
+                  };
+                  
+                  return (
+                    <Box
+                      key={itemId || index}
+                      sx={{
+                        width: '100%',
+                        borderBottom: '1px solid #e0e0e0',
+                        backgroundColor: isDraft ? '#f8f9ff' : 'white',
+                        '&:last-child': { borderBottom: 'none' }
+                      }}
+                    >
+                      {/* Item Header */}
+                      <Box
+                        sx={{
+                          pt: 2,
+                          pb: 2,
+                          pr: 2,
+                          cursor: 'pointer',
+                          borderRadius: 1,
+                          '&:hover': {
+                            backgroundColor: isDraft ? 'rgba(63, 81, 181, 0.05)' : 'rgba(0, 0, 0, 0.02)'
+                          }
+                        }}
+                        onClick={() => toggleEmailExpansion(itemId)}
+                      >
+                        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
+                          {/* Avatar */}
+                          <Avatar
+                            sx={{
+                              width: 36,
+                              height: 36,
+                              bgcolor: isDraft ? getDraftStatusColor(item.status) : '#5f6368',
+                              fontSize: '14px',
+                              fontWeight: 500,
+                              flexShrink: 0
+                            }}
+                          >
+                            {isEmail 
+                              ? getInitials(item.from_email?.name, item.from_email?.email)
+                              : 'D' // Draft indicator
+                            }
+                          </Avatar>
+                          
+                          {/* Item Info */}
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 0.5 }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mr: 1 }}>
+                                <Typography
+                                  variant="body2"
+                                  sx={{
+                                    fontWeight: 500,
+                                    color: '#202124',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                    maxWidth: '150px'
+                                  }}
+                                >
+                                  {isEmail 
+                                    ? (item.from_email?.name || item.from_email?.email || 'Unknown Sender')
+                                    : 'Draft'
+                                  }
+                                </Typography>
+                                {isDraft && (
+                                  <Chip
+                                    size="small"
+                                    label={getDraftStatusLabel(item.status)}
+                                    sx={{
+                                      height: '18px',
+                                      fontSize: '11px',
+                                      fontWeight: 500,
+                                      bgcolor: getDraftStatusColor(item.status),
+                                      color: 'white',
+                                      '& .MuiChip-label': { px: 1 }
+                                    }}
+                                  />
+                                )}
+                              </Box>
+                              <Typography
+                                variant="caption"
+                                color="#5f6368"
+                                sx={{ flexShrink: 0 }}
+                              >
+                                {formatDate(isEmail ? item.date : new Date(item.created_at * 1000).toISOString())}
+                              </Typography>
+                            </Box>
+                            
+                            {/* Expanded details */}
+                            {isActuallyExpanded && (
+                              <Box sx={{ mb: 1 }}>
+                                {isEmail ? (
+                                  <>
+                                    <Typography
+                                      variant="caption"
+                                      color="#5f6368"
+                                      sx={{
+                                        fontWeight: 400,
+                                        mb: 0.25,
+                                        display: 'block',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap'
+                                      }}
+                                    >
+                                      From: {item.from_email?.name || 'Unknown'} &lt;{item.from_email?.email || 'unknown@example.com'}&gt;
+                                    </Typography>
+                                    <Typography
+                                      variant="caption"
+                                      color="#5f6368"
+                                      sx={{
+                                        fontWeight: 400,
+                                        display: 'block',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap'
+                                      }}
+                                    >
+                                      To: {item.to_emails?.map(recipient =>
+                                        `${recipient.name || recipient.email || 'Unknown'} <${recipient.email || 'unknown@example.com'}>`
+                                      ).join(', ') || 'No recipients'}
+                                    </Typography>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Typography
+                                      variant="caption"
+                                      color="#5f6368"
+                                      sx={{
+                                        fontWeight: 400,
+                                        mb: 0.25,
+                                        display: 'block',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap'
+                                      }}
+                                    >
+                                      Subject: {item.subject || 'No subject'}
+                                    </Typography>
+                                    <Typography
+                                      variant="caption"
+                                      color="#5f6368"
+                                      sx={{
+                                        fontWeight: 400,
+                                        display: 'block',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap'
+                                      }}
+                                    >
+                                      To: {item.to_emails?.map(recipient =>
+                                        `${recipient.name || recipient.email || 'Unknown'} <${recipient.email || 'unknown@example.com'}>`
+                                      ).join(', ') || 'No recipients'}
+                                    </Typography>
+                                  </>
+                                )}
+                              </Box>
+                            )}
+                            
+                            {/* Snippet (when collapsed) */}
+                            {!isActuallyExpanded && (
+                              <Typography
+                                variant="caption"
+                                color="#5f6368"
+                                sx={{
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                  maxWidth: '100%',
+                                  display: 'block'
+                                }}
+                              >
+                                {isEmail 
+                                  ? (item.content?.text?.substring(0, 100) || 'No content')
+                                  : (item.body?.substring(0, 100) || 'No content')
+                                }
+                                {((isEmail ? item.content?.text?.length : item.body?.length) > 100) ? '...' : ''}
+                              </Typography>
+                            )}
+                          </Box>
+                        </Box>
+                      </Box>
+                      
+                      {/* Expanded Content */}
+                      {isActuallyExpanded && (
+                        <Box sx={{ pl: 5.5, pr: 2, pb: 2 }}>
+                          <Box sx={{ mb: 2 }}>
+                            {isEmail ? renderEmailBody(item) : (
+                              <>
+                                <Typography
+                                  variant="body2"
+                                  component="pre"
+                                  sx={{
+                                    whiteSpace: 'pre-wrap',
+                                    fontFamily: 'inherit',
+                                    fontSize: '14px',
+                                    lineHeight: 1.6,
+                                    wordBreak: 'break-word'
+                                  }}
+                                >
+                                  {item.body || 'No content available'}
+                                </Typography>
+                                
+                                {/* Send Button for active drafts - only show for the primary draft */}
+                                {isDraft && item.status !== 'closed' && onSendDraft && draft && item.draft_id === draft.draft_id && draftValidation?.is_complete && (
+                                  <Button
+                                    variant="contained"
+                                    startIcon={<SendIcon />}
+                                    onClick={() => onSendDraft(item.draft_id)}
+                                    disabled={isSendingDraft}
+                                    sx={{
+                                      mt: 2,
+                                      backgroundColor: '#4caf50',
+                                      '&:hover': {
+                                        backgroundColor: '#388e3c'
+                                      },
+                                      '&:disabled': {
+                                        backgroundColor: '#ccc'
+                                      }
+                                    }}
+                                    size="small"
+                                  >
+                                    {isSendingDraft ? 'Sending...' : (item.draft_type === 'email' ? 'Send Email' : 'Create Event')}
+                                  </Button>
+                                )}
+                              </>
+                            )}
+                          </Box>
+                        </Box>
+                      )}
+                    </Box>
+                  );
+                })}
+            </Box>
           )}
 
           {contentType === 'email' && email && !loading && !error && (

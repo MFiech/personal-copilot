@@ -1149,7 +1149,9 @@ function App() {
       open: false,
       email: null,
       threadEmails: [],
+      threadDrafts: [],
       gmailThreadId: null,
+      pmCopilotThreadId: null,
       loading: false,
       error: null,
       draft: null,
@@ -1161,84 +1163,82 @@ function App() {
   };
 
   const handleDraftClick = async (draft) => {
-    // Check if this is a reply draft (has gmail_thread_id)
-    if (draft.gmail_thread_id) {
-      console.log(`Draft ${draft.draft_id} is a reply draft for thread ${draft.gmail_thread_id}`);
-      
-      // For reply drafts, open in email thread context
-      setEmailSidebar({
-        open: true,
-        email: null,
-        threadEmails: [],
-        gmailThreadId: draft.gmail_thread_id,
-        loading: true,
-        error: null,
-        draft: null,
-        contentType: 'email'
+    console.log(`Clicked on draft ${draft.draft_id} in thread ${draft.thread_id}`);
+    
+    // Set loading state
+    setEmailSidebar({
+      open: true,
+      email: null,
+      threadEmails: [],
+      threadDrafts: [],
+      gmailThreadId: draft.gmail_thread_id,
+      pmCopilotThreadId: draft.thread_id,
+      loading: true,
+      error: null,
+      draft: null,
+      contentType: 'combined'
+    });
+
+    try {
+      // Fetch combined thread data (emails + drafts)
+      const response = await fetch(`http://localhost:5001/thread/${draft.thread_id}/combined`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
       });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch combined thread data: ${response.status}`);
+      }
 
-      try {
-        // Fetch the thread emails
-        const threadResponse = await fetch(`http://localhost:5001/emails/thread/${draft.gmail_thread_id}/full`, {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' }
-        });
+      const data = await response.json();
+      
+      if (data.success && data.data) {
+        const { emails = [], drafts = [] } = data.data;
+        console.log(`Found ${emails.length} emails and ${drafts.length} drafts in thread ${draft.thread_id}`);
         
-        let threadEmails = [];
-        if (threadResponse.ok) {
-          const threadData = await threadResponse.json();
-          if (threadData.success && threadData.data && threadData.data.emails) {
-            threadEmails = threadData.data.emails;
-            console.log(`Found ${threadEmails.length} emails in thread ${draft.gmail_thread_id}`);
-          }
-        }
-
-        // Set up sidebar with both thread emails and the draft
+        // Set up sidebar with combined data
         setEmailSidebar({
           open: true,
-          email: threadEmails.length > 0 ? threadEmails[0] : null,
-          threadEmails: threadEmails,
+          email: emails.length > 0 ? emails[emails.length - 1] : null, // Show newest email as primary
+          threadEmails: emails,
+          threadDrafts: drafts,
           gmailThreadId: draft.gmail_thread_id,
+          pmCopilotThreadId: draft.thread_id,
           loading: false,
           error: null,
-          draft: draft,
-          contentType: 'email'
+          draft: draft, // Keep the clicked draft as the primary draft
+          contentType: 'combined'
         });
-
-      } catch (error) {
-        console.error('Error fetching thread for draft:', error);
-        setEmailSidebar({
-          open: true,
-          email: null,
-          threadEmails: [],
-          gmailThreadId: draft.gmail_thread_id,
-          loading: false,
-          error: error.message,
-          draft: draft,
-          contentType: 'email'
-        });
+      } else {
+        throw new Error('Failed to retrieve combined thread data');
       }
-    } else {
-      // For regular drafts, open in draft-only context
+
+    } catch (error) {
+      console.error('Error fetching combined thread data:', error);
       setEmailSidebar({
         open: true,
         email: null,
         threadEmails: [],
-        gmailThreadId: null,
+        threadDrafts: [],
+        gmailThreadId: draft.gmail_thread_id,
+        pmCopilotThreadId: draft.thread_id,
         loading: false,
-        error: null,
+        error: error.message,
         draft: draft,
-        contentType: 'draft'
+        contentType: 'combined'
       });
     }
 
-    // Auto-anchor the draft when sidebar opens
+    // Auto-anchor the draft when sidebar opens and fetch its validation
     const draftAnchorData = {
       id: draft.draft_id,
       type: 'draft',
       data: draft
     };
     handleAnchorChange(draftAnchorData);
+    
+    // Fetch draft validation for the clicked draft
+    fetchDraftValidation(draft.draft_id);
   };
 
   // --- Sync anchor state with URL query params ---
@@ -1973,7 +1973,9 @@ function App() {
             open={emailSidebar.open}
             email={emailSidebar.email}
             threadEmails={emailSidebar.threadEmails}
+            threadDrafts={emailSidebar.threadDrafts || []}
             gmailThreadId={emailSidebar.gmailThreadId}
+            pmCopilotThreadId={emailSidebar.pmCopilotThreadId}
             draft={emailSidebar.draft}
             loading={emailSidebar.loading}
             error={emailSidebar.error}
