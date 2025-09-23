@@ -3051,6 +3051,41 @@ def get_combined_thread_data(pm_copilot_thread_id):
         print(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/resolve-thread/<gmail_thread_id>', methods=['GET'])
+def resolve_thread_id(gmail_thread_id):
+    """Resolve Gmail thread ID to PM Co-Pilot thread ID for using combined endpoint"""
+    try:
+        # Find an email with this gmail_thread_id and get its pm_copilot thread_id
+        emails_collection = get_collection(EMAILS_COLLECTION)
+        email = emails_collection.find_one({'gmail_thread_id': gmail_thread_id})
+        
+        if not email:
+            return jsonify({
+                'success': False,
+                'error': 'Gmail thread not found'
+            }), 404
+        
+        pm_copilot_thread_id = email.get('thread_id')
+        if not pm_copilot_thread_id:
+            return jsonify({
+                'success': False,
+                'error': 'No PM Co-Pilot thread ID found for this Gmail thread'
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'gmail_thread_id': gmail_thread_id,
+                'pm_copilot_thread_id': pm_copilot_thread_id
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"[ERROR] Exception in resolve_thread_id: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/emails/thread/<gmail_thread_id>/full', methods=['GET'])
 def get_full_email_thread(gmail_thread_id):
     """Get full email thread with processed content"""
