@@ -84,14 +84,14 @@ Implement email reply functionality using Composio's `GMAIL_REPLY_TO_THREAD` act
 ## Phase 5: Integration & Polish
 
 ### Tasks:
-- [ ] **5.1** Update Draft Validation:
-  - [ ] For reply drafts (has `gmail_thread_id`), make subject optional
-  - [ ] Subject is inherited from thread by Gmail
+- [x] **5.1** Update Draft Validation:
+  - [x] For reply drafts (has `gmail_thread_id`), make subject optional
+  - [x] Subject is inherited from thread by Gmail
 
-- [ ] **5.2** Frontend Visual Indicators:
-  - [ ] Draft tile shows "Reply to [Subject]" when it's a reply
-  - [ ] Sidebar chip shows "Reply Draft" or "Reply Sent" (green)
-  - [ ] Optional: Show small thread icon in draft tile
+- [x] **5.2** Frontend Visual Indicators:
+  - [x] Draft tile shows "Reply to [Subject]" when it's a reply
+  - [x] Sidebar chip shows "Reply Draft" or "Reply Sent" (green)
+  - [x] Optional: Show small thread icon in draft tile
 
 - [ ] **5.3** Testing & Edge Cases:
   - [ ] Test reply with single email vs multi-email thread

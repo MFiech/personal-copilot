@@ -6,6 +6,7 @@ import {
 } from '@mui/material';
 import EmailIcon from '@mui/icons-material/Email';
 import EventIcon from '@mui/icons-material/Event';
+import ReplyIcon from '@mui/icons-material/Reply';
 
 const SimplifiedDraftCard = ({
   draft,
@@ -80,7 +81,11 @@ const SimplifiedDraftCard = ({
       {/* Header */}
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
         {isEmail ? (
-          <EmailIcon sx={{ color: '#666', mr: 1, fontSize: '18px' }} />
+          isReply ? (
+            <ReplyIcon sx={{ color: '#1976d2', mr: 1, fontSize: '18px' }} />
+          ) : (
+            <EmailIcon sx={{ color: '#666', mr: 1, fontSize: '18px' }} />
+          )
         ) : (
           <EventIcon sx={{ color: '#666', mr: 1, fontSize: '18px' }} />
         )}
@@ -139,16 +144,19 @@ const SimplifiedDraftCard = ({
                   mr: 0.5
                 }}
               >
-                Subject:
+                {isReply ? 'Reply to:' : 'Subject:'}
               </Typography>
               <Typography
                 variant="caption"
                 sx={{
-                  color: draft.subject ? '#333' : '#d32f2f',
+                  color: draft.subject || isReply ? '#333' : '#d32f2f',
                   display: 'inline'
                 }}
               >
-                {truncateText(draft.subject, 50) || 'Not specified'}
+                {isReply 
+                  ? truncateText(draft.subject || 'Original email', 40)
+                  : (truncateText(draft.subject, 50) || 'Not specified')
+                }
               </Typography>
             </Box>
 
