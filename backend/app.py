@@ -1431,8 +1431,9 @@ def chat():
                                 to_emails = anchored_email.get('to_emails', [])
 
                                 # Set primary recipient to original sender
-                                if from_email:
-                                    detection_result['draft_data']['extracted_info']['to_contacts'] = [from_email]
+                                # from_email is already a dict with 'email' and 'name', use it directly as to_emails format
+                                if from_email and from_email.get('email'):
+                                    detection_result['draft_data']['extracted_info']['to_emails'] = [from_email]
                                     print(f"[DRAFT] Auto-populated To: {from_email}")
 
                                 # Set CC to original recipients

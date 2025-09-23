@@ -642,7 +642,11 @@ class DraftService:
             if draft_type == "email":
                 print(f"[DraftService] Processing email fields...")
                 # Process email-specific fields
-                if "to_contacts" in extracted_info:
+                # Check for to_emails first (used for replies), then to_contacts
+                if "to_emails" in extracted_info:
+                    initial_data["to_emails"] = extracted_info["to_emails"]
+                    print(f"[DraftService] Added to_emails: {extracted_info['to_emails']}")
+                elif "to_contacts" in extracted_info:
                     initial_data["to_contacts"] = extracted_info["to_contacts"]
                     print(f"[DraftService] Added to_contacts: {extracted_info['to_contacts']}")
                 if "subject" in extracted_info and extracted_info["subject"]:

@@ -170,11 +170,13 @@ class Draft:
     def validate_completeness(self):
         """Check if draft has all required fields for Composio execution"""
         missing_fields = []
-        
+
         if self.draft_type == "email":
             if not self.to_emails or len(self.to_emails) == 0:
                 missing_fields.append("to_emails")
-            if not self.subject:
+            # Subject is optional for reply drafts (gmail_thread_id is set)
+            # Gmail automatically uses "Re: [original subject]" for replies
+            if not self.subject and not self.gmail_thread_id:
                 missing_fields.append("subject")
             if not self.body:
                 missing_fields.append("body")

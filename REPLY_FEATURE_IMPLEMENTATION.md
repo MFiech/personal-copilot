@@ -48,20 +48,21 @@ Implement email reply functionality using Composio's `GMAIL_REPLY_TO_THREAD` act
 ## Phase 3: Frontend - UI Integration
 
 ### Tasks:
-- [ ] **3.1** Pass thread context to draft creation (`frontend/src/App.js`):
-  - [ ] When email is anchored, include `gmail_thread_id` in draft creation
-  - [ ] Pass anchored email data to backend via `anchored_item`
+- [x] **3.1** Pass thread context to draft creation (`frontend/src/App.js`):
+  - [x] When email is anchored, include `gmail_thread_id` in draft creation
+  - [x] Pass anchored email data to backend via `anchored_item`
+  - [x] Update draft validation to make subject optional for replies
 
-- [ ] **3.2** Update Email Sidebar UI (`frontend/src/components/ResizableEmailSidebar.js`):
-  - [ ] Show draft box after all thread emails with divider
-  - [ ] Reuse existing draft UI (bordered box with chip and Send button)
-  - [ ] Keep all email expand/collapse functionality intact
-  - [ ] Show subject as read-only for reply drafts
-  - [ ] Update chip text to "Reply Draft" / "Reply Sent" for replies
+- [x] **3.2** Update Email Sidebar UI (`frontend/src/components/ResizableEmailSidebar.js`):
+  - [x] Show draft box after all thread emails with divider
+  - [x] Reuse existing draft UI (bordered box with chip and Send button)
+  - [x] Keep all email expand/collapse functionality intact
+  - [x] Show subject as read-only for reply drafts
+  - [x] Update chip text to "Reply Draft" / "Reply Sent" for replies
 
-- [ ] **3.3** Update Draft Tile (`frontend/src/components/SimplifiedDraftCard.js`):
-  - [ ] Show "Reply to [Subject]" for reply drafts
-  - [ ] Add visual indicator (optional: thread icon)
+- [x] **3.3** Update Draft Tile (`frontend/src/components/SimplifiedDraftCard.js`):
+  - [x] Show "Reply Draft" / "Reply Sent" text for reply drafts
+  - [x] Detect reply via `gmail_thread_id` field
 
 ---
 

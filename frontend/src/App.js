@@ -591,21 +591,88 @@ function App() {
       // Handle draft creation with immediate anchoring
       if (data.draft_created && data.auto_anchor_draft) {
         console.log('[App.js] Draft created with auto-anchor flag:', data.draft_created);
-        
-        // Immediately anchor the created draft
-        const anchorData = {
-          id: data.draft_created.draft_id,
-          type: 'draft',
-          data: data.draft_created.draft_data
-        };
-        handleAnchorChange(anchorData);
-        fetchDraftValidation(data.draft_created.draft_id);
-        console.log('[App.js] Auto-anchored created draft:', data.draft_created.draft_id);
-        
-        // Also display the draft card
-        setTimeout(() => {
-          checkForDraftInMessage(data.draft_created.user_message_id, true);
-        }, 100); // Small delay to ensure database update
+
+        const draftData = data.draft_created.draft_data;
+
+        // Check if this is a reply draft (has gmail_thread_id)
+        if (draftData && draftData.gmail_thread_id) {
+          console.log('[App.js] Reply draft detected, opening email thread sidebar');
+          console.log('[App.js] Gmail thread ID:', draftData.gmail_thread_id);
+
+          // For reply drafts, open the email thread sidebar with the draft included
+          setEmailSidebar({
+            open: true,
+            email: null,
+            threadEmails: [],
+            gmailThreadId: draftData.gmail_thread_id,
+            loading: true,
+            error: null,
+            draft: null,
+            contentType: 'email'
+          });
+
+          // Fetch thread data and draft validation in parallel
+          Promise.all([
+            fetch(`http://localhost:5001/emails/thread/${draftData.gmail_thread_id}/full`).then(res => res.json()),
+            fetchDraftValidation(data.draft_created.draft_id)
+          ])
+            .then(([threadResponse, validationResponse]) => {
+              console.log('[App.js] Thread fetch response:', threadResponse);
+              
+              let threadEmails = [];
+              if (threadResponse.success && threadResponse.data && threadResponse.data.emails) {
+                threadEmails = threadResponse.data.emails;
+                console.log(`[App.js] Found ${threadEmails.length} emails in reply thread`);
+              }
+
+              // Set up sidebar with both thread emails and the draft
+              setEmailSidebar({
+                open: true,
+                email: threadEmails.length > 0 ? threadEmails[0] : null,
+                threadEmails: threadEmails,
+                gmailThreadId: draftData.gmail_thread_id,
+                loading: false,
+                error: null,
+                draft: draftData,
+                contentType: 'email'
+              });
+            })
+            .catch(error => {
+              console.error('[App.js] Error setting up reply draft sidebar:', error);
+              setEmailSidebar({
+                open: true,
+                email: null,
+                threadEmails: [],
+                gmailThreadId: draftData.gmail_thread_id,
+                loading: false,
+                error: error.message,
+                draft: draftData,
+                contentType: 'email'
+              });
+            });
+
+          // Also display the draft card
+          setTimeout(() => {
+            checkForDraftInMessage(data.draft_created.user_message_id, true);
+          }, 100);
+        } else {
+          console.log('[App.js] Not a reply draft, using regular anchor');
+          console.log('[App.js] Draft data:', draftData);
+          // For regular drafts, anchor as usual
+          const anchorData = {
+            id: data.draft_created.draft_id,
+            type: 'draft',
+            data: draftData
+          };
+          handleAnchorChange(anchorData);
+          fetchDraftValidation(data.draft_created.draft_id);
+          console.log('[App.js] Auto-anchored created draft:', data.draft_created.draft_id);
+
+          // Also display the draft card
+          setTimeout(() => {
+            checkForDraftInMessage(data.draft_created.user_message_id, true);
+          }, 100); // Small delay to ensure database update
+        }
       } else if (data.draft_updated && data.auto_anchor_draft) {
         console.log('[App.js] Draft updated with auto-anchor flag:', data.draft_updated);
         
@@ -993,6 +1060,7 @@ function App() {
         // Check if this email is part of a Gmail thread
         let threadEmails = [];
         let gmailThreadId = null;
+        let relatedDraft = null;
         
         if (email.gmail_thread_id) {
           gmailThreadId = email.gmail_thread_id;
@@ -1010,6 +1078,30 @@ function App() {
                 console.log(`Found ${threadEmails.length} emails in thread ${gmailThreadId} with full content`);
               }
             }
+
+            // Also fetch any drafts with the same gmail_thread_id
+            // We need to fetch drafts for the current conversation thread
+            if (threadId) {
+              try {
+                const draftsResponse = await fetch(`http://localhost:5001/drafts/thread/${threadId}`);
+                if (draftsResponse.ok) {
+                  const draftsData = await draftsResponse.json();
+                  if (draftsData.success && draftsData.drafts && draftsData.drafts.length > 0) {
+                    // Find draft with matching gmail_thread_id
+                    const matchingDraft = draftsData.drafts.find(draft => 
+                      draft.gmail_thread_id === gmailThreadId
+                    );
+                    if (matchingDraft) {
+                      relatedDraft = matchingDraft;
+                      console.log(`Found related draft ${matchingDraft.draft_id} for gmail thread ${gmailThreadId}`);
+                    }
+                  }
+                }
+              } catch (draftError) {
+                console.warn('Could not fetch thread drafts:', draftError);
+                // Continue without draft data
+              }
+            }
           } catch (threadError) {
             console.warn('Could not fetch thread data:', threadError);
             // Continue without thread data
@@ -1023,7 +1115,7 @@ function App() {
           gmailThreadId: gmailThreadId,
           loading: false,
           error: null,
-          draft: null,
+          draft: relatedDraft,
           contentType: 'email'
         });
 
@@ -1068,18 +1160,77 @@ function App() {
     handleAnchorChange(null);
   };
 
-  const handleDraftClick = (draft) => {
-    // Close any existing sidebar and open with draft content
-    setEmailSidebar({
-      open: true,
-      email: null,
-      threadEmails: [],
-      gmailThreadId: null,
-      loading: false,
-      error: null,
-      draft: draft,
-      contentType: 'draft'
-    });
+  const handleDraftClick = async (draft) => {
+    // Check if this is a reply draft (has gmail_thread_id)
+    if (draft.gmail_thread_id) {
+      console.log(`Draft ${draft.draft_id} is a reply draft for thread ${draft.gmail_thread_id}`);
+      
+      // For reply drafts, open in email thread context
+      setEmailSidebar({
+        open: true,
+        email: null,
+        threadEmails: [],
+        gmailThreadId: draft.gmail_thread_id,
+        loading: true,
+        error: null,
+        draft: null,
+        contentType: 'email'
+      });
+
+      try {
+        // Fetch the thread emails
+        const threadResponse = await fetch(`http://localhost:5001/emails/thread/${draft.gmail_thread_id}/full`, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        
+        let threadEmails = [];
+        if (threadResponse.ok) {
+          const threadData = await threadResponse.json();
+          if (threadData.success && threadData.data && threadData.data.emails) {
+            threadEmails = threadData.data.emails;
+            console.log(`Found ${threadEmails.length} emails in thread ${draft.gmail_thread_id}`);
+          }
+        }
+
+        // Set up sidebar with both thread emails and the draft
+        setEmailSidebar({
+          open: true,
+          email: threadEmails.length > 0 ? threadEmails[0] : null,
+          threadEmails: threadEmails,
+          gmailThreadId: draft.gmail_thread_id,
+          loading: false,
+          error: null,
+          draft: draft,
+          contentType: 'email'
+        });
+
+      } catch (error) {
+        console.error('Error fetching thread for draft:', error);
+        setEmailSidebar({
+          open: true,
+          email: null,
+          threadEmails: [],
+          gmailThreadId: draft.gmail_thread_id,
+          loading: false,
+          error: error.message,
+          draft: draft,
+          contentType: 'email'
+        });
+      }
+    } else {
+      // For regular drafts, open in draft-only context
+      setEmailSidebar({
+        open: true,
+        email: null,
+        threadEmails: [],
+        gmailThreadId: null,
+        loading: false,
+        error: null,
+        draft: draft,
+        contentType: 'draft'
+      });
+    }
 
     // Auto-anchor the draft when sidebar opens
     const draftAnchorData = {

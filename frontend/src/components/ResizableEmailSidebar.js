@@ -176,6 +176,7 @@ const ResizableEmailSidebar = ({
     const isEmail = draft.draft_type === 'email';
     const isSent = draft.status === 'closed';
     const isComplete = draftValidation?.is_complete || false;
+    const isReply = draft.gmail_thread_id ? true : false;
 
     const formatRecipients = (recipients) => {
       if (!recipients || recipients.length === 0) return 'Not specified';
@@ -198,7 +199,11 @@ const ResizableEmailSidebar = ({
       >
         {/* Status Chip */}
         <Chip
-          label={isSent ? (isEmail ? 'Email Sent' : 'Event Created') : (isEmail ? 'Email Draft' : 'Event Draft')}
+          label={
+            isSent
+              ? (isEmail ? (isReply ? 'Reply Sent' : 'Email Sent') : 'Event Created')
+              : (isEmail ? (isReply ? 'Reply Draft' : 'Email Draft') : 'Event Draft')
+          }
           size="small"
           sx={{
             position: 'absolute',
@@ -248,10 +253,10 @@ const ResizableEmailSidebar = ({
             {/* Subject */}
             <Box sx={{ mb: 1.5 }}>
               <Typography variant="body2" sx={{ fontWeight: 500, color: '#5f6368', mb: 0.5 }}>
-                Subject:
+                Subject: {isReply && <Typography component="span" variant="caption" sx={{ color: '#9e9e9e', ml: 0.5 }}>(read-only)</Typography>}
               </Typography>
-              <Typography variant="body2" sx={{ color: draft.subject ? '#202124' : '#d32f2f' }}>
-                {draft.subject || 'Not specified'}
+              <Typography variant="body2" sx={{ color: draft.subject ? '#202124' : (isReply ? '#9e9e9e' : '#d32f2f'), fontStyle: isReply && !draft.subject ? 'italic' : 'normal' }}>
+                {draft.subject || (isReply ? 'Re: [Thread subject will be used]' : 'Not specified')}
               </Typography>
             </Box>
 
@@ -623,6 +628,13 @@ const ResizableEmailSidebar = ({
                       </Box>
                     );
                   })}
+
+                  {/* Show reply draft below thread if it exists */}
+                  {draft && draft.gmail_thread_id && (
+                    <Box sx={{ width: '100%', borderTop: '1px solid #e0e0e0', pt: 2 }}>
+                      {renderDraftContent()}
+                    </Box>
+                  )}
                 </Box>
               ) : (
                 /* Single Email View */

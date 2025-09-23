@@ -24,6 +24,7 @@ const SimplifiedDraftCard = ({
 
   const isEmail = draft.draft_type === 'email';
   const isSent = draft.status === 'closed';
+  const isReply = draft.gmail_thread_id ? true : false;
 
   // Helper function to truncate recipients
   const formatRecipients = (recipients) => {
@@ -93,8 +94,8 @@ const SimplifiedDraftCard = ({
           }}
         >
           {isSent
-            ? (isEmail ? 'Email Sent' : 'Event Created')
-            : (isEmail ? 'Email Draft' : 'Event Draft')
+            ? (isEmail ? (isReply ? 'Reply Sent' : 'Email Sent') : 'Event Created')
+            : (isEmail ? (isReply ? 'Reply Draft' : 'Email Draft') : 'Event Draft')
           }
         </Typography>
       </Box>
