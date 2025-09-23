@@ -124,6 +124,22 @@ const ResizableEmailSidebar = ({
     });
   };
 
+  const shouldShowDraft = () => {
+    // Only hide drafts that are sent (status === 'closed') and have a sent_message_id
+    if (!draft || draft.status !== 'closed' || !draft.sent_message_id) {
+      return true; // Show active drafts and sent drafts without message ID
+    }
+
+    // Check if any email in the current thread matches this draft's sent_message_id
+    const hasMatchingEmail = threadEmails.some(threadEmail => 
+      threadEmail.email_id === draft.sent_message_id ||
+      threadEmail.id === draft.sent_message_id
+    );
+
+    // If there's a matching email, hide the draft; otherwise show it
+    return !hasMatchingEmail;
+  };
+
   const renderEmailBody = (emailData) => {
     if (!emailData || !emailData.content) return null;
 
@@ -629,8 +645,8 @@ const ResizableEmailSidebar = ({
                     );
                   })}
 
-                  {/* Show reply draft below thread if it exists */}
-                  {draft && draft.gmail_thread_id && (
+                  {/* Show reply draft below thread if it exists and is not already displayed as an email */}
+                  {draft && draft.gmail_thread_id && shouldShowDraft() && (
                     <Box sx={{ width: '100%', borderTop: '1px solid #e0e0e0', pt: 2 }}>
                       {renderDraftContent()}
                     </Box>

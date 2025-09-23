@@ -243,6 +243,155 @@ def convert_objectid_to_str(obj):
         return [convert_objectid_to_str(item) for item in obj]
     return obj
 
+def save_sent_email_to_db(sent_email_data):
+    """
+    Process and save sent email data from Composio to the emails database.
+    
+    Args:
+        sent_email_data: Email data returned from Composio fetch
+    
+    Returns:
+        bool: True if saved successfully, False otherwise
+    """
+    try:
+        # Extract relevant fields from Composio email data structure
+        email_id = sent_email_data.get('id') or sent_email_data.get('messageId')
+        if not email_id:
+            print(f"[ERROR] No email ID found in sent email data")
+            return False
+        
+        # Process the sent email data into our standard format
+        processed_email = {
+            'email_id': email_id,
+            'gmail_thread_id': sent_email_data.get('threadId'),
+            'subject': None,  # Will be extracted from payload
+            'from_email': {'email': '', 'name': ''},
+            'to_emails': [],
+            'cc_emails': [],
+            'bcc_emails': [],
+            'date': None,
+            'content': {'html': '', 'text': ''},
+            'metadata': {
+                'source': 'COMPOSIO_SENT',
+                'label_ids': sent_email_data.get('labelIds', []),
+                'thread_id': sent_email_data.get('threadId'),
+                'timestamp': datetime.now().isoformat()
+            },
+            'created_at': int(time.time()),
+            'updated_at': int(time.time())
+        }
+        
+        # Extract headers and body from payload if available
+        payload = sent_email_data.get('payload', {})
+        headers = payload.get('headers', [])
+        
+        # Process headers
+        for header in headers:
+            name = header.get('name', '').lower()
+            value = header.get('value', '')
+            
+            if name == 'subject':
+                processed_email['subject'] = value
+            elif name == 'from':
+                processed_email['from_email'] = parse_email_header(value)
+            elif name == 'to':
+                processed_email['to_emails'] = parse_email_list_header(value)
+            elif name == 'cc':
+                processed_email['cc_emails'] = parse_email_list_header(value)
+            elif name == 'bcc':
+                processed_email['bcc_emails'] = parse_email_list_header(value)
+            elif name == 'date':
+                processed_email['date'] = parse_email_date(value)
+        
+        # Extract email content (body)
+        body_content = extract_email_body_from_payload(payload)
+        processed_email['content'] = body_content
+        
+        # Save to database
+        emails_collection = get_collection(EMAILS_COLLECTION)
+        result = emails_collection.update_one(
+            {'email_id': email_id},
+            {'$set': processed_email},
+            upsert=True
+        )
+        
+        print(f"[DEBUG] Saved sent email {email_id} to database: matched={result.matched_count}, modified={result.modified_count}, upserted={bool(result.upserted_id)}")
+        return True
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to save sent email to database: {e}")
+        import traceback
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        return False
+
+def parse_email_header(email_str):
+    """Parse 'Name <email>' format into {name, email} dict"""
+    if not email_str:
+        return {'email': '', 'name': ''}
+    
+    import re
+    # Try to match "Name <email@domain.com>" format
+    match = re.match(r'^(.+?)\s*<([^>]+)>$', email_str.strip())
+    if match:
+        name = match.group(1).strip().strip('"\'')
+        email = match.group(2).strip()
+        return {'email': email, 'name': name}
+    else:
+        # Assume it's just an email address
+        return {'email': email_str.strip(), 'name': ''}
+
+def parse_email_list_header(email_list_str):
+    """Parse comma-separated list of emails into list of {name, email} dicts"""
+    if not email_list_str:
+        return []
+    
+    emails = []
+    for email_str in email_list_str.split(','):
+        emails.append(parse_email_header(email_str.strip()))
+    return emails
+
+def extract_email_body_from_payload(payload):
+    """Extract email body content from Composio payload structure"""
+    html_content = ''
+    text_content = ''
+    
+    try:
+        # Recursively search for body parts
+        def extract_parts(part):
+            nonlocal html_content, text_content
+            
+            mime_type = part.get('mimeType', '')
+            body = part.get('body', {})
+            data = body.get('data', '')
+            
+            if data and mime_type:
+                # Decode base64 data
+                import base64
+                try:
+                    decoded_data = base64.b64decode(data.replace('-', '+').replace('_', '/')).decode('utf-8')
+                    if mime_type == 'text/html':
+                        html_content = decoded_data
+                    elif mime_type == 'text/plain':
+                        text_content = decoded_data
+                except Exception as e:
+                    print(f"[WARNING] Failed to decode email body part: {e}")
+            
+            # Recursively process parts
+            parts = part.get('parts', [])
+            for subpart in parts:
+                extract_parts(subpart)
+        
+        extract_parts(payload)
+        
+        return {
+            'html': html_content,
+            'text': text_content
+        }
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to extract email body: {e}")
+        return {'html': '', 'text': ''}
+
 def extract_content_from_conversation(thread_history, draft_data):
     """
     Extract content from recent conversation that should be applied to draft.
@@ -3362,14 +3511,58 @@ def send_draft(draft_id):
                     'error': f'Composio execution failed: {error_msg}'
                 }), 500
             else:
+                # For email drafts, capture the sent message ID and fetch the sent email
+                sent_message_id = None
+                if draft.draft_type == 'email':
+                    # Extract sent message ID from Composio response
+                    composio_data = result.get('data', {})
+                    response_data = composio_data.get('response_data', {})
+                    sent_message_id = response_data.get('id')
+                    
+                    if sent_message_id:
+                        print(f"[DRAFT] Email sent successfully, message ID: {sent_message_id}")
+                        
+                        # Store the sent message ID in the draft
+                        draft_service.update_draft(draft_id, {'sent_message_id': sent_message_id})
+                        
+                        # Immediately try to fetch and save the sent email to database
+                        try:
+                            print(f"[DRAFT] Fetching sent email {sent_message_id} to save to database...")
+                            fetch_result = tooling_service.fetch_sent_email_by_message_id(sent_message_id)
+                            
+                            if fetch_result.get('success') and fetch_result.get('email_data'):
+                                # Save the sent email to database
+                                save_success = save_sent_email_to_db(fetch_result['email_data'])
+                                if save_success:
+                                    print(f"[DRAFT] ✅ Sent email {sent_message_id} saved to database")
+                                else:
+                                    print(f"[DRAFT] ⚠️ Failed to save sent email {sent_message_id} to database")
+                            else:
+                                fetch_error = fetch_result.get('error', 'Unknown fetch error')
+                                print(f"[DRAFT] ⚠️ Failed to fetch sent email {sent_message_id}: {fetch_error}")
+                        except Exception as fetch_ex:
+                            print(f"[DRAFT] ⚠️ Exception while fetching sent email {sent_message_id}: {fetch_ex}")
+                        
+                        # Note: We don't fail the send operation even if fetch fails
+                        # The email was sent successfully, fetch is best-effort
+                    else:
+                        print(f"[DRAFT] ⚠️ No message ID found in send response: {composio_data}")
+                
                 # Mark draft as completed
                 draft_service.close_draft(draft_id, 'closed')
                 success_msg = result.get('message', f'{draft.draft_type.replace("_", " ").title()} executed successfully')
-                return jsonify({
+                
+                response_data = {
                     'success': True,
                     'result': result,
                     'message': success_msg
-                })
+                }
+                
+                # Include sent message ID in response for debugging
+                if sent_message_id:
+                    response_data['sent_message_id'] = sent_message_id
+                
+                return jsonify(response_data)
                 
         except Exception as composio_error:
             # Mark draft as error

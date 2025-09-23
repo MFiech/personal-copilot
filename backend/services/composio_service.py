@@ -1185,6 +1185,63 @@ class ComposioService:
                 "error": error_msg
             }
 
+    def fetch_sent_email_by_message_id(self, message_id, timeout=3):
+        """
+        Fetch a specific email by its Gmail message ID using Composio's GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID.
+        Used to retrieve sent emails immediately after sending.
+
+        Args:
+            message_id: Gmail message ID (from send response)
+            timeout: Maximum time to wait for the fetch (seconds)
+
+        Returns:
+            dict: {"success": bool, "email_data": dict or None, "error": str or None}
+        """
+        if not self.client_available or not self.gmail_account_id:
+            return {"success": False, "error": "Gmail not connected or unavailable"}
+
+        try:
+            print(f"[DEBUG] Fetching sent email with message ID: {message_id}")
+            
+            params = {
+                "message_id": message_id,
+                "user_id": "me",
+                "format": "full"  # Get full message content
+            }
+
+            response = self._execute_action(
+                action=Action.GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID,
+                params=params
+            )
+
+            if response and response.get("successful"):
+                email_data = response.get("data", {})
+                print(f"[DEBUG] Successfully fetched sent email {message_id}")
+                print(f"[DEBUG] Email data keys: {list(email_data.keys()) if email_data else 'No data'}")
+                print(f"[DEBUG] Email data structure sample: {str(email_data)[:500]}...") # First 500 chars
+                return {
+                    "success": True,
+                    "email_data": email_data,
+                    "error": None
+                }
+            else:
+                error_msg = response.get("error", "Unknown error") if response else "No response received"
+                print(f"[ERROR] Failed to fetch sent email {message_id}: {error_msg}")
+                return {
+                    "success": False,
+                    "email_data": None,
+                    "error": f"Failed to fetch sent email: {error_msg}"
+                }
+
+        except Exception as e:
+            error_msg = f"Exception while fetching sent email {message_id}: {str(e)}"
+            print(f"[ERROR] {error_msg}")
+            return {
+                "success": False,
+                "email_data": None,
+                "error": error_msg
+            }
+
     def get_upcoming_events(self, days=7, max_results=10, **kwargs):
         """
         Legacy method for backwards compatibility. 

@@ -9,7 +9,7 @@ class Draft:
                  status="active", to_emails=None, subject=None, body=None, attachments=None,
                  summary=None, start_time=None, end_time=None, attendees=None, location=None,
                  description=None, cc_emails=None, bcc_emails=None, gmail_thread_id=None,
-                 reply_to_email_id=None, created_at=None, updated_at=None):
+                 reply_to_email_id=None, sent_message_id=None, created_at=None, updated_at=None):
         self.draft_id = draft_id or str(uuid.uuid4())
         self.thread_id = thread_id
         self.message_id = message_id
@@ -27,6 +27,7 @@ class Draft:
         # Reply-specific fields
         self.gmail_thread_id = gmail_thread_id  # Gmail thread ID for replies
         self.reply_to_email_id = reply_to_email_id  # Email ID being replied to
+        self.sent_message_id = sent_message_id  # Gmail message ID when draft is sent
         
         # Calendar-specific fields
         self.summary = summary
@@ -62,6 +63,7 @@ class Draft:
                 'bcc_emails': self.bcc_emails,
                 'gmail_thread_id': self.gmail_thread_id,
                 'reply_to_email_id': self.reply_to_email_id,
+                'sent_message_id': self.sent_message_id,
                 'summary': self.summary,
                 'start_time': self.start_time,
                 'end_time': self.end_time,
@@ -210,6 +212,7 @@ class Draft:
             'bcc_emails': self.bcc_emails,
             'gmail_thread_id': self.gmail_thread_id,
             'reply_to_email_id': self.reply_to_email_id,
+            'sent_message_id': self.sent_message_id,
             'summary': self.summary,
             'start_time': self.start_time,
             'end_time': self.end_time,
@@ -237,6 +240,7 @@ class Draft:
             bcc_emails=data.get('bcc_emails', []),
             gmail_thread_id=data.get('gmail_thread_id'),
             reply_to_email_id=data.get('reply_to_email_id'),
+            sent_message_id=data.get('sent_message_id'),
             summary=data.get('summary'),
             start_time=data.get('start_time'),
             end_time=data.get('end_time'),
