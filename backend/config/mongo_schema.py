@@ -769,6 +769,48 @@ DRAFTS_SCHEMA = {
                         "bsonType": "object"
                     }
                 },
+                "cc_emails": {
+                    "bsonType": "array",
+                    "description": "List of CC recipients",
+                    "items": {
+                        "bsonType": "object",
+                        "properties": {
+                            "email": {
+                                "bsonType": "string",
+                                "description": "CC recipient's email address"
+                            },
+                            "name": {
+                                "bsonType": ["string", "null"],
+                                "description": "CC recipient's name"
+                            }
+                        }
+                    }
+                },
+                "bcc_emails": {
+                    "bsonType": "array",
+                    "description": "List of BCC recipients",
+                    "items": {
+                        "bsonType": "object",
+                        "properties": {
+                            "email": {
+                                "bsonType": "string",
+                                "description": "BCC recipient's email address"
+                            },
+                            "name": {
+                                "bsonType": ["string", "null"],
+                                "description": "BCC recipient's name"
+                            }
+                        }
+                    }
+                },
+                "gmail_thread_id": {
+                    "bsonType": ["string", "null"],
+                    "description": "Gmail thread ID for reply drafts"
+                },
+                "reply_to_email_id": {
+                    "bsonType": ["string", "null"],
+                    "description": "Email ID being replied to"
+                },
                 # Calendar-specific fields
                 "summary": {
                     "bsonType": ["string", "null"],

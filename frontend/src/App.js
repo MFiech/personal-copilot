@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import {
@@ -32,8 +32,8 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogTitle from '@mui/material/DialogTitle';
 import ToolResults from './components/ToolResults';
-import EmailSidebar from './components/EmailSidebar';
-import DraftCard from './components/DraftCard';
+import ResizableEmailSidebar from './components/ResizableEmailSidebar';
+import SimplifiedDraftCard from './components/SimplifiedDraftCard';
 import './App.css';
 import { useSnackbar } from './components/SnackbarProvider';
 import { DraftService, formatDraftDisplayText, getMissingFieldsText } from './utils/draftService';
@@ -227,7 +227,7 @@ function App() {
   const initialIsMobile = window.innerWidth < 768; // Using 768 as the breakpoint
   const [isMobile, setIsMobile] = useState(initialIsMobile);
   const [drawerOpen, setDrawerOpen] = useState(!initialIsMobile); // Open on desktop, closed on mobile by default
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false); // New state for collapsed sidebar
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true); // New state for collapsed sidebar (collapsed by default)
   
   const [pendingConfirmation, setPendingConfirmation] = useState(null);
   const [editingThreadId, setEditingThreadId] = useState(null);
@@ -245,8 +245,11 @@ function App() {
     threadEmails: [],
     gmailThreadId: null,
     loading: false,
-    error: null
+    error: null,
+    draft: null,
+    contentType: 'email'
   });
+  const [sidebarWidth, setSidebarWidth] = useState(0);
 
   // Anchor state - thread-level
   const [anchoredItem, setAnchoredItem] = useState(null);
@@ -254,6 +257,9 @@ function App() {
   // Draft state
   const [draftValidation, setDraftValidation] = useState(null);
   const [isSendingDraft, setIsSendingDraft] = useState(false);
+
+  // Ref for auto-scrolling to bottom
+  const messagesEndRef = useRef(null);
 
   // Draft cards state - tracks drafts per message
   const [messageDrafts, setMessageDrafts] = useState({});
@@ -264,6 +270,11 @@ function App() {
   useEffect(() => {
     fetchThreads();
   }, []);
+
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
   // Handle resize for isMobile and drawerOpen adjustments
   useEffect(() => {
@@ -580,21 +591,88 @@ function App() {
       // Handle draft creation with immediate anchoring
       if (data.draft_created && data.auto_anchor_draft) {
         console.log('[App.js] Draft created with auto-anchor flag:', data.draft_created);
-        
-        // Immediately anchor the created draft
-        const anchorData = {
-          id: data.draft_created.draft_id,
-          type: 'draft',
-          data: data.draft_created.draft_data
-        };
-        handleAnchorChange(anchorData);
-        fetchDraftValidation(data.draft_created.draft_id);
-        console.log('[App.js] Auto-anchored created draft:', data.draft_created.draft_id);
-        
-        // Also display the draft card
-        setTimeout(() => {
-          checkForDraftInMessage(data.draft_created.user_message_id, true);
-        }, 100); // Small delay to ensure database update
+
+        const draftData = data.draft_created.draft_data;
+
+        // Check if this is a reply draft (has gmail_thread_id)
+        if (draftData && draftData.gmail_thread_id) {
+          console.log('[App.js] Reply draft detected, opening email thread sidebar');
+          console.log('[App.js] Gmail thread ID:', draftData.gmail_thread_id);
+
+          // For reply drafts, open the email thread sidebar with the draft included
+          setEmailSidebar({
+            open: true,
+            email: null,
+            threadEmails: [],
+            gmailThreadId: draftData.gmail_thread_id,
+            loading: true,
+            error: null,
+            draft: null,
+            contentType: 'email'
+          });
+
+          // Fetch thread data and draft validation in parallel
+          Promise.all([
+            fetch(`http://localhost:5001/emails/thread/${draftData.gmail_thread_id}/full`).then(res => res.json()),
+            fetchDraftValidation(data.draft_created.draft_id)
+          ])
+            .then(([threadResponse, validationResponse]) => {
+              console.log('[App.js] Thread fetch response:', threadResponse);
+              
+              let threadEmails = [];
+              if (threadResponse.success && threadResponse.data && threadResponse.data.emails) {
+                threadEmails = threadResponse.data.emails;
+                console.log(`[App.js] Found ${threadEmails.length} emails in reply thread`);
+              }
+
+              // Set up sidebar with both thread emails and the draft
+              setEmailSidebar({
+                open: true,
+                email: threadEmails.length > 0 ? threadEmails[0] : null,
+                threadEmails: threadEmails,
+                gmailThreadId: draftData.gmail_thread_id,
+                loading: false,
+                error: null,
+                draft: draftData,
+                contentType: 'email'
+              });
+            })
+            .catch(error => {
+              console.error('[App.js] Error setting up reply draft sidebar:', error);
+              setEmailSidebar({
+                open: true,
+                email: null,
+                threadEmails: [],
+                gmailThreadId: draftData.gmail_thread_id,
+                loading: false,
+                error: error.message,
+                draft: draftData,
+                contentType: 'email'
+              });
+            });
+
+          // Also display the draft card
+          setTimeout(() => {
+            checkForDraftInMessage(data.draft_created.user_message_id, true);
+          }, 100);
+        } else {
+          console.log('[App.js] Not a reply draft, using regular anchor');
+          console.log('[App.js] Draft data:', draftData);
+          // For regular drafts, anchor as usual
+          const anchorData = {
+            id: data.draft_created.draft_id,
+            type: 'draft',
+            data: draftData
+          };
+          handleAnchorChange(anchorData);
+          fetchDraftValidation(data.draft_created.draft_id);
+          console.log('[App.js] Auto-anchored created draft:', data.draft_created.draft_id);
+
+          // Also display the draft card
+          setTimeout(() => {
+            checkForDraftInMessage(data.draft_created.user_message_id, true);
+          }, 100); // Small delay to ensure database update
+        }
       } else if (data.draft_updated && data.auto_anchor_draft) {
         console.log('[App.js] Draft updated with auto-anchor flag:', data.draft_updated);
         
@@ -930,6 +1008,7 @@ function App() {
       email_id: email.email_id, 
       id: email.id, 
       _id: email._id,
+      gmail_thread_id: email.gmail_thread_id,
       keys: Object.keys(email)
     });
     
@@ -938,17 +1017,110 @@ function App() {
       setDrawerOpen(false);
     }
     
-    // Close any existing sidebar and set loading state
+    // Set loading state for combined view
     setEmailSidebar({
       open: true,
       email: null,
       threadEmails: [],
-      gmailThreadId: null,
+      threadDrafts: [],
+      gmailThreadId: email.gmail_thread_id,
+      pmCopilotThreadId: null,
       loading: true,
-      error: null
+      error: null,
+      draft: null,
+      contentType: 'combined'
     });
 
     try {
+      // If this email has a gmail_thread_id, use the new resolve-thread endpoint
+      // that returns both emails and drafts for the Gmail thread
+      if (email.gmail_thread_id) {
+        try {
+          // Use new resolve-thread endpoint with pm_thread_id parameter
+          const resolveResponse = await fetch(
+            `http://localhost:5001/resolve-thread/${email.gmail_thread_id}?pm_thread_id=${threadId}`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' }
+          });
+          
+          if (resolveResponse.ok) {
+            const resolveData = await resolveResponse.json();
+            if (resolveData.success && resolveData.data) {
+              const { emails = [], drafts = [], pm_copilot_thread_id } = resolveData.data;
+              console.log(`Found ${emails.length} emails and ${drafts.length} drafts for Gmail thread ${email.gmail_thread_id}`);
+              
+              // Fetch content for emails that don't have it (same as legacy approach)
+              const emailsWithContent = await Promise.all(
+                emails.map(async (emailItem) => {
+                  // Check if email already has substantial content
+                  const hasContent = emailItem.content && 
+                    (emailItem.content.html?.trim() || 
+                     (emailItem.content.text?.trim() && emailItem.content.text.length > 100));
+                  
+                  if (hasContent) {
+                    return emailItem; // Already has content
+                  }
+                  
+                  // Fetch content using existing endpoint
+                  try {
+                    const contentResponse = await fetch('http://localhost:5001/get_email_content', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ email_id: emailItem.email_id }),
+                    });
+                    
+                    if (contentResponse.ok) {
+                      const contentData = await contentResponse.json();
+                      if (contentData.success) {
+                        return { ...emailItem, content: contentData.content };
+                      }
+                    }
+                    console.warn(`Failed to fetch content for email ${emailItem.email_id}`);
+                    return emailItem; // Return original if content fetch fails
+                  } catch (error) {
+                    console.warn(`Error fetching content for email ${emailItem.email_id}:`, error);
+                    return emailItem; // Return original if error
+                  }
+                })
+              );
+              
+              // Find the clicked email in the thread emails to make it the primary one
+              const clickedEmail = emailsWithContent.find(e => e.email_id === (email.email_id || email.id)) || emailsWithContent[emailsWithContent.length - 1];
+              
+              // Set up sidebar with combined data
+              setEmailSidebar({
+                open: true,
+                email: clickedEmail, // Show the clicked email as primary
+                threadEmails: emailsWithContent, // Use emails with content
+                threadDrafts: drafts,
+                gmailThreadId: email.gmail_thread_id,
+                pmCopilotThreadId: pm_copilot_thread_id,
+                loading: false,
+                error: null,
+                draft: drafts.length > 0 ? drafts[drafts.length - 1] : null, // Show newest draft if any
+                contentType: 'combined'
+              });
+
+              // Auto-anchor the email when sidebar opens
+              const emailAnchorData = {
+                id: clickedEmail?.email_id || clickedEmail?.id,
+                type: 'email',
+                data: clickedEmail
+              };
+              handleAnchorChange(emailAnchorData);
+              
+              return; // Success, exit early
+            }
+          }
+        } catch (resolveError) {
+          console.warn('Could not resolve Gmail thread with new endpoint:', resolveError);
+          // Fall through to legacy approach
+        }
+      }
+      
+      // Fallback to legacy email-only approach if combined approach fails
+      console.log('Falling back to legacy email-only approach');
+      
       // Determine the correct email ID to use
       const emailId = email.email_id || email.id || email._id;
       console.log('Using email ID:', emailId);
@@ -957,7 +1129,7 @@ function App() {
         throw new Error('No valid email ID found in email data');
       }
       
-      // Fetch email content if not already present
+      // Fetch email content
       const response = await fetch('http://localhost:5001/get_email_content', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -977,40 +1149,27 @@ function App() {
           content: data.content
         };
 
-        // Check if this email is part of a Gmail thread
-        let threadEmails = [];
-        let gmailThreadId = null;
-        
-        if (email.gmail_thread_id) {
-          gmailThreadId = email.gmail_thread_id;
-          try {
-            // Fetch the full thread with content
-            const threadResponse = await fetch(`http://localhost:5001/emails/thread/${gmailThreadId}/full`, {
-              method: 'GET',
-              headers: { 'Content-Type': 'application/json' }
-            });
-            
-            if (threadResponse.ok) {
-              const threadData = await threadResponse.json();
-              if (threadData.success && threadData.data.emails) {
-                threadEmails = threadData.data.emails;
-                console.log(`Found ${threadEmails.length} emails in thread ${gmailThreadId} with full content`);
-              }
-            }
-          } catch (threadError) {
-            console.warn('Could not fetch thread data:', threadError);
-            // Continue without thread data
-          }
-        }
-
+        // Set up sidebar with email-only data (legacy mode)
         setEmailSidebar({
           open: true,
           email: emailWithContent,
-          threadEmails: threadEmails,
-          gmailThreadId: gmailThreadId,
+          threadEmails: [emailWithContent], // Single email as thread
+          threadDrafts: [],
+          gmailThreadId: email.gmail_thread_id,
+          pmCopilotThreadId: null,
           loading: false,
-          error: null
+          error: null,
+          draft: null,
+          contentType: 'combined' // Still use combined to get consistent UI
         });
+
+        // Auto-anchor the email when sidebar opens
+        const emailAnchorData = {
+          id: emailWithContent.email_id || emailWithContent.id,
+          type: 'email',
+          data: emailWithContent
+        };
+        handleAnchorChange(emailAnchorData);
       } else {
         throw new Error('Failed to retrieve email content');
       }
@@ -1020,9 +1179,13 @@ function App() {
         open: true,
         email: null,
         threadEmails: [],
-        gmailThreadId: null,
+        threadDrafts: [],
+        gmailThreadId: email.gmail_thread_id,
+        pmCopilotThreadId: null,
         loading: false,
-        error: error.message
+        error: error.message,
+        draft: null,
+        contentType: 'combined'
       });
     }
   };
@@ -1032,10 +1195,181 @@ function App() {
       open: false,
       email: null,
       threadEmails: [],
+      threadDrafts: [],
       gmailThreadId: null,
+      pmCopilotThreadId: null,
       loading: false,
-      error: null
+      error: null,
+      draft: null,
+      contentType: 'email'
     });
+
+    // Clear anchor when sidebar closes
+    handleAnchorChange(null);
+  };
+
+  const handleDraftClick = async (draft) => {
+    console.log(`Clicked on draft ${draft.draft_id} in thread ${draft.thread_id}`);
+    
+    // Set loading state
+    setEmailSidebar({
+      open: true,
+      email: null,
+      threadEmails: [],
+      threadDrafts: [],
+      gmailThreadId: draft.gmail_thread_id,
+      pmCopilotThreadId: draft.thread_id,
+      loading: true,
+      error: null,
+      draft: null,
+      contentType: 'combined'
+    });
+
+    try {
+      // Use the same approach as handleOpenEmail - fetch Gmail thread specific data
+      if (draft.gmail_thread_id) {
+        // Use new resolve-thread endpoint with pm_thread_id parameter for Gmail thread filtering
+        const resolveResponse = await fetch(
+          `http://localhost:5001/resolve-thread/${draft.gmail_thread_id}?pm_thread_id=${draft.thread_id}`, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        
+        if (resolveResponse.ok) {
+          const resolveData = await resolveResponse.json();
+          if (resolveData.success && resolveData.data) {
+            const { emails = [], drafts = [], pm_copilot_thread_id } = resolveData.data;
+            console.log(`Found ${emails.length} emails and ${drafts.length} drafts for Gmail thread ${draft.gmail_thread_id}`);
+            
+            // Fetch content for emails that don't have it (same as handleOpenEmail)
+            const emailsWithContent = await Promise.all(
+              emails.map(async (emailItem) => {
+                // Check if email already has substantial content
+                const hasContent = emailItem.content && 
+                  (emailItem.content.html?.trim() || 
+                   (emailItem.content.text?.trim() && emailItem.content.text.length > 100));
+                
+                if (hasContent) {
+                  return emailItem; // Already has content
+                }
+                
+                // Fetch content using existing endpoint
+                try {
+                  const contentResponse = await fetch('http://localhost:5001/get_email_content', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email_id: emailItem.email_id }),
+                  });
+                  
+                  if (contentResponse.ok) {
+                    const contentData = await contentResponse.json();
+                    if (contentData.success) {
+                      return { ...emailItem, content: contentData.content };
+                    }
+                  }
+                  console.warn(`Failed to fetch content for email ${emailItem.email_id}`);
+                  return emailItem; // Return original if content fetch fails
+                } catch (error) {
+                  console.warn(`Error fetching content for email ${emailItem.email_id}:`, error);
+                  return emailItem; // Return original if error
+                }
+              })
+            );
+            
+            // Set up sidebar with Gmail thread filtered data
+            setEmailSidebar({
+              open: true,
+              email: emailsWithContent.length > 0 ? emailsWithContent[emailsWithContent.length - 1] : null,
+              threadEmails: emailsWithContent, // Use emails with content from Gmail thread only
+              threadDrafts: drafts,
+              gmailThreadId: draft.gmail_thread_id,
+              pmCopilotThreadId: pm_copilot_thread_id,
+              loading: false,
+              error: null,
+              draft: draft, // Keep the clicked draft as the primary draft
+              contentType: 'combined'
+            });
+            
+            // Auto-anchor the draft when sidebar opens
+            const draftAnchorData = {
+              id: draft.draft_id,
+              type: 'draft',
+              data: draft
+            };
+            handleAnchorChange(draftAnchorData);
+            return; // Success, exit early
+          }
+        }
+      }
+      
+      // Fallback to old behavior if Gmail thread filtering fails
+      console.warn('Gmail thread filtering failed, falling back to full PM thread data');
+      const response = await fetch(`http://localhost:5001/thread/${draft.thread_id}/combined`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch combined thread data: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      if (data.success && data.data) {
+        const { emails = [], drafts = [] } = data.data;
+        console.log(`Found ${emails.length} emails and ${drafts.length} drafts in thread ${draft.thread_id}`);
+        
+        // Set up sidebar with combined data (fallback)
+        setEmailSidebar({
+          open: true,
+          email: emails.length > 0 ? emails[emails.length - 1] : null,
+          threadEmails: emails,
+          threadDrafts: drafts,
+          gmailThreadId: draft.gmail_thread_id,
+          pmCopilotThreadId: draft.thread_id,
+          loading: false,
+          error: null,
+          draft: draft,
+          contentType: 'combined'
+        });
+        
+        // Auto-anchor the draft when sidebar opens
+        const draftAnchorData = {
+          id: draft.draft_id,
+          type: 'draft',
+          data: draft
+        };
+        handleAnchorChange(draftAnchorData);
+      } else {
+        throw new Error('Failed to retrieve combined thread data');
+      }
+
+    } catch (error) {
+      console.error('Error fetching combined thread data:', error);
+      setEmailSidebar({
+        open: true,
+        email: null,
+        threadEmails: [],
+        threadDrafts: [],
+        gmailThreadId: draft.gmail_thread_id,
+        pmCopilotThreadId: draft.thread_id,
+        loading: false,
+        error: error.message,
+        draft: draft,
+        contentType: 'combined'
+      });
+    }
+
+    // Auto-anchor the draft when sidebar opens and fetch its validation
+    const draftAnchorData = {
+      id: draft.draft_id,
+      type: 'draft',
+      data: draft
+    };
+    handleAnchorChange(draftAnchorData);
+    
+    // Fetch draft validation for the clicked draft
+    fetchDraftValidation(draft.draft_id);
   };
 
   // --- Sync anchor state with URL query params ---
@@ -1051,14 +1385,31 @@ function App() {
           // Try to fetch draft and validate
           (async () => {
             try {
-              const response = await DraftService.validateDraft(anchorId);
-              if (response.success) {
-                setAnchoredItem({ id: anchorId, type: 'draft', data: { draft_id: anchorId, ...response.draft } });
-                setDraftValidation(response.validation);
+              // Fetch the full draft data
+              const draftResponse = await DraftService.getDraft(anchorId);
+              const validationResponse = await DraftService.validateDraft(anchorId);
+
+              if (draftResponse?.draft && validationResponse.success) {
+                const draftData = { ...draftResponse.draft };
+                setAnchoredItem({ id: anchorId, type: 'draft', data: draftData });
+                setDraftValidation(validationResponse.validation);
+
+                // Auto-open sidebar with the draft
+                setEmailSidebar({
+                  open: true,
+                  email: null,
+                  threadEmails: [],
+                  gmailThreadId: null,
+                  loading: false,
+                  error: null,
+                  draft: draftData,
+                  contentType: 'draft'
+                });
               } else {
                 setAnchoredItem({ id: anchorId, type: 'draft', data: { draft_id: anchorId } });
               }
-            } catch {
+            } catch (error) {
+              console.error('[App] Error loading draft from URL:', error);
               setAnchoredItem({ id: anchorId, type: 'draft', data: { draft_id: anchorId } });
             }
           })();
@@ -1080,6 +1431,20 @@ function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.search, threadId]);
+
+  // Sync sidebar draft with anchored draft when it updates
+  useEffect(() => {
+    if (anchoredItem?.type === 'draft' &&
+        emailSidebar.open &&
+        emailSidebar.contentType === 'draft' &&
+        emailSidebar.draft?.draft_id === anchoredItem.id) {
+      // Update sidebar draft with the latest anchored draft data
+      setEmailSidebar(prev => ({
+        ...prev,
+        draft: anchoredItem.data
+      }));
+    }
+  }, [anchoredItem, emailSidebar.open, emailSidebar.contentType, emailSidebar.draft?.draft_id]);
 
   // Update URL when anchor changes
   const handleAnchorChange = (anchorData) => {
@@ -1153,17 +1518,23 @@ function App() {
   // Send draft via Composio
   const handleSendDraft = async () => {
     if (!anchoredItem || anchoredItem.type !== 'draft') return;
-    
+
     setIsSendingDraft(true);
     try {
       const response = await DraftService.sendDraft(anchoredItem.id);
       if (response.success) {
         showSnackbar(response.message || 'Draft sent successfully!', 'success');
-        
+
+        // Close the sidebar
+        handleCloseEmailSidebar();
+
         // Clear the anchored draft
         setAnchoredItem(null);
         setDraftValidation(null);
-        
+
+        // Refresh draft cards to show updated status
+        refreshAllDraftCards();
+
         // Refresh the thread to show any new messages
         if (threadId) {
           loadThread(threadId);
@@ -1261,9 +1632,29 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Box sx={{ display: 'flex', height: '100vh', backgroundColor: theme.palette.background.default }}>
-        {/* Sidebar */}
-        <Drawer
+      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: theme.palette.background.default }}>
+        {/* Full-width Header for Toggle and Title - only show when there are messages */}
+        {messages.length > 0 && (
+          <Box sx={{
+            p: 2,
+            display: 'flex',
+            alignItems: 'center',
+            borderBottom: `1px solid ${theme.palette.divider}`,
+            backgroundColor: 'white',
+            zIndex: 1100,
+            marginLeft: (!isMobile && drawerOpen) ? (sidebarCollapsed ? `${drawerWidthCollapsed}px` : `${drawerWidth}px`) : 0,
+            transition: 'margin-left 0.2s ease'
+          }}>
+            <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+              {currentThreadTitle}
+            </Typography>
+          </Box>
+        )}
+
+        {/* Main content area with sidebar */}
+        <Box sx={{ display: 'flex', flexGrow: 1, overflow: 'hidden' }}>
+          {/* Left Sidebar */}
+          <Drawer
           variant={isMobile ? 'temporary' : 'persistent'}
           open={drawerOpen}
           onClose={() => setDrawerOpen(false)}
@@ -1516,38 +1907,33 @@ function App() {
           </Box>
         </Drawer>
 
-        {/* Main content */}
-        <Box 
-          component="main"
-          sx={{ 
-            flexGrow: 1, // This will now correctly expand to fill available space
-            display: 'flex', 
-            flexDirection: 'column', 
-            height: '100vh',
-            overflow: 'hidden', // For internal content scroll, not page scroll
-            position: 'relative', // For overlay positioning
-          }}
-        >
-          {/* Header for Toggle and Title - only show when there are messages */}
-          {messages.length > 0 && (
-            <Box sx={{ p: 2, display: 'flex', alignItems: 'center', borderBottom: `1px solid ${theme.palette.divider}` }}>
-              <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-                {currentThreadTitle}
-              </Typography>
-               {/* Placeholder for other header items like Upgrade button if they move here */}
-            </Box>
-          )}
+          {/* Main content */}
+          <Box
+            component="main"
+            sx={{
+              flexGrow: 1, // This will now correctly expand to fill available space
+              display: 'flex',
+              flexDirection: 'column',
+              height: '100%',
+              overflow: 'hidden', // For internal content scroll, not page scroll
+              position: 'relative', // For overlay positioning
+              transition: 'margin-right 0.2s ease', // Smooth transition when sidebar opens/closes
+              marginRight: `${sidebarWidth}px`, // Dynamically adjust for sidebar width
+            }}
+          >
 
 
 
           {/* Messages area */}
-          <Box sx={{ 
-            flexGrow: 1, 
-            overflowY: 'auto', 
-            p: messages.length > 0 ? 2 : 0, 
-            display: 'flex', 
-            flexDirection: 'column' 
-          }}>
+          <Box sx={{
+            flexGrow: 1,
+            overflowY: 'auto',
+            p: messages.length > 0 ? 2 : 0,
+            display: 'flex',
+            flexDirection: 'column'
+          }}
+          id="messages-container"
+          >
             {messages.length === 0 ? (
               // Welcome screen
               <Box sx={{ 
@@ -1668,20 +2054,12 @@ function App() {
                   
                   {/* Draft Card - only for user messages that have drafts */}
                   {message.role === 'user' && messageDrafts[message.id] && (
-                    <Box sx={{ 
-                      width: '100%',
-                      maxWidth: 'calc(80% - 16px)',
-                      alignSelf: 'flex-end'
-                    }}>
-                      <DraftCard
-                        draft={messageDrafts[message.id]}
-                        messageId={message.id}
-                        isAnchored={anchoredItem?.type === 'draft' && anchoredItem?.id === messageDrafts[message.id]?.draft_id}
-                        onAnchor={handleDraftCardAnchor}
-                        onSend={handleDraftCardSent}
-                        showSnackbar={showSnackbar}
-                      />
-                    </Box>
+                    <SimplifiedDraftCard
+                      draft={messageDrafts[message.id]}
+                      messageId={message.id}
+                      onDraftClick={handleDraftClick}
+                      isAnchored={anchoredItem?.type === 'draft' && anchoredItem?.id === messageDrafts[message.id]?.draft_id}
+                    />
                   )}
                 </Box>
               ))
@@ -1701,240 +2079,10 @@ function App() {
                 </Paper>
               </Box>
             )}
+            {/* Invisible element for auto-scroll */}
+            <div ref={messagesEndRef} />
           </Box>
 
-          {/* Anchor Information Bar - positioned just above text area */}
-          {anchoredItem && messages.length > 0 && (
-            <Box sx={{ 
-              p: 2, 
-              backgroundColor: '#fff3e0',
-              borderTop: '1px solid #ffcc02',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1
-            }}>
-              <AnchorIcon sx={{ color: '#ff9800' }} />
-              <Box sx={{ flexGrow: 1 }}>
-                {anchoredItem.type === 'draft' ? (
-                  <Box>
-                    <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#ef6c00', mb: 1 }}>
-                      Draft {anchoredItem.data.draft_type === 'email' ? 'Email' : 'Calendar Event'}
-                    </Typography>
-                    
-                    {/* Email Draft Details */}
-                    {anchoredItem.data.draft_type === 'email' && (
-                      <Box sx={{ pl: 1 }}>
-                        <Typography variant="body2" sx={{ mb: 0.5 }}>
-                          <strong>To:</strong> {
-                            anchoredItem.data.to_emails && anchoredItem.data.to_emails.length > 0 
-                              ? anchoredItem.data.to_emails.map(email => {
-                                  if (email.name && email.email) {
-                                    return `${email.name} (${email.email})`;
-                                  } else if (email.email) {
-                                    return email.email;
-                                  } else if (email.name) {
-                                    return email.name;
-                                  } else {
-                                    return 'Unknown recipient';
-                                  }
-                                }).join(', ')
-                              : <span style={{ color: '#d32f2f', fontStyle: 'italic' }}>Not specified</span>
-                          }
-                        </Typography>
-                        <Typography variant="body2" sx={{ mb: 0.5 }}>
-                          <strong>Subject:</strong> {
-                            anchoredItem.data.subject 
-                              ? anchoredItem.data.subject
-                              : <span style={{ color: '#d32f2f', fontStyle: 'italic' }}>Not specified</span>
-                          }
-                        </Typography>
-                        {anchoredItem.data.cc_emails && anchoredItem.data.cc_emails.length > 0 && (
-                          <Typography variant="body2" sx={{ mb: 0.5 }}>
-                            <strong>CC:</strong> {anchoredItem.data.cc_emails.map(email => {
-                              if (email.name && email.email) {
-                                return `${email.name} (${email.email})`;
-                              } else if (email.email) {
-                                return email.email;
-                              } else if (email.name) {
-                                return email.name;
-                              } else {
-                                return 'Unknown recipient';
-                              }
-                            }).join(', ')}
-                          </Typography>
-                        )}
-                        {anchoredItem.data.bcc_emails && anchoredItem.data.bcc_emails.length > 0 && (
-                          <Typography variant="body2" sx={{ mb: 0.5 }}>
-                            <strong>BCC:</strong> {anchoredItem.data.bcc_emails.map(email => {
-                              if (email.name && email.email) {
-                                return `${email.name} (${email.email})`;
-                              } else if (email.email) {
-                                return email.email;
-                              } else if (email.name) {
-                                return email.name;
-                              } else {
-                                return 'Unknown recipient';
-                              }
-                            }).join(', ')}
-                          </Typography>
-                        )}
-                        {anchoredItem.data.body && (
-                          <Typography variant="body2" sx={{ mb: 0.5 }}>
-                            <strong>Body:</strong> {
-                              anchoredItem.data.body.length > 80 
-                                ? anchoredItem.data.body.substring(0, 80) + '...'
-                                : anchoredItem.data.body
-                            }
-                          </Typography>
-                        )}
-                      </Box>
-                    )}
-
-                    {/* Calendar Event Draft Details */}
-                    {anchoredItem.data.draft_type === 'calendar_event' && (
-                      <Box sx={{ pl: 1 }}>
-                        <Typography variant="body2" sx={{ mb: 0.5 }}>
-                          <strong>Title:</strong> {
-                            anchoredItem.data.summary 
-                              ? anchoredItem.data.summary
-                              : <span style={{ color: '#d32f2f', fontStyle: 'italic' }}>Not specified</span>
-                          }
-                        </Typography>
-                        <Typography variant="body2" sx={{ mb: 0.5 }}>
-                          <strong>Start:</strong> {
-                            anchoredItem.data.start_time 
-                              ? (() => {
-                                  try {
-                                    const date = new Date(anchoredItem.data.start_time);
-                                    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                                  } catch (e) {
-                                    return anchoredItem.data.start_time;
-                                  }
-                                })()
-                              : <span style={{ color: '#d32f2f', fontStyle: 'italic' }}>Not specified</span>
-                          }
-                        </Typography>
-                        <Typography variant="body2" sx={{ mb: 0.5 }}>
-                          <strong>End:</strong> {
-                            anchoredItem.data.end_time 
-                              ? (() => {
-                                  try {
-                                    const date = new Date(anchoredItem.data.end_time);
-                                    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                                  } catch (e) {
-                                    return anchoredItem.data.end_time;
-                                  }
-                                })()
-                              : <span style={{ color: '#d32f2f', fontStyle: 'italic' }}>Not specified</span>
-                          }
-                        </Typography>
-                        {anchoredItem.data.location && (
-                          <Typography variant="body2" sx={{ mb: 0.5 }}>
-                            <strong>Location:</strong> {anchoredItem.data.location}
-                          </Typography>
-                        )}
-                        {anchoredItem.data.attendees && anchoredItem.data.attendees.length > 0 && (
-                          <Typography variant="body2" sx={{ mb: 0.5 }}>
-                            <strong>Attendees:</strong> {anchoredItem.data.attendees.map((attendee, index) => {
-                              console.log(`Attendee ${index}:`, attendee, `name: "${attendee.name}", email: "${attendee.email}"`);
-                              if (attendee.name && attendee.email) {
-                                return `${attendee.name} (${attendee.email})`;
-                              } else if (attendee.email) {
-                                return attendee.email;
-                              } else if (attendee.name) {
-                                return `${attendee.name} (no email)`;
-                              } else {
-                                return 'Unknown attendee';
-                              }
-                            }).join(', ')}
-                          </Typography>
-                        )}
-                        {anchoredItem.data.description && (
-                          <Typography variant="body2" sx={{ mb: 0.5 }}>
-                            <strong>Description:</strong> {
-                              anchoredItem.data.description.length > 80 
-                                ? anchoredItem.data.description.substring(0, 80) + '...'
-                                : anchoredItem.data.description
-                            }
-                          </Typography>
-                        )}
-                      </Box>
-                    )}
-                    
-                    {/* Missing fields warning */}
-                    {draftValidation && !draftValidation.is_complete && (
-                      <Typography variant="caption" sx={{ color: '#d32f2f', fontStyle: 'italic', mt: 1, display: 'block' }}>
-                        ⚠️ {getMissingFieldsText(draftValidation)}
-                      </Typography>
-                    )}
-                  </Box>
-                ) : (
-                  <Box>
-                    <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#ef6c00' }}>
-                      Anchored {anchoredItem.type === 'email' ? 'Email' : 'Calendar Event'}:
-                    </Typography>
-                    {anchoredItem.type === 'email' ? (
-                      <Box>
-                        <Typography variant="body2">
-                          <strong>Subject:</strong> {anchoredItem.data.subject || 'No Subject'}
-                        </Typography>
-                        <Typography variant="body2">
-                          <strong>From:</strong> {anchoredItem.data.from_email?.name || anchoredItem.data.from?.name || 'Unknown Sender'}
-                        </Typography>
-                        <Typography variant="body2">
-                          <strong>Date:</strong> {new Date(anchoredItem.data.date).toLocaleDateString()}
-                        </Typography>
-                      </Box>
-                    ) : (
-                      <Box>
-                        <Typography variant="body2">
-                          <strong>Name:</strong> {anchoredItem.data.summary || 'Untitled Event'}
-                        </Typography>
-                        <Typography variant="body2">
-                          <strong>Start:</strong> {new Date(anchoredItem.data.start?.dateTime || anchoredItem.data.start?.date).toLocaleString()}
-                        </Typography>
-                        <Typography variant="body2">
-                          <strong>End:</strong> {new Date(anchoredItem.data.end?.dateTime || anchoredItem.data.end?.date).toLocaleString()}
-                        </Typography>
-                      </Box>
-                    )}
-                  </Box>
-                )}
-              </Box>
-              
-              {/* Action buttons */}
-              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                {anchoredItem.type === 'draft' && (
-                  <Button
-                    variant="contained"
-                    size="small"
-                    startIcon={draftValidation?.is_complete ? <SendIcon /> : <CreateIcon />}
-                    onClick={handleSendDraft}
-                    disabled={isSendingDraft}
-                    sx={{
-                      backgroundColor: draftValidation?.is_complete ? '#4caf50' : '#ff9800',
-                      '&:hover': {
-                        backgroundColor: draftValidation?.is_complete ? '#388e3c' : '#f57c00'
-                      },
-                      '&:disabled': {
-                        backgroundColor: '#ccc'
-                      }
-                    }}
-                  >
-                    {isSendingDraft ? 'Sending...' : 
-                     draftValidation?.is_complete ? 'Send' : 'Needs Info'}
-                  </Button>
-                )}
-                <IconButton 
-                  size="small" 
-                  onClick={() => handleAnchorChange(null)}
-                  sx={{ color: '#ef6c00' }}
-                >
-                  <CloseIcon />
-                </IconButton>
-              </Box>
-            </Box>
-          )}
 
           {/* Input area - only show for chat conversations */}
           {messages.length > 0 && (
@@ -1949,18 +2097,27 @@ function App() {
               onAttachmentClick={handleAttachmentClick}
             />
           )}
-        </Box>
+          </Box>
 
-        {/* Email Sidebar */}
-        <EmailSidebar
-          open={emailSidebar.open}
-          email={emailSidebar.email}
-          threadEmails={emailSidebar.threadEmails}
-          gmailThreadId={emailSidebar.gmailThreadId}
-          loading={emailSidebar.loading}
-          error={emailSidebar.error}
-          onClose={handleCloseEmailSidebar}
-        />
+          {/* Resizable Email Sidebar */}
+          <ResizableEmailSidebar
+            open={emailSidebar.open}
+            email={emailSidebar.email}
+            threadEmails={emailSidebar.threadEmails}
+            threadDrafts={emailSidebar.threadDrafts || []}
+            gmailThreadId={emailSidebar.gmailThreadId}
+            pmCopilotThreadId={emailSidebar.pmCopilotThreadId}
+            draft={emailSidebar.draft}
+            loading={emailSidebar.loading}
+            error={emailSidebar.error}
+            contentType={emailSidebar.contentType}
+            onClose={handleCloseEmailSidebar}
+            onWidthChange={setSidebarWidth}
+            draftValidation={draftValidation}
+            onSendDraft={handleSendDraft}
+            isSendingDraft={isSendingDraft}
+          />
+        </Box>
 
         <DeleteConfirmationDialog />
         

@@ -243,6 +243,186 @@ def convert_objectid_to_str(obj):
         return [convert_objectid_to_str(item) for item in obj]
     return obj
 
+def save_sent_email_to_db(sent_email_data, pm_copilot_thread_id=None):
+    """
+    Process and save sent email data from Composio to the emails database.
+    
+    Args:
+        sent_email_data: Email data returned from Composio fetch
+        pm_copilot_thread_id: PM Co-Pilot thread ID to associate the email with
+    
+    Returns:
+        bool: True if saved successfully, False otherwise
+    """
+    try:
+        # Extract relevant fields from Composio email data structure
+        email_id = sent_email_data.get('id') or sent_email_data.get('messageId')
+        if not email_id:
+            print(f"[ERROR] No email ID found in sent email data")
+            return False
+        
+        # Process the sent email data into our standard format
+        processed_email = {
+            'email_id': email_id,
+            'gmail_thread_id': sent_email_data.get('threadId'),
+            'thread_id': pm_copilot_thread_id or sent_email_data.get('threadId'),  # Use PM Co-Pilot thread ID if provided
+            'subject': sent_email_data.get('subject', ''),  # Default subject
+            'from_email': {'email': '', 'name': ''},
+            'to_emails': [],
+            'cc_emails': [],
+            'bcc_emails': [],
+            'date': sent_email_data.get('messageTimestamp', datetime.now().isoformat()),  # String format
+            'content': {'html': '', 'text': ''},
+            'metadata': {
+                'source': 'COMPOSIO_SENT',
+                'label_ids': sent_email_data.get('labelIds', []),
+                'thread_id': sent_email_data.get('threadId'),
+                'timestamp': datetime.now().isoformat()
+            },
+            'created_at': int(time.time()),
+            'updated_at': int(time.time())
+        }
+        
+        # Use Composio direct fields first, then fall back to headers
+        if sent_email_data.get('subject'):
+            processed_email['subject'] = sent_email_data['subject']
+        if sent_email_data.get('sender'):
+            processed_email['from_email'] = parse_email_header(sent_email_data['sender'])
+        if sent_email_data.get('to'):
+            processed_email['to_emails'] = parse_email_list_header(sent_email_data['to'])
+        
+        # Extract headers from payload as fallback
+        payload = sent_email_data.get('payload', {})
+        headers = payload.get('headers', [])
+        
+        # Process headers for missing fields
+        for header in headers:
+            name = header.get('name', '').lower()
+            value = header.get('value', '')
+            
+            if name == 'subject' and not processed_email['subject']:
+                processed_email['subject'] = value
+            elif name == 'from' and not processed_email['from_email']['email']:
+                processed_email['from_email'] = parse_email_header(value)
+            elif name == 'to' and not processed_email['to_emails']:
+                processed_email['to_emails'] = parse_email_list_header(value)
+            elif name == 'cc':
+                processed_email['cc_emails'] = parse_email_list_header(value)
+            elif name == 'bcc':
+                processed_email['bcc_emails'] = parse_email_list_header(value)
+            elif name == 'date':
+                # Ensure date is always a string (ISO format) for MongoDB validation
+                parsed_date = parse_email_date(value)
+                if isinstance(parsed_date, datetime):
+                    processed_email['date'] = parsed_date.isoformat()
+                else:
+                    processed_email['date'] = parsed_date or sent_email_data.get('messageTimestamp', datetime.now().isoformat())
+        
+        # Extract email content (body)
+        # Use messageText if available, otherwise extract from payload
+        if sent_email_data.get('messageText'):
+            message_text = sent_email_data['messageText']
+            # Check if it's HTML or plain text
+            if message_text.startswith('<') or '<br' in message_text or '<div' in message_text:
+                processed_email['content'] = {
+                    'html': message_text,
+                    'text': message_text  # For now, store HTML as text too
+                }
+            else:
+                processed_email['content'] = {
+                    'html': f'<pre>{message_text}</pre>',
+                    'text': message_text
+                }
+        else:
+            # Fall back to payload extraction
+            body_content = extract_email_body_from_payload(payload)
+            processed_email['content'] = body_content
+        
+        # Save to database
+        emails_collection = get_collection(EMAILS_COLLECTION)
+        result = emails_collection.update_one(
+            {'email_id': email_id},
+            {'$set': processed_email},
+            upsert=True
+        )
+        
+        print(f"[DEBUG] Saved sent email {email_id} to database: matched={result.matched_count}, modified={result.modified_count}, upserted={bool(result.upserted_id)}")
+        return True
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to save sent email to database: {e}")
+        import traceback
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        return False
+
+def parse_email_header(email_str):
+    """Parse 'Name <email>' format into {name, email} dict"""
+    if not email_str:
+        return {'email': '', 'name': ''}
+    
+    import re
+    # Try to match "Name <email@domain.com>" format
+    match = re.match(r'^(.+?)\s*<([^>]+)>$', email_str.strip())
+    if match:
+        name = match.group(1).strip().strip('"\'')
+        email = match.group(2).strip()
+        return {'email': email, 'name': name}
+    else:
+        # Assume it's just an email address
+        return {'email': email_str.strip(), 'name': ''}
+
+def parse_email_list_header(email_list_str):
+    """Parse comma-separated list of emails into list of {name, email} dicts"""
+    if not email_list_str:
+        return []
+    
+    emails = []
+    for email_str in email_list_str.split(','):
+        emails.append(parse_email_header(email_str.strip()))
+    return emails
+
+def extract_email_body_from_payload(payload):
+    """Extract email body content from Composio payload structure"""
+    html_content = ''
+    text_content = ''
+    
+    try:
+        # Recursively search for body parts
+        def extract_parts(part):
+            nonlocal html_content, text_content
+            
+            mime_type = part.get('mimeType', '')
+            body = part.get('body', {})
+            data = body.get('data', '')
+            
+            if data and mime_type:
+                # Decode base64 data
+                import base64
+                try:
+                    decoded_data = base64.b64decode(data.replace('-', '+').replace('_', '/')).decode('utf-8')
+                    if mime_type == 'text/html':
+                        html_content = decoded_data
+                    elif mime_type == 'text/plain':
+                        text_content = decoded_data
+                except Exception as e:
+                    print(f"[WARNING] Failed to decode email body part: {e}")
+            
+            # Recursively process parts
+            parts = part.get('parts', [])
+            for subpart in parts:
+                extract_parts(subpart)
+        
+        extract_parts(payload)
+        
+        return {
+            'html': html_content,
+            'text': text_content
+        }
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to extract email body: {e}")
+        return {'html': '', 'text': ''}
+
 def extract_content_from_conversation(thread_history, draft_data):
     """
     Extract content from recent conversation that should be applied to draft.
@@ -1407,9 +1587,45 @@ def chat():
                 else:
                     # No existing draft found, create new one
                     try:
+                        # Check if this is a reply to an anchored email
+                        if anchored_item and anchored_item.get('type') == 'email':
+                            print(f"[DRAFT] Detected anchored email - preparing reply context")
+                            anchored_email = anchored_item.get('data', {})
+                            gmail_thread_id = anchored_email.get('gmail_thread_id') or anchored_email.get('metadata', {}).get('thread_id')
+
+                            if gmail_thread_id:
+                                print(f"[DRAFT] Adding reply context: gmail_thread_id={gmail_thread_id}")
+
+                                # Inject reply context into detection_result
+                                if 'draft_data' not in detection_result:
+                                    detection_result['draft_data'] = {}
+                                if 'extracted_info' not in detection_result['draft_data']:
+                                    detection_result['draft_data']['extracted_info'] = {}
+
+                                # Add reply-specific fields
+                                detection_result['draft_data']['extracted_info']['gmail_thread_id'] = gmail_thread_id
+                                detection_result['draft_data']['extracted_info']['reply_to_email_id'] = anchored_item.get('id')
+
+                                # Auto-populate recipients: To = original sender, CC = original recipients
+                                from_email = anchored_email.get('from_email', {})
+                                to_emails = anchored_email.get('to_emails', [])
+
+                                # Set primary recipient to original sender
+                                # from_email is already a dict with 'email' and 'name', use it directly as to_emails format
+                                if from_email and from_email.get('email'):
+                                    detection_result['draft_data']['extracted_info']['to_emails'] = [from_email]
+                                    print(f"[DRAFT] Auto-populated To: {from_email}")
+
+                                # Set CC to original recipients
+                                if to_emails:
+                                    detection_result['draft_data']['extracted_info']['cc_emails'] = to_emails
+                                    print(f"[DRAFT] Auto-populated CC: {to_emails}")
+
+                                print(f"[DRAFT] Reply context injected into detection_result")
+
                         draft_created = draft_service.create_draft_from_detection(
-                            thread_id, 
-                            user_message.message_id, 
+                            thread_id,
+                            user_message.message_id,
                             detection_result
                         )
                         if not draft_created:
@@ -2786,6 +3002,128 @@ def get_email_thread(gmail_thread_id):
         print(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/thread/<pm_copilot_thread_id>/combined', methods=['GET'])
+def get_combined_thread_data(pm_copilot_thread_id):
+    """Get combined thread data: both emails and drafts for a PM Co-Pilot thread ID"""
+    try:
+        from services.draft_service import DraftService
+        draft_service = DraftService()
+        
+        # Get drafts for this thread  
+        drafts = draft_service.get_all_drafts_by_thread(pm_copilot_thread_id)
+        # Convert Draft objects to dictionaries
+        drafts = [draft.to_dict() for draft in drafts] if drafts else []
+        
+        # Get emails for this thread (by PM Co-Pilot thread_id)
+        emails_collection = get_collection(EMAILS_COLLECTION)
+        emails = list(emails_collection.find({'thread_id': pm_copilot_thread_id}).sort('date', 1))
+        
+        # Process emails to remove ObjectId
+        processed_emails = []
+        for email in emails:
+            email_dict = email.copy()
+            if '_id' in email_dict:
+                email_dict['_id'] = str(email_dict['_id'])
+            processed_emails.append(email_dict)
+        
+        # Filter out drafts that have corresponding sent emails to avoid duplication
+        filtered_drafts = []
+        sent_message_ids = {email.get('email_id') for email in processed_emails}
+        
+        for draft in drafts:
+            # Include draft only if it doesn't have a corresponding sent email
+            if draft.get('sent_message_id') not in sent_message_ids:
+                filtered_drafts.append(draft)
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'thread_id': pm_copilot_thread_id,
+                'emails': processed_emails,
+                'drafts': filtered_drafts,
+                'total_items': len(processed_emails) + len(filtered_drafts)
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"[ERROR] Exception in get_combined_thread_data: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/resolve-thread/<gmail_thread_id>', methods=['GET'])
+def resolve_thread_id(gmail_thread_id):
+    """Get emails by Gmail thread ID + drafts by Gmail thread ID + PM Co-Pilot thread ID"""
+    try:
+        pm_thread_id = request.args.get('pm_thread_id')
+        
+        # Get ALL emails with this gmail_thread_id (regardless of PM Co-Pilot thread)
+        emails_collection = get_collection(EMAILS_COLLECTION)
+        emails = list(emails_collection.find({'gmail_thread_id': gmail_thread_id}).sort('date', 1))
+        
+        if not emails:
+            return jsonify({
+                'success': False,
+                'error': 'Gmail thread not found'
+            }), 404
+        
+        # Process emails to remove ObjectId
+        processed_emails = []
+        for email in emails:
+            email_dict = email.copy()
+            if '_id' in email_dict:
+                email_dict['_id'] = str(email_dict['_id'])
+            processed_emails.append(email_dict)
+        
+        # Get drafts with BOTH gmail_thread_id AND pm_thread_id (only non-closed drafts)
+        drafts = []
+        if pm_thread_id:
+            try:
+                from services.draft_service import DraftService
+                draft_service = DraftService()
+                
+                # Get all drafts for the PM Co-Pilot thread
+                all_drafts = draft_service.get_all_drafts_by_thread(pm_thread_id)
+                
+                # Filter drafts by gmail_thread_id and exclude closed drafts
+                for draft in all_drafts or []:
+                    if (hasattr(draft, 'gmail_thread_id') and 
+                        draft.gmail_thread_id == gmail_thread_id and
+                        hasattr(draft, 'status') and 
+                        draft.status != 'closed'):
+                        drafts.append(draft.to_dict())
+                        
+                print(f"[DEBUG] Found {len(drafts)} non-closed drafts for Gmail thread {gmail_thread_id} in PM thread {pm_thread_id}")
+            except Exception as e:
+                print(f"[WARNING] Error fetching drafts: {e}")
+                # Continue without drafts if there's an error
+        
+        # Filter out drafts that have corresponding sent emails to avoid duplication
+        filtered_drafts = []
+        sent_message_ids = {email.get('email_id') for email in processed_emails}
+        
+        for draft in drafts:
+            # Include draft only if it doesn't have a corresponding sent email
+            if draft.get('sent_message_id') not in sent_message_ids:
+                filtered_drafts.append(draft)
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'gmail_thread_id': gmail_thread_id,
+                'pm_copilot_thread_id': pm_thread_id,
+                'emails': processed_emails,
+                'drafts': filtered_drafts,
+                'total_items': len(processed_emails) + len(filtered_drafts)
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"[ERROR] Exception in resolve_thread_id: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/emails/thread/<gmail_thread_id>/full', methods=['GET'])
 def get_full_email_thread(gmail_thread_id):
     """Get full email thread with processed content"""
@@ -3280,14 +3618,28 @@ def send_draft(draft_id):
         
         try:
             if draft.draft_type == 'email':
-                # Send email via Composio
-                result = tooling_service.send_email(
-                    to_emails=composio_params['to_emails'],
-                    subject=composio_params.get('subject'),
-                    body=composio_params.get('body'),
-                    cc_emails=composio_params.get('cc_emails'),
-                    bcc_emails=composio_params.get('bcc_emails')
-                )
+                # Check if this is a reply to a thread
+                if composio_params.get('gmail_thread_id'):
+                    print(f"[DRAFT] Detected reply draft for thread: {composio_params['gmail_thread_id']}")
+
+                    # Use reply_to_thread for thread replies
+                    result = tooling_service.reply_to_thread(
+                        thread_id=composio_params['gmail_thread_id'],
+                        recipient_email=composio_params['to_emails'][0] if composio_params['to_emails'] else None,
+                        message_body=composio_params.get('body'),
+                        cc_emails=composio_params.get('cc_emails'),
+                        bcc_emails=composio_params.get('bcc_emails')
+                    )
+                else:
+                    # Send new email via Composio
+                    print(f"[DRAFT] Sending new email (no thread context)")
+                    result = tooling_service.send_email(
+                        to_emails=composio_params['to_emails'],
+                        subject=composio_params.get('subject'),
+                        body=composio_params.get('body'),
+                        cc_emails=composio_params.get('cc_emails'),
+                        bcc_emails=composio_params.get('bcc_emails')
+                    )
                 
             elif draft.draft_type == 'calendar_event':
                 # Create calendar event via Composio
@@ -3312,14 +3664,58 @@ def send_draft(draft_id):
                     'error': f'Composio execution failed: {error_msg}'
                 }), 500
             else:
+                # For email drafts, capture the sent message ID and fetch the sent email
+                sent_message_id = None
+                if draft.draft_type == 'email':
+                    # Extract sent message ID from Composio response
+                    composio_data = result.get('data', {})
+                    response_data = composio_data.get('response_data', {})
+                    sent_message_id = response_data.get('id')
+                    
+                    if sent_message_id:
+                        print(f"[DRAFT] Email sent successfully, message ID: {sent_message_id}")
+                        
+                        # Store the sent message ID in the draft
+                        draft_service.update_draft(draft_id, {'sent_message_id': sent_message_id})
+                        
+                        # Immediately try to fetch and save the sent email to database
+                        try:
+                            print(f"[DRAFT] Fetching sent email {sent_message_id} to save to database...")
+                            fetch_result = tooling_service.fetch_sent_email_by_message_id(sent_message_id)
+                            
+                            if fetch_result.get('success') and fetch_result.get('email_data'):
+                                # Save the sent email to database with PM Co-Pilot thread ID
+                                save_success = save_sent_email_to_db(fetch_result['email_data'], draft.thread_id)
+                                if save_success:
+                                    print(f"[DRAFT] ✅ Sent email {sent_message_id} saved to database")
+                                else:
+                                    print(f"[DRAFT] ⚠️ Failed to save sent email {sent_message_id} to database")
+                            else:
+                                fetch_error = fetch_result.get('error', 'Unknown fetch error')
+                                print(f"[DRAFT] ⚠️ Failed to fetch sent email {sent_message_id}: {fetch_error}")
+                        except Exception as fetch_ex:
+                            print(f"[DRAFT] ⚠️ Exception while fetching sent email {sent_message_id}: {fetch_ex}")
+                        
+                        # Note: We don't fail the send operation even if fetch fails
+                        # The email was sent successfully, fetch is best-effort
+                    else:
+                        print(f"[DRAFT] ⚠️ No message ID found in send response: {composio_data}")
+                
                 # Mark draft as completed
                 draft_service.close_draft(draft_id, 'closed')
                 success_msg = result.get('message', f'{draft.draft_type.replace("_", " ").title()} executed successfully')
-                return jsonify({
+                
+                response_data = {
                     'success': True,
                     'result': result,
                     'message': success_msg
-                })
+                }
+                
+                # Include sent message ID in response for debugging
+                if sent_message_id:
+                    response_data['sent_message_id'] = sent_message_id
+                
+                return jsonify(response_data)
                 
         except Exception as composio_error:
             # Mark draft as error

@@ -165,13 +165,26 @@ class Contact:
         """Search contacts by name using text search"""
         collection = get_collection(CONTACTS_COLLECTION)
         
-        # Text search on name field
-        text_results = list(collection.find(
-            {'$text': {'$search': query}},
-            {'score': {'$meta': 'textScore'}}
-        ).sort([('score', {'$meta': 'textScore'})]).limit(limit))
+        # Try text search first, but handle missing index gracefully
+        text_results = []
+        try:
+            # Ensure text index exists
+            try:
+                collection.create_index([("name", "text"), ("primary_email", "text")])
+            except Exception:
+                # Index may already exist, ignore error
+                pass
+            
+            # Text search on name field
+            text_results = list(collection.find(
+                {'$text': {'$search': query}},
+                {'score': {'$meta': 'textScore'}}
+            ).sort([('score', {'$meta': 'textScore'})]).limit(limit))
+        except Exception:
+            # Fall through to regex search if text search fails
+            text_results = []
         
-        # If no text search results, try regex search for partial matches
+        # If no text search results or text search failed, try regex search for partial matches
         if not text_results:
             regex_pattern = {'$regex': query, '$options': 'i'}
             text_results = list(collection.find({

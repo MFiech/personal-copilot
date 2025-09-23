@@ -5,10 +5,11 @@ import time
 import uuid
 
 class Draft:
-    def __init__(self, draft_id=None, thread_id=None, message_id=None, draft_type=None, 
+    def __init__(self, draft_id=None, thread_id=None, message_id=None, draft_type=None,
                  status="active", to_emails=None, subject=None, body=None, attachments=None,
-                 summary=None, start_time=None, end_time=None, attendees=None, location=None, 
-                 description=None, created_at=None, updated_at=None):
+                 summary=None, start_time=None, end_time=None, attendees=None, location=None,
+                 description=None, cc_emails=None, bcc_emails=None, gmail_thread_id=None,
+                 reply_to_email_id=None, sent_message_id=None, created_at=None, updated_at=None):
         self.draft_id = draft_id or str(uuid.uuid4())
         self.thread_id = thread_id
         self.message_id = message_id
@@ -20,6 +21,13 @@ class Draft:
         self.subject = subject
         self.body = body
         self.attachments = attachments or []
+        self.cc_emails = cc_emails or []
+        self.bcc_emails = bcc_emails or []
+
+        # Reply-specific fields
+        self.gmail_thread_id = gmail_thread_id  # Gmail thread ID for replies
+        self.reply_to_email_id = reply_to_email_id  # Email ID being replied to
+        self.sent_message_id = sent_message_id  # Gmail message ID when draft is sent
         
         # Calendar-specific fields
         self.summary = summary
@@ -51,6 +59,11 @@ class Draft:
                 'subject': self.subject,
                 'body': self.body,
                 'attachments': self.attachments,
+                'cc_emails': self.cc_emails,
+                'bcc_emails': self.bcc_emails,
+                'gmail_thread_id': self.gmail_thread_id,
+                'reply_to_email_id': self.reply_to_email_id,
+                'sent_message_id': self.sent_message_id,
                 'summary': self.summary,
                 'start_time': self.start_time,
                 'end_time': self.end_time,
@@ -156,14 +169,20 @@ class Draft:
         )
         return result.modified_count > 0
 
+    def is_reply(self):
+        """Check if this draft is a reply to an existing email thread"""
+        return self.gmail_thread_id is not None
+    
     def validate_completeness(self):
         """Check if draft has all required fields for Composio execution"""
         missing_fields = []
-        
+
         if self.draft_type == "email":
             if not self.to_emails or len(self.to_emails) == 0:
                 missing_fields.append("to_emails")
-            if not self.subject:
+            # Subject is optional for reply drafts (gmail_thread_id is set)
+            # Gmail automatically uses "Re: [original subject]" for replies
+            if not self.subject and not self.gmail_thread_id:
                 missing_fields.append("subject")
             if not self.body:
                 missing_fields.append("body")
@@ -193,6 +212,11 @@ class Draft:
             'subject': self.subject,
             'body': self.body,
             'attachments': self.attachments,
+            'cc_emails': self.cc_emails,
+            'bcc_emails': self.bcc_emails,
+            'gmail_thread_id': self.gmail_thread_id,
+            'reply_to_email_id': self.reply_to_email_id,
+            'sent_message_id': self.sent_message_id,
             'summary': self.summary,
             'start_time': self.start_time,
             'end_time': self.end_time,
@@ -216,6 +240,11 @@ class Draft:
             subject=data.get('subject'),
             body=data.get('body'),
             attachments=data.get('attachments', []),
+            cc_emails=data.get('cc_emails', []),
+            bcc_emails=data.get('bcc_emails', []),
+            gmail_thread_id=data.get('gmail_thread_id'),
+            reply_to_email_id=data.get('reply_to_email_id'),
+            sent_message_id=data.get('sent_message_id'),
             summary=data.get('summary'),
             start_time=data.get('start_time'),
             end_time=data.get('end_time'),

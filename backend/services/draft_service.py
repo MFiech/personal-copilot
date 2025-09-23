@@ -68,6 +68,25 @@ class DraftService:
             
             if initial_data:
                 print(f"[DraftService] Processing initial_data: {initial_data}")
+
+                # Handle reply-specific fields
+                if "gmail_thread_id" in initial_data:
+                    draft_data["gmail_thread_id"] = initial_data["gmail_thread_id"]
+                    print(f"[DraftService] Gmail thread ID set: {initial_data['gmail_thread_id']}")
+
+                if "reply_to_email_id" in initial_data:
+                    draft_data["reply_to_email_id"] = initial_data["reply_to_email_id"]
+                    print(f"[DraftService] Reply to email ID set: {initial_data['reply_to_email_id']}")
+
+                # Handle CC and BCC emails
+                if "cc_emails" in initial_data:
+                    draft_data["cc_emails"] = initial_data["cc_emails"]
+                    print(f"[DraftService] CC emails set: {initial_data['cc_emails']}")
+
+                if "bcc_emails" in initial_data:
+                    draft_data["bcc_emails"] = initial_data["bcc_emails"]
+                    print(f"[DraftService] BCC emails set: {initial_data['bcc_emails']}")
+
                 # Process contact names to emails for email drafts
                 if draft_type == "email" and "to_contacts" in initial_data:
                     print(f"[DraftService] Resolving to_contacts: {initial_data['to_contacts']}")
@@ -242,17 +261,26 @@ class DraftService:
         if draft.draft_type == "email":
             # Convert to email parameters
             to_emails = [email["email"] for email in draft.to_emails if email.get("email")]
-            
-            # Note: Current draft model only supports to_emails
-            # CC/BCC support can be added later when the model is extended
-            
+
+            # Extract CC emails if available
+            cc_emails = None
+            if draft.cc_emails:
+                cc_emails = [email["email"] if isinstance(email, dict) else email for email in draft.cc_emails if email]
+
+            # Extract BCC emails if available
+            bcc_emails = None
+            if draft.bcc_emails:
+                bcc_emails = [email["email"] if isinstance(email, dict) else email for email in draft.bcc_emails if email]
+
             return {
                 "to_emails": to_emails,
                 "subject": draft.subject,
                 "body": draft.body,
-                "cc_emails": None,  # Not supported in current draft model
-                "bcc_emails": None,  # Not supported in current draft model
-                "attachments": draft.attachments or []
+                "cc_emails": cc_emails,
+                "bcc_emails": bcc_emails,
+                "attachments": draft.attachments or [],
+                "gmail_thread_id": draft.gmail_thread_id,  # For reply detection
+                "reply_to_email_id": draft.reply_to_email_id  # For context
             }
         
         elif draft.draft_type == "calendar_event":
@@ -614,7 +642,11 @@ class DraftService:
             if draft_type == "email":
                 print(f"[DraftService] Processing email fields...")
                 # Process email-specific fields
-                if "to_contacts" in extracted_info:
+                # Check for to_emails first (used for replies), then to_contacts
+                if "to_emails" in extracted_info:
+                    initial_data["to_emails"] = extracted_info["to_emails"]
+                    print(f"[DraftService] Added to_emails: {extracted_info['to_emails']}")
+                elif "to_contacts" in extracted_info:
                     initial_data["to_contacts"] = extracted_info["to_contacts"]
                     print(f"[DraftService] Added to_contacts: {extracted_info['to_contacts']}")
                 if "subject" in extracted_info and extracted_info["subject"]:
@@ -623,6 +655,23 @@ class DraftService:
                 if "body" in extracted_info and extracted_info["body"]:
                     initial_data["body"] = extracted_info["body"]
                     print(f"[DraftService] Added body: {extracted_info['body'][:100]}...")
+
+                # Handle reply-specific fields
+                if "gmail_thread_id" in extracted_info:
+                    initial_data["gmail_thread_id"] = extracted_info["gmail_thread_id"]
+                    print(f"[DraftService] Added gmail_thread_id: {extracted_info['gmail_thread_id']}")
+
+                if "reply_to_email_id" in extracted_info:
+                    initial_data["reply_to_email_id"] = extracted_info["reply_to_email_id"]
+                    print(f"[DraftService] Added reply_to_email_id: {extracted_info['reply_to_email_id']}")
+
+                if "cc_emails" in extracted_info:
+                    initial_data["cc_emails"] = extracted_info["cc_emails"]
+                    print(f"[DraftService] Added cc_emails: {extracted_info['cc_emails']}")
+
+                if "bcc_emails" in extracted_info:
+                    initial_data["bcc_emails"] = extracted_info["bcc_emails"]
+                    print(f"[DraftService] Added bcc_emails: {extracted_info['bcc_emails']}")
             
             elif draft_type == "calendar_event":
                 print(f"[DraftService] Processing calendar event fields...")

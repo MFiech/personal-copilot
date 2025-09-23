@@ -141,6 +141,12 @@ class TestDraftIntegrationFlow:
                 mock_draft.subject = "Integration Test Email"
                 mock_draft.body = "Updated draft body with more details"
                 mock_draft.attachments = []
+                # Mock cc_emails and bcc_emails as empty lists (not Mock objects)
+                mock_draft.cc_emails = []
+                mock_draft.bcc_emails = []
+                # Mock reply fields as None (for new emails)
+                mock_draft.gmail_thread_id = None
+                mock_draft.reply_to_email_id = None
                 mock_get.return_value = mock_draft
 
                 composio_params = draft_service.convert_draft_to_composio_params("integration_draft_123")

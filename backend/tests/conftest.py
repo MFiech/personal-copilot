@@ -193,15 +193,25 @@ def clean_collections(test_db):
     # Clean up any existing test data
     emails_collection = get_collection('emails')
     conversations_collection = get_collection('conversations')
+    contacts_collection = get_collection('contacts')
     
     emails_collection.delete_many({})
     conversations_collection.delete_many({})
+    contacts_collection.delete_many({})
+    
+    # Create text index for contacts collection to support contact search tests
+    try:
+        contacts_collection.create_index([("name", "text"), ("primary_email", "text")])
+    except Exception as e:
+        # Index may already exist, ignore error
+        pass
     
     yield
     
     # Clean up after test
     emails_collection.delete_many({})
     conversations_collection.delete_many({})
+    contacts_collection.delete_many({})
 
 
 @pytest.fixture
