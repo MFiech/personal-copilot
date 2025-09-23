@@ -28,6 +28,8 @@ const EmailSidebar = ({
   // Check if mobile using React state for responsive updates
   const [isMobile, setIsMobile] = React.useState(window.innerWidth < 768);
   const [expandedEmails, setExpandedEmails] = React.useState(new Set());
+  const [emailsWithContent, setEmailsWithContent] = React.useState(new Map());
+  const [loadingContent, setLoadingContent] = React.useState(new Set());
 
   React.useEffect(() => {
     const handleResize = () => {
@@ -172,6 +174,46 @@ const EmailSidebar = ({
       case 'composio_error': return 'Error';
       default: return 'Draft';
     }
+  };
+
+  // Helper function to get clean text for preview (removes HTML and Markdown)
+  const getCleanTextPreview = (emailContent) => {
+    if (!emailContent) return 'No content';
+    
+    const { html, text } = emailContent;
+    let cleanText = '';
+    
+    // Try text field first, but strip HTML if it contains HTML tags
+    if (text && text.trim()) {
+      if (text.includes('<') && text.includes('>')) {
+        // Text field contains HTML, strip it
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = DOMPurify.sanitize(text, { ALLOWED_TAGS: [] });
+        cleanText = tempDiv.textContent || tempDiv.innerText || '';
+      } else {
+        // Text field is clean, just remove any Markdown formatting
+        cleanText = text
+          .replace(/\*\*(.*?)\*\*/g, '$1') // Remove **bold**
+          .replace(/\*(.*?)\*/g, '$1')     // Remove *italic*
+          .replace(/\[(.*?)\]\(.*?\)/g, '$1') // Remove [link](url)
+          .replace(/#{1,6}\s/g, '')        // Remove # headers
+          .replace(/^\s*[-*+]\s/gm, '')   // Remove bullet points
+          .replace(/^\s*\d+\.\s/gm, '')   // Remove numbered lists
+      }
+    } else if (html && html.trim()) {
+      // Fallback: use HTML field and strip HTML tags
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = DOMPurify.sanitize(html, { ALLOWED_TAGS: [] });
+      cleanText = tempDiv.textContent || tempDiv.innerText || '';
+    }
+    
+    // Clean up whitespace
+    cleanText = cleanText
+      .replace(/\n\s*\n/g, ' ')  // Replace multiple newlines with space
+      .replace(/\s+/g, ' ')     // Replace multiple spaces with single space
+      .trim();
+    
+    return cleanText || 'No content';
   };
 
 
@@ -355,11 +397,13 @@ const EmailSidebar = ({
                                       maxWidth: '100%'
                                     }}
                                   >
-                                    {isEmail 
-                                      ? (item.content?.text?.substring(0, 120) || 'No content')
-                                      : (item.body?.substring(0, 120) || 'No content')
-                                    }
-                                    {((isEmail ? item.content?.text?.length : item.body?.length) > 120) ? '...' : ''}
+                                    {(() => {
+                                      const cleanText = isEmail 
+                                        ? getCleanTextPreview(item.content)
+                                        : (item.body || 'No content');
+                                      const truncated = cleanText.substring(0, 120);
+                                      return truncated + (cleanText.length > 120 ? '...' : '');
+                                    })()}
                                   </Typography>
                                 )}
                               </Box>

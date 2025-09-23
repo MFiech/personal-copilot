@@ -3053,30 +3053,68 @@ def get_combined_thread_data(pm_copilot_thread_id):
 
 @app.route('/resolve-thread/<gmail_thread_id>', methods=['GET'])
 def resolve_thread_id(gmail_thread_id):
-    """Resolve Gmail thread ID to PM Co-Pilot thread ID for using combined endpoint"""
+    """Get emails by Gmail thread ID + drafts by Gmail thread ID + PM Co-Pilot thread ID"""
     try:
-        # Find an email with this gmail_thread_id and get its pm_copilot thread_id
-        emails_collection = get_collection(EMAILS_COLLECTION)
-        email = emails_collection.find_one({'gmail_thread_id': gmail_thread_id})
+        pm_thread_id = request.args.get('pm_thread_id')
         
-        if not email:
+        # Get ALL emails with this gmail_thread_id (regardless of PM Co-Pilot thread)
+        emails_collection = get_collection(EMAILS_COLLECTION)
+        emails = list(emails_collection.find({'gmail_thread_id': gmail_thread_id}).sort('date', 1))
+        
+        if not emails:
             return jsonify({
                 'success': False,
                 'error': 'Gmail thread not found'
             }), 404
         
-        pm_copilot_thread_id = email.get('thread_id')
-        if not pm_copilot_thread_id:
-            return jsonify({
-                'success': False,
-                'error': 'No PM Co-Pilot thread ID found for this Gmail thread'
-            }), 404
+        # Process emails to remove ObjectId
+        processed_emails = []
+        for email in emails:
+            email_dict = email.copy()
+            if '_id' in email_dict:
+                email_dict['_id'] = str(email_dict['_id'])
+            processed_emails.append(email_dict)
+        
+        # Get drafts with BOTH gmail_thread_id AND pm_thread_id (only non-closed drafts)
+        drafts = []
+        if pm_thread_id:
+            try:
+                from services.draft_service import DraftService
+                draft_service = DraftService()
+                
+                # Get all drafts for the PM Co-Pilot thread
+                all_drafts = draft_service.get_all_drafts_by_thread(pm_thread_id)
+                
+                # Filter drafts by gmail_thread_id and exclude closed drafts
+                for draft in all_drafts or []:
+                    if (hasattr(draft, 'gmail_thread_id') and 
+                        draft.gmail_thread_id == gmail_thread_id and
+                        hasattr(draft, 'status') and 
+                        draft.status != 'closed'):
+                        drafts.append(draft.to_dict())
+                        
+                print(f"[DEBUG] Found {len(drafts)} non-closed drafts for Gmail thread {gmail_thread_id} in PM thread {pm_thread_id}")
+            except Exception as e:
+                print(f"[WARNING] Error fetching drafts: {e}")
+                # Continue without drafts if there's an error
+        
+        # Filter out drafts that have corresponding sent emails to avoid duplication
+        filtered_drafts = []
+        sent_message_ids = {email.get('email_id') for email in processed_emails}
+        
+        for draft in drafts:
+            # Include draft only if it doesn't have a corresponding sent email
+            if draft.get('sent_message_id') not in sent_message_ids:
+                filtered_drafts.append(draft)
         
         return jsonify({
             'success': True,
             'data': {
                 'gmail_thread_id': gmail_thread_id,
-                'pm_copilot_thread_id': pm_copilot_thread_id
+                'pm_copilot_thread_id': pm_thread_id,
+                'emails': processed_emails,
+                'drafts': filtered_drafts,
+                'total_items': len(processed_emails) + len(filtered_drafts)
             }
         }), 200
         
