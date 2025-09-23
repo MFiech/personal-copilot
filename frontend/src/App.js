@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import {
@@ -227,7 +227,7 @@ function App() {
   const initialIsMobile = window.innerWidth < 768; // Using 768 as the breakpoint
   const [isMobile, setIsMobile] = useState(initialIsMobile);
   const [drawerOpen, setDrawerOpen] = useState(!initialIsMobile); // Open on desktop, closed on mobile by default
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false); // New state for collapsed sidebar
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true); // New state for collapsed sidebar (collapsed by default)
   
   const [pendingConfirmation, setPendingConfirmation] = useState(null);
   const [editingThreadId, setEditingThreadId] = useState(null);
@@ -258,6 +258,9 @@ function App() {
   const [draftValidation, setDraftValidation] = useState(null);
   const [isSendingDraft, setIsSendingDraft] = useState(false);
 
+  // Ref for auto-scrolling to bottom
+  const messagesEndRef = useRef(null);
+
   // Draft cards state - tracks drafts per message
   const [messageDrafts, setMessageDrafts] = useState({});
 
@@ -267,6 +270,11 @@ function App() {
   useEffect(() => {
     fetchThreads();
   }, []);
+
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
   // Handle resize for isMobile and drawerOpen adjustments
   useEffect(() => {
@@ -1095,14 +1103,31 @@ function App() {
           // Try to fetch draft and validate
           (async () => {
             try {
-              const response = await DraftService.validateDraft(anchorId);
-              if (response.success) {
-                setAnchoredItem({ id: anchorId, type: 'draft', data: { draft_id: anchorId, ...response.draft } });
-                setDraftValidation(response.validation);
+              // Fetch the full draft data
+              const draftResponse = await DraftService.getDraft(anchorId);
+              const validationResponse = await DraftService.validateDraft(anchorId);
+
+              if (draftResponse?.draft && validationResponse.success) {
+                const draftData = { ...draftResponse.draft };
+                setAnchoredItem({ id: anchorId, type: 'draft', data: draftData });
+                setDraftValidation(validationResponse.validation);
+
+                // Auto-open sidebar with the draft
+                setEmailSidebar({
+                  open: true,
+                  email: null,
+                  threadEmails: [],
+                  gmailThreadId: null,
+                  loading: false,
+                  error: null,
+                  draft: draftData,
+                  contentType: 'draft'
+                });
               } else {
                 setAnchoredItem({ id: anchorId, type: 'draft', data: { draft_id: anchorId } });
               }
-            } catch {
+            } catch (error) {
+              console.error('[App] Error loading draft from URL:', error);
               setAnchoredItem({ id: anchorId, type: 'draft', data: { draft_id: anchorId } });
             }
           })();
@@ -1618,13 +1643,15 @@ function App() {
 
 
           {/* Messages area */}
-          <Box sx={{ 
-            flexGrow: 1, 
-            overflowY: 'auto', 
-            p: messages.length > 0 ? 2 : 0, 
-            display: 'flex', 
-            flexDirection: 'column' 
-          }}>
+          <Box sx={{
+            flexGrow: 1,
+            overflowY: 'auto',
+            p: messages.length > 0 ? 2 : 0,
+            display: 'flex',
+            flexDirection: 'column'
+          }}
+          id="messages-container"
+          >
             {messages.length === 0 ? (
               // Welcome screen
               <Box sx={{ 
@@ -1770,6 +1797,8 @@ function App() {
                 </Paper>
               </Box>
             )}
+            {/* Invisible element for auto-scroll */}
+            <div ref={messagesEndRef} />
           </Box>
 
 
