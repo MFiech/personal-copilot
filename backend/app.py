@@ -1623,6 +1623,56 @@ def chat():
 
                                 print(f"[DRAFT] Reply context injected into detection_result")
 
+                        # Check if this is a modification to an anchored calendar event
+                        elif anchored_item and anchored_item.get('type') == 'calendar_event':
+                            print(f"[DRAFT] Detected anchored calendar event - checking for modification intent")
+                            
+                            # Check if the query indicates modification intent
+                            query_lower = query.lower()
+                            modification_keywords = ["modify", "update", "change", "edit", "reschedule", "move", "shift", "adjust"]
+                            
+                            if any(keyword in query_lower for keyword in modification_keywords):
+                                print(f"[DRAFT] Detected calendar modification intent with anchored event")
+                                anchored_event = anchored_item.get('data', {})
+                                event_id = anchored_item.get('id')
+                                
+                                if event_id:
+                                    print(f"[DRAFT] Adding calendar modification context: event_id={event_id}")
+
+                                    # Inject calendar modification context into detection_result
+                                    if 'draft_data' not in detection_result:
+                                        detection_result['draft_data'] = {}
+                                    if 'extracted_info' not in detection_result['draft_data']:
+                                        detection_result['draft_data']['extracted_info'] = {}
+
+                                    # Add calendar modification fields
+                                    detection_result['draft_data']['extracted_info']['original_event_id'] = event_id
+                                    detection_result['draft_data']['extracted_info']['calendar_id'] = 'primary'
+
+                                    # Auto-populate current event details for modification
+                                    current_summary = anchored_event.get('summary')
+                                    current_location = anchored_event.get('location')
+                                    current_description = anchored_event.get('description')
+                                    
+                                    # Only auto-populate if not already provided by LLM
+                                    if current_summary and not detection_result['draft_data']['extracted_info'].get('summary'):
+                                        detection_result['draft_data']['extracted_info']['summary'] = current_summary
+                                        print(f"[DRAFT] Auto-populated summary: {current_summary}")
+                                    
+                                    if current_location and not detection_result['draft_data']['extracted_info'].get('location'):
+                                        detection_result['draft_data']['extracted_info']['location'] = current_location
+                                        print(f"[DRAFT] Auto-populated location: {current_location}")
+                                    
+                                    if current_description and not detection_result['draft_data']['extracted_info'].get('description'):
+                                        detection_result['draft_data']['extracted_info']['description'] = current_description
+                                        print(f"[DRAFT] Auto-populated description: {current_description}")
+
+                                    print(f"[DRAFT] Calendar modification context injected into detection_result")
+                                else:
+                                    print(f"[DRAFT] ⚠️ No event_id found in anchored calendar event")
+                            else:
+                                print(f"[DRAFT] No modification keywords detected, treating as regular calendar draft")
+
                         draft_created = draft_service.create_draft_from_detection(
                             thread_id,
                             user_message.message_id,
@@ -3642,15 +3692,41 @@ def send_draft(draft_id):
                     )
                 
             elif draft.draft_type == 'calendar_event':
-                # Create calendar event via Composio
-                result = tooling_service.create_calendar_event(
-                    summary=composio_params['summary'],
-                    start_time=composio_params['start_time'],
-                    end_time=composio_params['end_time'],
-                    location=composio_params.get('location'),
-                    description=composio_params.get('description'),
-                    attendees=composio_params.get('attendees', [])
-                )
+                # Check if this is a modification to an existing event
+                if composio_params.get('original_event_id'):
+                    print(f"[DRAFT] Detected calendar modification for event: {composio_params['original_event_id']}")
+                    
+                    # Use patch_calendar_event for modifications
+                    updates = {}
+                    if 'summary' in composio_params:
+                        updates['summary'] = composio_params['summary']
+                    if 'start_time' in composio_params:
+                        updates['start_time'] = composio_params['start_time']
+                    if 'end_time' in composio_params:
+                        updates['end_time'] = composio_params['end_time']
+                    if 'location' in composio_params:
+                        updates['location'] = composio_params['location']
+                    if 'description' in composio_params:
+                        updates['description'] = composio_params['description']
+                    if 'attendees' in composio_params:
+                        updates['attendees'] = composio_params['attendees']
+                    
+                    result = tooling_service.patch_calendar_event(
+                        event_id=composio_params['original_event_id'],
+                        calendar_id=composio_params.get('calendar_id', 'primary'),
+                        **updates
+                    )
+                else:
+                    # Create new calendar event via Composio
+                    print(f"[DRAFT] Creating new calendar event (no original_event_id)")
+                    result = tooling_service.create_calendar_event(
+                        summary=composio_params['summary'],
+                        start_time=composio_params['start_time'],
+                        end_time=composio_params['end_time'],
+                        location=composio_params.get('location'),
+                        description=composio_params.get('description'),
+                        attendees=composio_params.get('attendees', [])
+                    )
             else:
                 return jsonify({'error': f'Unknown draft type: {draft.draft_type}'}), 400
             

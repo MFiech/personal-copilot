@@ -9,7 +9,8 @@ class Draft:
                  status="active", to_emails=None, subject=None, body=None, attachments=None,
                  summary=None, start_time=None, end_time=None, attendees=None, location=None,
                  description=None, cc_emails=None, bcc_emails=None, gmail_thread_id=None,
-                 reply_to_email_id=None, sent_message_id=None, created_at=None, updated_at=None):
+                 reply_to_email_id=None, sent_message_id=None, original_event_id=None,
+                 calendar_id=None, created_at=None, updated_at=None):
         self.draft_id = draft_id or str(uuid.uuid4())
         self.thread_id = thread_id
         self.message_id = message_id
@@ -36,6 +37,10 @@ class Draft:
         self.attendees = attendees or []
         self.location = location
         self.description = description
+        
+        # Calendar modification fields
+        self.original_event_id = original_event_id  # Google Calendar event ID for modifications
+        self.calendar_id = calendar_id  # Calendar ID (usually "primary")
         
         # Timestamps
         self.created_at = created_at if created_at is not None else int(time.time())
@@ -70,6 +75,8 @@ class Draft:
                 'attendees': self.attendees,
                 'location': self.location,
                 'description': self.description,
+                'original_event_id': self.original_event_id,
+                'calendar_id': self.calendar_id,
                 'created_at': self.created_at,
                 'updated_at': self.updated_at
             }
@@ -173,6 +180,10 @@ class Draft:
         """Check if this draft is a reply to an existing email thread"""
         return self.gmail_thread_id is not None
     
+    def is_calendar_modification(self):
+        """Check if this draft is a modification to an existing calendar event"""
+        return self.original_event_id is not None
+    
     def validate_completeness(self):
         """Check if draft has all required fields for Composio execution"""
         missing_fields = []
@@ -223,6 +234,8 @@ class Draft:
             'attendees': self.attendees,
             'location': self.location,
             'description': self.description,
+            'original_event_id': self.original_event_id,
+            'calendar_id': self.calendar_id,
             'created_at': self.created_at,
             'updated_at': self.updated_at
         }
@@ -251,6 +264,8 @@ class Draft:
             attendees=data.get('attendees', []),
             location=data.get('location'),
             description=data.get('description'),
+            original_event_id=data.get('original_event_id'),
+            calendar_id=data.get('calendar_id'),
             created_at=data.get('created_at'),
             updated_at=data.get('updated_at')
         )

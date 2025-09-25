@@ -87,6 +87,15 @@ class DraftService:
                     draft_data["bcc_emails"] = initial_data["bcc_emails"]
                     print(f"[DraftService] BCC emails set: {initial_data['bcc_emails']}")
 
+                # Handle calendar modification fields
+                if "original_event_id" in initial_data:
+                    draft_data["original_event_id"] = initial_data["original_event_id"]
+                    print(f"[DraftService] Original event ID set: {initial_data['original_event_id']}")
+
+                if "calendar_id" in initial_data:
+                    draft_data["calendar_id"] = initial_data["calendar_id"]
+                    print(f"[DraftService] Calendar ID set: {initial_data['calendar_id']}")
+
                 # Process contact names to emails for email drafts
                 if draft_type == "email" and "to_contacts" in initial_data:
                     print(f"[DraftService] Resolving to_contacts: {initial_data['to_contacts']}")
@@ -306,6 +315,12 @@ class DraftService:
                 params["description"] = draft.description
             if attendee_emails:
                 params["attendees"] = attendee_emails
+            
+            # Add calendar modification context
+            if draft.original_event_id:
+                params["original_event_id"] = draft.original_event_id
+                params["calendar_id"] = draft.calendar_id or "primary"
+                print(f"[DraftService] Calendar modification context added: event_id={draft.original_event_id}, calendar_id={params['calendar_id']}")
             
             return params
         
@@ -701,6 +716,15 @@ class DraftService:
                 if "description" in extracted_info and extracted_info["description"]:
                     initial_data["description"] = extracted_info["description"]
                     print(f"[DraftService] Added description: {extracted_info['description']}")
+
+                # Handle calendar modification fields
+                if "original_event_id" in extracted_info:
+                    initial_data["original_event_id"] = extracted_info["original_event_id"]
+                    print(f"[DraftService] Added original_event_id: {extracted_info['original_event_id']}")
+
+                if "calendar_id" in extracted_info:
+                    initial_data["calendar_id"] = extracted_info["calendar_id"]
+                    print(f"[DraftService] Added calendar_id: {extracted_info['calendar_id']}")
             
             print(f"[DraftService] Final initial_data for draft creation: {initial_data}")
             
