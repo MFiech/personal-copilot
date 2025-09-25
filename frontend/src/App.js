@@ -1507,9 +1507,6 @@ function App() {
       if (response.success) {
         showSnackbar(response.message || 'Draft sent successfully!', 'success');
 
-        // Close the sidebar
-        handleCloseEmailSidebar();
-
         // Clear the anchored draft
         setAnchoredItem(null);
         setDraftValidation(null);
@@ -1520,6 +1517,23 @@ function App() {
         // Refresh the thread to show any new messages
         if (threadId) {
           loadThread(threadId);
+        }
+
+        // If sidebar is open and shows an email thread, refresh it to show the newly sent email
+        if (emailSidebar.open && emailSidebar.gmailThreadId) {
+          console.log('[App.js] Refreshing email sidebar after successful draft send');
+          // Create a temporary email object to trigger sidebar refresh
+          const refreshEmail = {
+            gmail_thread_id: emailSidebar.gmailThreadId,
+            email_id: 'refresh-trigger'
+          };
+          // Small delay to ensure backend has processed the sent email
+          setTimeout(() => {
+            handleOpenEmail(refreshEmail);
+          }, 1000); // 1 second delay for backend sync
+        } else {
+          // Close the sidebar if it's not showing an email thread
+          handleCloseEmailSidebar();
         }
       } else {
         showSnackbar(response.error || 'Failed to send draft', 'error');
