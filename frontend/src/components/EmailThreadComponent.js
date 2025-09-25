@@ -163,8 +163,35 @@ const EmailThreadComponent = ({
     }
   };
 
-  // Combine emails and drafts, sort by date
-  const allItems = [...threadEmails, ...threadDrafts]
+  // Transform sent drafts to look like emails
+  const transformSentDraftsToEmails = (drafts) => {
+    return drafts.map(draft => {
+      // If draft is sent (closed), transform it to look like an email
+      if (draft.status === 'closed' && draft.draft_id) {
+        return {
+          // Use email_id to make it appear as an email, not a draft
+          email_id: draft.sent_message_id || `sent-draft-${draft.draft_id}`,
+          from_email: {
+            name: 'You',
+            email: draft.from_email || 'you@example.com'
+          },
+          to_emails: draft.to_emails || [],
+          subject: draft.subject || 'No Subject',
+          date: new Date(draft.updated_at * 1000).toISOString(),
+          content: {
+            text: draft.body || 'No content',
+            html: null
+          }
+          // Note: NOT including draft_id so it's treated as an email
+        };
+      }
+      return draft; // Return active drafts unchanged
+    });
+  };
+
+  // Combine emails with transformed sent drafts, sort by date
+  const transformedDrafts = transformSentDraftsToEmails(threadDrafts);
+  const allItems = [...threadEmails, ...transformedDrafts]
     .sort((a, b) => new Date(a.date || a.created_at * 1000) - new Date(b.date || b.created_at * 1000));
 
   if (allItems.length === 0) {
