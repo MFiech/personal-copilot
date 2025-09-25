@@ -33,9 +33,26 @@ const DraftCard = ({
   // Fetch validation status on mount and when draft changes
   useEffect(() => {
     if (draft && draft.draft_id) {
+      // Immediate fetch
       fetchValidation();
+      // Additional fetch after short delay to ensure backend consistency
+      // This is especially important for newly created drafts
+      const refreshTimer = setTimeout(() => {
+        fetchValidation();
+      }, 200);
+      return () => clearTimeout(refreshTimer);
     }
   }, [draft]);
+  
+  // Additional effect to refresh validation when draft is updated
+  useEffect(() => {
+    if (draft?.draft_id && draft?.updated_at) {
+      const refreshTimer = setTimeout(() => {
+        fetchValidation();
+      }, 100);
+      return () => clearTimeout(refreshTimer);
+    }
+  }, [draft?.updated_at]);
 
   const fetchValidation = async () => {
     if (!draft?.draft_id) return;
