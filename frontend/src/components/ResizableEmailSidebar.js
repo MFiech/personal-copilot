@@ -83,10 +83,10 @@ const UnifiedSidebar = ({
   // Function to handle sending drafts
   const handleSendDraft = async (draftToSend) => {
     if (!onSendDraft) return;
-    
+
     try {
       await onSendDraft(draftToSend);
-      showSnackbar('Draft sent successfully!', 'success');
+      // Don't show success message here - let App.js handle it along with sidebar refresh
     } catch (error) {
       console.error('Error sending draft:', error);
       showSnackbar('Failed to send draft. Please try again.', 'error');
@@ -139,7 +139,18 @@ const UnifiedSidebar = ({
             isSendingDraft={isSendingDraft}
           />
         );
-      
+
+      case 'combined':
+        // Combined view shows complete thread emails and filtered drafts
+        return (
+          <EmailThreadComponent
+            threadEmails={threadEmails}
+            threadDrafts={threadDrafts}
+            onSendDraft={handleSendDraft}
+            isSendingDraft={isSendingDraft}
+          />
+        );
+
       case 'email':
       default:
         // For single email view, we can create a simple email display
