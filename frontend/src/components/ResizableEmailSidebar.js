@@ -11,6 +11,7 @@ import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import EmailThreadComponent from './EmailThreadComponent';
 import EmailDraftComponent from './EmailDraftComponent';
 import CalendarDraftComponent from './CalendarDraftComponent';
+import CalendarEventComponent from './CalendarEventComponent';
 import { DraftService } from '../utils/draftService';
 import { useSnackbar } from './SnackbarProvider';
 
@@ -22,11 +23,12 @@ const UnifiedSidebar = ({
   gmailThreadId = null,
   pmCopilotThreadId = null,
   draft = null,
+  calendarEvent = null,
   loading,
   error,
   onClose,
   onWidthChange,
-  contentType = 'email', // 'email', 'thread', 'email-draft', 'calendar-draft'
+  contentType = 'email', // 'email', 'thread', 'email-draft', 'calendar-draft', 'calendar-event', 'calendar-combined'
   onSendDraft = null,
   isSendingDraft = false
 }) => {
@@ -140,6 +142,38 @@ const UnifiedSidebar = ({
           />
         );
 
+      case 'calendar-event':
+        return (
+          <CalendarEventComponent
+            event={calendarEvent}
+            showHeader={true}
+            showActions={true}
+          />
+        );
+
+      case 'calendar-combined':
+        // Combined view shows calendar event and related draft
+        return (
+          <Box>
+            {calendarEvent && (
+              <CalendarEventComponent
+                event={calendarEvent}
+                showHeader={true}
+                showActions={false}
+              />
+            )}
+            {draft && (
+              <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
+                <CalendarDraftComponent
+                  draft={draft}
+                  onSendDraft={handleSendDraft}
+                  isSendingDraft={isSendingDraft}
+                />
+              </Box>
+            )}
+          </Box>
+        );
+
       case 'combined':
         // Combined view shows complete thread emails and filtered drafts
         return (
@@ -180,7 +214,16 @@ const UnifiedSidebar = ({
       
       case 'calendar-draft':
         return draft?.status === 'closed' ? 'Event Created' : 'Calendar Draft';
-      
+
+      case 'calendar-event':
+        return calendarEvent?.summary || 'Calendar Event';
+
+      case 'calendar-combined':
+        if (draft?.status === 'closed') {
+          return 'Event Updated';
+        }
+        return calendarEvent?.summary ? `Modifying: ${calendarEvent.summary}` : 'Calendar Event & Draft';
+
       case 'email':
       default:
         return email?.subject || 'Email';

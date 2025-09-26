@@ -1649,13 +1649,39 @@ def chat():
                                     detection_result['draft_data']['extracted_info']['original_event_id'] = event_id
                                     detection_result['draft_data']['extracted_info']['calendar_id'] = 'primary'
 
-                                    # Auto-populate current event details for modification
-                                    current_summary = anchored_event.get('summary')
-                                    current_location = anchored_event.get('location')
-                                    current_description = anchored_event.get('description')
-                                    
-                                    # Only auto-populate if not already provided by LLM
-                                    if current_summary and not detection_result['draft_data']['extracted_info'].get('summary'):
+                                    # For calendar modifications, fetch fresh event data from Google Calendar
+                                    # to avoid using stale anchored data (Phase 1 limitation)
+                                    try:
+                                        print(f"[DRAFT] Fetching fresh event data for event_id: {event_id}")
+                                        fresh_event = tooling_service.get_calendar_event(event_id, 'primary')
+                                        if fresh_event and fresh_event.get('successful') and fresh_event.get('data'):
+                                            fresh_event_data = fresh_event['data']
+                                            current_summary = fresh_event_data.get('summary')
+                                            current_location = fresh_event_data.get('location')
+                                            current_description = fresh_event_data.get('description')
+                                            print(f"[DRAFT] Fresh event data retrieved, summary: {current_summary}")
+                                        else:
+                                            print(f"[DRAFT] Failed to fetch fresh event data, using anchored data")
+                                            current_summary = anchored_event.get('summary')
+                                            current_location = anchored_event.get('location')
+                                            current_description = anchored_event.get('description')
+                                    except Exception as e:
+                                        print(f"[DRAFT] Error fetching fresh event data: {e}, using anchored data")
+                                        current_summary = anchored_event.get('summary')
+                                        current_location = anchored_event.get('location')
+                                        current_description = anchored_event.get('description')
+
+                                    # For modifications, preserve original title unless user explicitly wants to change it
+                                    query_lower = query.lower()
+                                    title_change_keywords = ["rename", "change title", "change name", "retitle", "title to", "name to", "call it"]
+                                    wants_title_change = any(keyword in query_lower for keyword in title_change_keywords)
+
+                                    if current_summary and not wants_title_change:
+                                        # Always preserve original title for time/location modifications
+                                        detection_result['draft_data']['extracted_info']['summary'] = current_summary
+                                        print(f"[DRAFT] Preserving original summary: {current_summary}")
+                                    elif current_summary and not detection_result['draft_data']['extracted_info'].get('summary'):
+                                        # Fallback: auto-populate if LLM didn't provide one
                                         detection_result['draft_data']['extracted_info']['summary'] = current_summary
                                         print(f"[DRAFT] Auto-populated summary: {current_summary}")
                                     
