@@ -24,14 +24,49 @@ const EmailSidebar = ({
   threadDrafts = [],  // Array of drafts in the thread  
   gmailThreadId = null,  // Gmail thread ID for context
   pmCopilotThreadId = null,  // PM Co-Pilot thread ID for context
-  contentType = 'email', // 'email', 'draft', or 'combined'
+  contentType = 'email', // 'email', 'draft', 'combined', 'calendar-event', 'calendar-event-combined'
   draft = null,  // Current draft object
+  calendarEvent = null,  // Single calendar event
+  threadCalendarEvents = [],  // Array of calendar events in thread
+  threadCalendarDrafts = [],  // Array of calendar drafts in thread
   loading, 
   error, 
   onClose,
   onSendDraft = null,  // Callback when draft is sent
   showSnackbar = null  // Callback to show snackbar messages
 }) => {
+  
+  // Debug logging for calendar sidebar
+  console.log('[EmailSidebar] Props received:', {
+    open,
+    contentType,
+    calendarEvent: calendarEvent ? 'present' : 'null',
+    threadCalendarEvents: threadCalendarEvents?.length || 0,
+    threadCalendarDrafts: threadCalendarDrafts?.length || 0,
+    loading,
+    error
+  });
+  
+  // Debug the actual data
+  console.log('[EmailSidebar] Props received:', {
+    open,
+    contentType,
+    calendarEvent: calendarEvent ? 'present' : 'null',
+    threadCalendarEvents: threadCalendarEvents?.length || 0,
+    threadCalendarDrafts: threadCalendarDrafts?.length || 0,
+    threadEmails: threadEmails?.length || 0,
+    threadDrafts: threadDrafts?.length || 0,
+    loading,
+    error
+  });
+  
+  if (contentType === 'calendar-event-combined') {
+    console.log('[EmailSidebar] Calendar combined data:', {
+      threadCalendarEvents,
+      threadCalendarDrafts,
+      combinedLength: [...threadCalendarEvents, ...threadCalendarDrafts].length
+    });
+  }
   
   // Check if mobile using React state for responsive updates
   const [isMobile, setIsMobile] = React.useState(window.innerWidth < 768);
@@ -353,6 +388,10 @@ const EmailSidebar = ({
           <Typography variant="h6" sx={{ fontWeight: 600 }}>
             {contentType === 'combined' 
               ? (threadEmails?.[0]?.subject || draft?.subject || 'Thread') 
+              : contentType === 'calendar-event-combined'
+              ? (threadCalendarEvents?.[0]?.summary || threadCalendarDrafts?.[0]?.summary || 'Calendar Event')
+              : contentType === 'calendar-event'
+              ? (calendarEvent?.summary || 'Calendar Event')
               : (threadEmails?.[0]?.subject || email?.subject || draft?.subject || 'Email')
             }
           </Typography>
@@ -375,25 +414,467 @@ const EmailSidebar = ({
             </Alert>
           )}
 
-          {!loading && !error && (contentType === 'combined' ? (threadEmails.length > 0 || threadDrafts.length > 0) : (email || draft)) && (
+          {!loading && !error && (
+            contentType === 'combined' ? (threadEmails.length > 0 || threadDrafts.length > 0 || threadCalendarEvents.length > 0 || threadCalendarDrafts.length > 0) :
+            contentType === 'calendar-event-combined' ? (threadCalendarEvents.length > 0 || threadCalendarDrafts.length > 0) :
+            contentType === 'calendar-event' ? calendarEvent :
+            (email || draft)
+          ) && (
             <Box>
 
 
-              {/* Combined View: Display both emails and drafts chronologically */}
+              {/* Combined View: Display both emails and drafts chronologically, or calendar events and drafts */}
               {contentType === 'combined' ? (
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {/* Combine emails and drafts, sort by date */}
-                  {[...threadEmails, ...threadDrafts]
-                    .sort((a, b) => new Date(a.date || a.created_at * 1000) - new Date(b.date || b.created_at * 1000))
+                  {/* Check if this is calendar data or email data */}
+                  {threadCalendarEvents.length > 0 || threadCalendarDrafts.length > 0 ? (
+                    /* Calendar Event Combined View */
+                    <>
+                      {/* Debug logging */}
+                      {console.log('[EmailSidebar] Calendar combined view - threadCalendarEvents:', threadCalendarEvents)}
+                      {console.log('[EmailSidebar] Calendar combined view - threadCalendarDrafts:', threadCalendarDrafts)}
+                      {console.log('[EmailSidebar] Calendar combined view - combined items:', [...threadCalendarEvents, ...threadCalendarDrafts])}
+                      
+                      {/* Combine calendar events and drafts, sort by date */}
+                      {[...threadCalendarEvents, ...threadCalendarDrafts]
+                        .sort((a, b) => new Date(a.start?.dateTime || a.created_at * 1000) - new Date(b.start?.dateTime || b.created_at * 1000))
+                        .map((item, index) => {
+                          const isCalendarEvent = !!item.internal_event_id;
+                          const isDraft = !!item.draft_id;
+                          const itemId = isCalendarEvent ? item.internal_event_id : item.draft_id;
+                          const isExpanded = expandedEmails.has(itemId);
+                          const isLastItem = index === (threadCalendarEvents.length + threadCalendarDrafts.length - 1);
+                      
+                          // Auto-expand the last item or if there's only one item
+                          const shouldAutoExpand = isLastItem || (threadCalendarEvents.length + threadCalendarDrafts.length === 1);
+                          const isActuallyExpanded = isExpanded || shouldAutoExpand;
+                      
+                          return (
+                            <Box
+                              key={itemId || index}
+                              sx={{
+                                width: '100%',
+                                borderBottom: '1px solid #e0e0e0',
+                                backgroundColor: isDraft ? '#f8f9ff' : 'white',
+                                '&:last-child': { borderBottom: 'none' }
+                              }}
+                            >
+                              {/* Item Header */}
+                              <Box 
+                                sx={{
+                                  pt: 2,
+                                  pb: 2,
+                                  pr: 2,
+                                  cursor: 'pointer',
+                                  borderRadius: 1
+                                }}
+                                onClick={() => toggleEmailExpansion(itemId)}
+                              >
+                                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+                                  {/* Avatar */}
+                                  <Avatar 
+                                    sx={{ 
+                                      width: 40, 
+                                      height: 40, 
+                                      bgcolor: isDraft ? getDraftStatusColor(item.status) : '#5f6368',
+                                      fontSize: '16px',
+                                      fontWeight: 500
+                                    }}
+                                  >
+                                    {isCalendarEvent 
+                                      ? '📅' // Calendar event indicator
+                                      : 'D' // Draft indicator
+                                    }
+                                  </Avatar>
+                              
+                                  {/* Item Info */}
+                                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <Typography variant="body1" sx={{ fontWeight: 500, color: '#202124' }}>
+                                          {isCalendarEvent
+                                            ? (item.summary || 'Calendar Event')
+                                            : (item.summary || 'Draft')
+                                          }
+                                        </Typography>
+                                        {isDraft && (
+                                          <Box
+                                            sx={{
+                                              px: 1,
+                                              py: 0.5,
+                                              borderRadius: 1,
+                                              bgcolor: getDraftStatusColor(item.status),
+                                              color: 'white',
+                                              fontSize: '12px',
+                                              fontWeight: 500
+                                            }}
+                                          >
+                                            {getDraftStatusLabel(item.status)}
+                                          </Box>
+                                        )}
+                                      </Box>
+                                      <Typography variant="caption" color="#5f6368">
+                                        {formatDate(isCalendarEvent ? item.start?.dateTime : new Date(item.created_at * 1000).toISOString())}
+                                      </Typography>
+                                    </Box>
+                                
+                                    {/* Expanded details */}
+                                    {isActuallyExpanded && (
+                                      <Box sx={{ mb: 1 }}>
+                                        {isCalendarEvent ? (
+                                          <>
+                                            <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500, mb: 0.5 }}>
+                                              📅 {item.summary || 'Calendar Event'}
+                                            </Typography>
+                                            {item.description && (
+                                              <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500, mb: 0.5 }}>
+                                                Description: {item.description}
+                                              </Typography>
+                                            )}
+                                            {item.location && (
+                                              <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500, mb: 0.5 }}>
+                                                📍 Location: {item.location}
+                                              </Typography>
+                                            )}
+                                            {item.start?.dateTime && (
+                                              <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500 }}>
+                                                ⏰ Time: {new Date(item.start.dateTime).toLocaleString()}
+                                              </Typography>
+                                            )}
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500, mb: 0.5 }}>
+                                              Summary: {item.summary || 'No summary'}
+                                            </Typography>
+                                            <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500 }}>
+                                              Draft Type: {item.draft_type || 'calendar_event'}
+                                            </Typography>
+                                          </>
+                                        )}
+                                      </Box>
+                                    )}
+                                
+                                    {/* Snippet (when collapsed) */}
+                                    {!isActuallyExpanded && (
+                                      <Typography 
+                                        variant="body2" 
+                                        color="#5f6368"
+                                        sx={{ 
+                                          overflow: 'hidden',
+                                          textOverflow: 'ellipsis',
+                                          whiteSpace: 'nowrap',
+                                          maxWidth: '100%'
+                                        }}
+                                      >
+                                        {(() => {
+                                          const cleanText = isCalendarEvent 
+                                            ? (item.description || item.location || 'Calendar event')
+                                            : (item.body || 'No content');
+                                          const truncated = cleanText.substring(0, 120);
+                                          return truncated + (cleanText.length > 120 ? '...' : '');
+                                        })()}
+                                      </Typography>
+                                    )}
+                              </Box>
+                            </Box>
+                          </Box>
+                          
+                              {/* Expanded Content */}
+                              {isActuallyExpanded && (
+                                <Box sx={{ pl: 6, pr: 2, pb: 2 }}>
+                                  <Box sx={{ mb: 2 }}>
+                                    {isCalendarEvent ? (
+                                      <Box>
+                                        <Typography variant="body2" sx={{ mb: 1 }}>
+                                          <strong>Summary:</strong> {item.summary || 'No summary'}
+                                        </Typography>
+                                        {item.description && (
+                                          <Typography variant="body2" sx={{ mb: 1 }}>
+                                            <strong>Description:</strong> {item.description}
+                                          </Typography>
+                                        )}
+                                        {item.location && (
+                                          <Typography variant="body2" sx={{ mb: 1 }}>
+                                            <strong>Location:</strong> {item.location}
+                                          </Typography>
+                                        )}
+                                        {item.start?.dateTime && (
+                                          <Typography variant="body2" sx={{ mb: 1 }}>
+                                            <strong>Start:</strong> {new Date(item.start.dateTime).toLocaleString()}
+                                          </Typography>
+                                        )}
+                                        {item.end?.dateTime && (
+                                          <Typography variant="body2" sx={{ mb: 1 }}>
+                                            <strong>End:</strong> {new Date(item.end.dateTime).toLocaleString()}
+                                          </Typography>
+                                        )}
+                                      </Box>
+                                    ) : (
+                                      renderDraftBody(item)
+                                    )}
+                                  </Box>
+                              
+                              {/* Draft send button - Always visible with simplified validation */}
+                              {isDraft && item.status !== 'closed' && (
+                                <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', alignItems: 'center', mt: 2 }}>
+                                  {(() => {
+                                    const validation = validateDraftLocally(item);
+                                    const isSending = sendingDrafts.has(item.draft_id);
+                                    
+                                    return (
+                                      <>
+                                        <Chip
+                                          icon={validation.isComplete ? <CheckCircleIcon /> : <WarningIcon />}
+                                          label={validation.reason}
+                                          color={validation.isComplete ? "success" : "warning"}
+                                          size="small"
+                                          sx={{ mr: 1 }}
+                                        />
+                                        <Button
+                                          variant="contained"
+                                          size="small"
+                                          startIcon={isSending ? <CircularProgress size={16} color="inherit" /> : <SendIcon />}
+                                          onClick={() => handleSendDraft(item)}
+                                          disabled={!validation.isComplete || isSending}
+                                          sx={{
+                                            backgroundColor: validation.isComplete ? '#4caf50' : '#ff9800',
+                                            '&:hover': {
+                                              backgroundColor: validation.isComplete ? '#388e3c' : '#f57c00'
+                                            },
+                                            '&:disabled': {
+                                              backgroundColor: '#ccc'
+                                            }
+                                          }}
+                                        >
+                                          {isSending ? 'Sending...' : (validation.isComplete ? 'Send' : 'Incomplete')}
+                                        </Button>
+                                      </>
+                                    );
+                                  })()
+                                )}
+                                </Box>
+                              )}
+                            </Box>
+                          )}
+                        </Box>
+                      );
+                    })}
+                    </>
+                  ) : (
+                    /* Email Combined View */
+                    <>
+                      {/* Combine emails and drafts, sort by date */}
+                      {[...threadEmails, ...threadDrafts]
+                        .sort((a, b) => new Date(a.date || a.created_at * 1000) - new Date(b.date || b.created_at * 1000))
+                        .map((item, index) => {
+                          const isEmail = !!item.email_id;
+                          const isDraft = !!item.draft_id;
+                          const itemId = isEmail ? item.email_id : item.draft_id;
+                          const isExpanded = expandedEmails.has(itemId);
+                          const isLastItem = index === (threadEmails.length + threadDrafts.length - 1);
+                      
+                          // Auto-expand the last item or if there's only one item
+                          const shouldAutoExpand = isLastItem || (threadEmails.length + threadDrafts.length === 1);
+                          const isActuallyExpanded = isExpanded || shouldAutoExpand;
+                      
+                          return (
+                            <Box
+                              key={itemId || index}
+                              sx={{
+                                width: '100%',
+                                borderBottom: '1px solid #e0e0e0',
+                                backgroundColor: isDraft ? '#f8f9ff' : 'white',
+                                '&:last-child': { borderBottom: 'none' }
+                              }}
+                            >
+                              {/* Item Header */}
+                              <Box 
+                                sx={{
+                                  pt: 2,
+                                  pb: 2,
+                                  pr: 2,
+                                  cursor: 'pointer',
+                                  borderRadius: 1
+                                }}
+                                onClick={() => toggleEmailExpansion(itemId)}
+                              >
+                                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+                                  {/* Avatar */}
+                                  <Avatar 
+                                    sx={{ 
+                                      width: 40, 
+                                      height: 40, 
+                                      bgcolor: isDraft ? getDraftStatusColor(item.status) : '#5f6368',
+                                      fontSize: '16px',
+                                      fontWeight: 500
+                                    }}
+                                  >
+                                    {isEmail 
+                                      ? getInitials(item.from_email?.name, item.from_email?.email)
+                                      : 'D' // Draft indicator
+                                    }
+                                  </Avatar>
+                                  
+                                  {/* Item Info */}
+                                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <Typography variant="body1" sx={{ fontWeight: 500, color: '#202124' }}>
+                                          {isEmail
+                                            ? (item.from_email?.name || item.from_email?.email || 'Unknown Sender')
+                                            : 'Draft'
+                                          }
+                                        </Typography>
+                                        {isDraft && (
+                                          <Box
+                                            sx={{
+                                              px: 1,
+                                              py: 0.5,
+                                              borderRadius: 1,
+                                              bgcolor: getDraftStatusColor(item.status),
+                                              color: 'white',
+                                              fontSize: '12px',
+                                              fontWeight: 500
+                                            }}
+                                          >
+                                            {getDraftStatusLabel(item.status)}
+                                          </Box>
+                                        )}
+                                      </Box>
+                                      <Typography variant="caption" color="#5f6368">
+                                        {formatDate(isEmail ? item.date : new Date(item.created_at * 1000).toISOString())}
+                                      </Typography>
+                                    </Box>
+                                    
+                                    {/* Expanded details */}
+                                    {isActuallyExpanded && (
+                                      <Box sx={{ mb: 1 }}>
+                                        {isEmail ? (
+                                          <>
+                                            <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500, mb: 0.5 }}>
+                                              From: {item.from_email?.name || 'Unknown'} &lt;{item.from_email?.email || 'unknown@example.com'}&gt;
+                                            </Typography>
+                                            <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500 }}>
+                                              To: {item.to_emails?.map(recipient => 
+                                                `${recipient.name || recipient.email || 'Unknown'} <${recipient.email || 'unknown@example.com'}>`
+                                              ).join(', ') || 'No recipients'}
+                                            </Typography>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500, mb: 0.5 }}>
+                                              Subject: {item.subject || 'No subject'}
+                                            </Typography>
+                                            <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500 }}>
+                                              To: {item.to_emails?.map(recipient => 
+                                                `${recipient.name || recipient.email || 'Unknown'} <${recipient.email || 'unknown@example.com'}>`
+                                              ).join(', ') || 'No recipients'}
+                                            </Typography>
+                                          </>
+                                        )}
+                                      </Box>
+                                    )}
+                                    
+                                    {/* Snippet (when collapsed) */}
+                                    {!isActuallyExpanded && (
+                                      <Typography 
+                                        variant="body2" 
+                                        color="#5f6368"
+                                        sx={{ 
+                                          overflow: 'hidden',
+                                          textOverflow: 'ellipsis',
+                                          whiteSpace: 'nowrap',
+                                          maxWidth: '100%'
+                                        }}
+                                      >
+                                        {(() => {
+                                          const cleanText = isEmail 
+                                            ? getCleanTextPreview(item.content)
+                                            : (item.body || 'No content');
+                                          const truncated = cleanText.substring(0, 120);
+                                          return truncated + (cleanText.length > 120 ? '...' : '');
+                                        })()}
+                                      </Typography>
+                                    )}
+                                  </Box>
+                                </Box>
+                              </Box>
+                              
+                              {/* Expanded Content */}
+                              {isActuallyExpanded && (
+                                <Box sx={{ pl: 6, pr: 2, pb: 2 }}>
+                                  <Box sx={{ mb: 2 }}>
+                                    {isEmail ? renderEmailBody(item) : renderDraftBody(item)}
+                                  </Box>
+                                  
+                                  {/* Draft send button - Always visible with simplified validation */}
+                                  {isDraft && item.status !== 'closed' && (
+                                    <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', alignItems: 'center', mt: 2 }}>
+                                      {(() => {
+                                        const validation = validateDraftLocally(item);
+                                        const isSending = sendingDrafts.has(item.draft_id);
+                                        
+                                        return (
+                                          <>
+                                            <Chip
+                                              icon={validation.isComplete ? <CheckCircleIcon /> : <WarningIcon />}
+                                              label={validation.reason}
+                                              color={validation.isComplete ? "success" : "warning"}
+                                              size="small"
+                                              sx={{ mr: 1 }}
+                                            />
+                                            <Button
+                                              variant="contained"
+                                              size="small"
+                                              startIcon={isSending ? <CircularProgress size={16} color="inherit" /> : <SendIcon />}
+                                              onClick={() => handleSendDraft(item)}
+                                              disabled={!validation.isComplete || isSending}
+                                              sx={{
+                                                backgroundColor: validation.isComplete ? '#4caf50' : '#ff9800',
+                                                '&:hover': {
+                                                  backgroundColor: validation.isComplete ? '#388e3c' : '#f57c00'
+                                                },
+                                                '&:disabled': {
+                                                  backgroundColor: '#ccc'
+                                                }
+                                              }}
+                                            >
+                                              {isSending ? 'Sending...' : 'Send Draft'}
+                                            </Button>
+                                          </>
+                                        );
+                                      })()}
+                                    </Box>
+                                  )}
+                                </Box>
+                              )}
+                            </Box>
+                          );
+                        })}
+                    </>
+                  )}
+                </Box>
+              ) : contentType === 'calendar-event-combined' ? (
+                /* Calendar Event Combined View: Display original event and drafts chronologically */
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {/* Debug logging */}
+                  {console.log('[EmailSidebar] Calendar combined view - threadCalendarEvents:', threadCalendarEvents)}
+                  {console.log('[EmailSidebar] Calendar combined view - threadCalendarDrafts:', threadCalendarDrafts)}
+                  {console.log('[EmailSidebar] Calendar combined view - combined items:', [...threadCalendarEvents, ...threadCalendarDrafts])}
+                  
+                  {/* Combine calendar events and drafts, sort by date */}
+                  {[...threadCalendarEvents, ...threadCalendarDrafts]
+                    .sort((a, b) => new Date(a.start?.dateTime || a.created_at * 1000) - new Date(b.start?.dateTime || b.created_at * 1000))
                     .map((item, index) => {
-                      const isEmail = !!item.email_id;
+                      const isCalendarEvent = !!item.id && !item.draft_id;
                       const isDraft = !!item.draft_id;
-                      const itemId = isEmail ? item.email_id : item.draft_id;
+                      const itemId = isCalendarEvent ? item.id : item.draft_id;
                       const isExpanded = expandedEmails.has(itemId);
-                      const isLastItem = index === (threadEmails.length + threadDrafts.length - 1);
+                      const isLastItem = index === (threadCalendarEvents.length + threadCalendarDrafts.length - 1);
                       
                       // Auto-expand the last item or if there's only one item
-                      const shouldAutoExpand = isLastItem || (threadEmails.length + threadDrafts.length === 1);
+                      const shouldAutoExpand = isLastItem || (threadCalendarEvents.length + threadCalendarDrafts.length === 1);
                       const isActuallyExpanded = isExpanded || shouldAutoExpand;
                       
                       return (
@@ -423,15 +904,12 @@ const EmailSidebar = ({
                                 sx={{ 
                                   width: 40, 
                                   height: 40, 
-                                  bgcolor: isDraft ? getDraftStatusColor(item.status) : '#5f6368',
+                                  bgcolor: isDraft ? getDraftStatusColor(item.status) : '#1976d2',
                                   fontSize: '16px',
                                   fontWeight: 500
                                 }}
                               >
-                                {isEmail 
-                                  ? getInitials(item.from_email?.name, item.from_email?.email)
-                                  : 'D' // Draft indicator
-                                }
+                                {isCalendarEvent ? '📅' : 'D'} {/* Calendar icon for events, D for drafts */}
                               </Avatar>
                               
                               {/* Item Info */}
@@ -439,10 +917,7 @@ const EmailSidebar = ({
                                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
                                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                     <Typography variant="body1" sx={{ fontWeight: 500, color: '#202124' }}>
-                                      {isEmail 
-                                        ? (item.from_email?.name || item.from_email?.email || 'Unknown Sender')
-                                        : 'Draft'
-                                      }
+                                      {isCalendarEvent ? 'Calendar Event' : 'Draft'}
                                     </Typography>
                                     {isDraft && (
                                       <Box
@@ -461,33 +936,29 @@ const EmailSidebar = ({
                                     )}
                                   </Box>
                                   <Typography variant="caption" color="#5f6368">
-                                    {formatDate(isEmail ? item.date : new Date(item.created_at * 1000).toISOString())}
+                                    {formatDate(isCalendarEvent ? item.start?.dateTime : new Date(item.created_at * 1000).toISOString())}
                                   </Typography>
                                 </Box>
                                 
                                 {/* Expanded details */}
                                 {isActuallyExpanded && (
                                   <Box sx={{ mb: 1 }}>
-                                    {isEmail ? (
+                                    {isCalendarEvent ? (
                                       <>
                                         <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500, mb: 0.5 }}>
-                                          From: {item.from_email?.name || 'Unknown'} &lt;{item.from_email?.email || 'unknown@example.com'}&gt;
+                                          Title: {item.summary || 'No title'}
                                         </Typography>
                                         <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500 }}>
-                                          To: {item.to_emails?.map(recipient => 
-                                            `${recipient.name || recipient.email || 'Unknown'} <${recipient.email || 'unknown@example.com'}>`
-                                          ).join(', ') || 'No recipients'}
+                                          Time: {item.start?.dateTime ? new Date(item.start.dateTime).toLocaleString() : 'No time set'}
                                         </Typography>
                                       </>
                                     ) : (
                                       <>
                                         <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500, mb: 0.5 }}>
-                                          Subject: {item.subject || 'No subject'}
+                                          Title: {item.summary || 'No title'}
                                         </Typography>
                                         <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500 }}>
-                                          To: {item.to_emails?.map(recipient => 
-                                            `${recipient.name || recipient.email || 'Unknown'} <${recipient.email || 'unknown@example.com'}>`
-                                          ).join(', ') || 'No recipients'}
+                                          Time: {item.start_time ? new Date(item.start_time.dateTime || item.start_time).toLocaleString() : 'No time set'}
                                         </Typography>
                                       </>
                                     )}
@@ -507,9 +978,9 @@ const EmailSidebar = ({
                                     }}
                                   >
                                     {(() => {
-                                      const cleanText = isEmail 
-                                        ? getCleanTextPreview(item.content)
-                                        : (item.body || 'No content');
+                                      const cleanText = isCalendarEvent 
+                                        ? (item.description || item.summary || 'No content')
+                                        : (item.description || item.summary || 'No content');
                                       const truncated = cleanText.substring(0, 120);
                                       return truncated + (cleanText.length > 120 ? '...' : '');
                                     })()}
@@ -523,7 +994,29 @@ const EmailSidebar = ({
                           {isActuallyExpanded && (
                             <Box sx={{ pl: 6, pr: 2, pb: 2 }}>
                               <Box sx={{ mb: 2 }}>
-                                {isEmail ? renderEmailBody(item) : renderDraftBody(item)}
+                                {isCalendarEvent ? (
+                                  <Box>
+                                    <Typography variant="body2" sx={{ mb: 1, fontWeight: 500 }}>
+                                      {item.summary || 'No title'}
+                                    </Typography>
+                                    <Typography variant="body2" color="#5f6368" sx={{ mb: 1 }}>
+                                      {item.description || 'No description'}
+                                    </Typography>
+                                    <Typography variant="body2" color="#5f6368">
+                                      Start: {item.start?.dateTime ? new Date(item.start.dateTime).toLocaleString() : 'No start time'}
+                                    </Typography>
+                                    <Typography variant="body2" color="#5f6368">
+                                      End: {item.end?.dateTime ? new Date(item.end.dateTime).toLocaleString() : 'No end time'}
+                                    </Typography>
+                                    {item.location && (
+                                      <Typography variant="body2" color="#5f6368">
+                                        Location: {item.location}
+                                      </Typography>
+                                    )}
+                                  </Box>
+                                ) : (
+                                  renderDraftBody(item)
+                                )}
                               </Box>
                               
                               {/* Draft send button - Always visible with simplified validation */}
@@ -620,6 +1113,68 @@ const EmailSidebar = ({
                         
                         <Box sx={{ pl: 6, mb: 2 }}>
                           {renderEmailBody(email)}
+                        </Box>
+                      </Box>
+                    </Box>
+                  )}
+                  {calendarEvent && (
+                    <Box
+                      sx={{
+                        width: '100%',
+                        borderBottom: '1px solid #e0e0e0'
+                      }}
+                    >
+                      <Box sx={{ pt: 2, pb: 2, pr: 2, borderRadius: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, mb: 2 }}>
+                          <Avatar 
+                            sx={{ 
+                              width: 40, 
+                              height: 40, 
+                              bgcolor: '#1976d2',
+                              fontSize: '16px',
+                              fontWeight: 500
+                            }}
+                          >
+                            📅
+                          </Avatar>
+                          
+                          <Box sx={{ flex: 1 }}>
+                            <Typography variant="body1" sx={{ fontWeight: 500, color: '#202124', mb: 1 }}>
+                              Calendar Event
+                            </Typography>
+                            <Typography variant="body2" color="#5f6368" sx={{ mb: 1 }}>
+                              {formatDate(calendarEvent.start?.dateTime)}
+                            </Typography>
+                            
+                            <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500, mb: 0.5 }}>
+                              Title: {calendarEvent.summary || 'No title'}
+                            </Typography>
+                            <Typography variant="body2" color="#5f6368" sx={{ fontWeight: 500 }}>
+                              Time: {calendarEvent.start?.dateTime ? new Date(calendarEvent.start.dateTime).toLocaleString() : 'No time set'}
+                            </Typography>
+                          </Box>
+                        </Box>
+                        
+                        <Box sx={{ pl: 6, mb: 2 }}>
+                          <Box>
+                            <Typography variant="body2" sx={{ mb: 1, fontWeight: 500 }}>
+                              {calendarEvent.summary || 'No title'}
+                            </Typography>
+                            <Typography variant="body2" color="#5f6368" sx={{ mb: 1 }}>
+                              {calendarEvent.description || 'No description'}
+                            </Typography>
+                            <Typography variant="body2" color="#5f6368">
+                              Start: {calendarEvent.start?.dateTime ? new Date(calendarEvent.start.dateTime).toLocaleString() : 'No start time'}
+                            </Typography>
+                            <Typography variant="body2" color="#5f6368">
+                              End: {calendarEvent.end?.dateTime ? new Date(calendarEvent.end.dateTime).toLocaleString() : 'No end time'}
+                            </Typography>
+                            {calendarEvent.location && (
+                              <Typography variant="body2" color="#5f6368">
+                                Location: {calendarEvent.location}
+                              </Typography>
+                            )}
+                          </Box>
                         </Box>
                       </Box>
                     </Box>

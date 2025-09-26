@@ -6,7 +6,7 @@ import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import AnchorIcon from '@mui/icons-material/Anchor';
 import './VeyraResults.css'; // Import the original styling
 
-const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageReceived, showSnackbar, onOpenEmail, currentOffset, limitPerPage, totalEmailsAvailable, hasMore, anchoredItem, onAnchorChange, ...paginationProps }) => {
+const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageReceived, showSnackbar, onOpenEmail, onOpenCalendarEvent, currentOffset, limitPerPage, totalEmailsAvailable, hasMore, anchoredItem, onAnchorChange, ...paginationProps }) => {
   const [selectedEmails, setSelectedEmails] = useState([]);
   const [selectedEvents, setSelectedEvents] = useState([]);
   const [hoveredEmailId, setHoveredEmailId] = useState(null);
@@ -818,6 +818,12 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
                           ? prev.filter(id => id !== eventId)
                           : [...prev, eventId]
                       );
+                    }}
+                    onClick={() => {
+                      // Open calendar event sidebar with unified data
+                      if (onOpenCalendarEvent) {
+                        onOpenCalendarEvent(event);
+                      }
                     }}
                     onDelete={async (eventId) => {
                       console.log('Delete calendar event:', eventId);

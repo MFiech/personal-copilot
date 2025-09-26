@@ -11,7 +11,8 @@ const ToolTile = ({
   onDelete, 
   showCheckbox = false,
   isAnchored = false,
-  onAnchor
+  onAnchor,
+  onClick
 }) => {
   console.log('ToolTile received:', { type, data, isSelected });
 
@@ -20,7 +21,10 @@ const ToolTile = ({
     if (e.target.closest('.tile-actions') || e.target.closest('.tile-checkbox') || e.target.closest('.tile-anchor')) {
       return;
     }
-    if (onSelect) {
+    // Call onClick if provided (for calendar events), otherwise call onSelect
+    if (onClick) {
+      onClick();
+    } else if (onSelect) {
       onSelect();
     }
   };

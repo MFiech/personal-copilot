@@ -3279,6 +3279,76 @@ def resolve_thread_id(gmail_thread_id):
         print(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/resolve-calendar-event/<google_event_id>', methods=['GET'])
+def resolve_calendar_event_id(google_event_id):
+    """Get calendar event by Google Calendar event ID + drafts by original_event_id + PM Co-Pilot thread ID"""
+    try:
+        pm_thread_id = request.args.get('pm_thread_id')
+        
+        # Get the original calendar event from database
+        calendar_event = CalendarEvent.get_by_google_event_id(google_event_id)
+        
+        if not calendar_event:
+            return jsonify({
+                'success': False,
+                'error': 'Calendar event not found'
+            }), 404
+        
+        # Convert calendar event to dict for response
+        original_event = calendar_event.to_dict()
+        
+        # Get drafts with BOTH original_event_id AND pm_thread_id (only non-closed drafts)
+        drafts = []
+        if pm_thread_id:
+            try:
+                from services.draft_service import DraftService
+                draft_service = DraftService()
+                
+                # Get all drafts for the PM Co-Pilot thread
+                all_drafts = draft_service.get_all_drafts_by_thread(pm_thread_id)
+                
+                # Filter drafts by original_event_id and exclude closed drafts
+                for draft in all_drafts or []:
+                    if (hasattr(draft, 'original_event_id') and 
+                        draft.original_event_id == google_event_id and
+                        hasattr(draft, 'status') and 
+                        draft.status != 'closed'):
+                        drafts.append(draft.to_dict())
+                        
+                print(f"[DEBUG] Found {len(drafts)} non-closed drafts for calendar event {google_event_id} in PM thread {pm_thread_id}")
+            except Exception as e:
+                print(f"[WARNING] Error fetching calendar drafts: {e}")
+                # Continue without drafts if there's an error
+        
+        # Filter out drafts that have corresponding sent events to avoid duplication
+        filtered_drafts = []
+        sent_draft_ids = set()  # Track sent drafts to avoid showing duplicates
+        
+        for draft in drafts:
+            # Skip if this draft was already sent (status = 'closed')
+            if draft.get('status') == 'closed':
+                continue
+                
+            # Add to filtered drafts
+            filtered_drafts.append(draft)
+        
+        print(f"[DEBUG] Returning {len(filtered_drafts)} filtered drafts for calendar event {google_event_id}")
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'original_event': original_event,
+                'drafts': filtered_drafts,
+                'total_items': 1 + len(filtered_drafts)  # 1 original event + drafts
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"[ERROR] Exception in resolve_calendar_event_id: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/emails/thread/<gmail_thread_id>/full', methods=['GET'])
 def get_full_email_thread(gmail_thread_id):
     """Get full email thread with processed content"""

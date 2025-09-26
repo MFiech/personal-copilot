@@ -931,6 +931,7 @@ function App() {
               onUpdate={handleUpdateMessage}
               showSnackbar={showSnackbar}
               onOpenEmail={handleOpenEmail}
+              onOpenCalendarEvent={handleOpenCalendarEvent}
               // Pass pagination props
               currentOffset={message.tool_current_offset}
               limitPerPage={message.tool_limit_per_page}
@@ -1069,6 +1070,66 @@ function App() {
       return {
         threadEmails: [],
         threadDrafts: [],
+        success: false,
+        error: error.message
+      };
+    }
+  };
+
+  // Unified calendar event data fetching function - uses new resolve-calendar-event endpoint
+  const fetchUnifiedCalendarEventData = async (googleEventId, pmCopilotThreadId) => {
+    try {
+      console.log(`[fetchUnifiedCalendarEventData] Fetching calendar event ${googleEventId} with PM thread ${pmCopilotThreadId}`);
+
+      // Use new resolve-calendar-event endpoint
+      const resolveResponse = await fetch(
+        `http://localhost:5001/resolve-calendar-event/${googleEventId}?pm_thread_id=${pmCopilotThreadId}`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (!resolveResponse.ok) {
+        throw new Error(`Failed to resolve calendar event: ${resolveResponse.status}`);
+      }
+
+      const resolveData = await resolveResponse.json();
+      if (!resolveData.success || !resolveData.data) {
+        throw new Error('Invalid resolve-calendar-event response');
+      }
+
+      const { original_event, drafts = [] } = resolveData.data;
+      console.log(`[fetchUnifiedCalendarEventData] Found original event and ${drafts.length} drafts`);
+
+      // Format the original event for frontend compatibility
+      const formattedOriginalEvent = {
+        internal_event_id: original_event.internal_event_id,
+        id: original_event.google_event_id,  // Frontend expects 'id' field
+        summary: original_event.summary,
+        description: original_event.description,
+        start: original_event.start_time,
+        end: original_event.end_time,
+        attendees: original_event.attendees,
+        status: original_event.status,
+        location: original_event.location,
+        updated: original_event.google_updated,
+        recurringEventId: original_event.recurring_event_id,
+        created_at: original_event.created_at,
+        updated_at: original_event.updated_at
+      };
+
+      return {
+        originalEvent: formattedOriginalEvent,
+        threadCalendarEvents: [formattedOriginalEvent], // Single event in array for consistency
+        threadCalendarDrafts: drafts, // PM thread filtered drafts (isolation)
+        success: true
+      };
+
+    } catch (error) {
+      console.error('Error in fetchUnifiedCalendarEventData:', error);
+      return {
+        originalEvent: null,
+        threadCalendarEvents: [],
+        threadCalendarDrafts: [],
         success: false,
         error: error.message
       };
@@ -1222,6 +1283,97 @@ function App() {
   const handleDraftClick = async (draft) => {
     console.log(`Clicked on draft ${draft.draft_id} with hybrid unified approach`);
 
+    // Check if this is a calendar draft with original_event_id - use unified calendar approach
+    if (draft.draft_type === 'calendar_event' && draft.original_event_id) {
+      console.log(`Calendar draft detected, using unified calendar approach: ${draft.original_event_id}`);
+      console.log(`Calendar draft data:`, draft);
+      
+      // On mobile, close the drawer sidebar to make room for calendar sidebar
+      if (isMobile) {
+        setDrawerOpen(false);
+      }
+
+      // Set loading state for calendar combined mode
+      setEmailSidebar({
+        open: true,
+        email: null,
+        threadEmails: [],
+        threadDrafts: [],
+        gmailThreadId: null,
+        pmCopilotThreadId: draft.thread_id,
+        loading: true,
+        error: null,
+        draft: null,
+        contentType: 'combined', // Use combined mode for calendar thread view
+        calendarEvent: null,
+        threadCalendarEvents: [],
+        threadCalendarDrafts: []
+      });
+
+      try {
+        // Use unified calendar event data fetching
+        const result = await fetchUnifiedCalendarEventData(draft.original_event_id, draft.thread_id);
+
+        if (result.success) {
+          console.log(`Calendar unified approach: Found original event and ${result.threadCalendarDrafts.length} drafts`);
+
+          // Set up sidebar with unified calendar data in combined mode
+          setEmailSidebar({
+            open: true,
+            email: null,
+            threadEmails: [], // Keep empty for calendar mode
+            threadDrafts: [], // Keep empty for calendar mode
+            gmailThreadId: null,
+            pmCopilotThreadId: draft.thread_id,
+            loading: false,
+            error: null,
+            draft: draft, // Keep the clicked draft as primary
+            contentType: 'combined', // This will trigger CalendarThreadComponent
+            calendarEvent: result.originalEvent,
+            threadCalendarEvents: result.threadCalendarEvents,
+            threadCalendarDrafts: result.threadCalendarDrafts
+          });
+
+          // Auto-anchor the draft when sidebar opens
+          const draftAnchorData = {
+            id: draft.draft_id,
+            type: 'draft',
+            data: draft
+          };
+          handleAnchorChange(draftAnchorData);
+          return; // Success
+        } else {
+          throw new Error(result.error || 'Failed to fetch calendar event data');
+        }
+      } catch (error) {
+        console.error('Error in calendar draft click handling:', error);
+        setEmailSidebar({
+          open: true,
+          email: null,
+          threadEmails: [],
+          threadDrafts: [],
+          gmailThreadId: null,
+          pmCopilotThreadId: draft.thread_id,
+          loading: false,
+          error: error.message,
+          draft: draft,
+          contentType: 'combined',
+          calendarEvent: null,
+          threadCalendarEvents: [],
+          threadCalendarDrafts: [draft]
+        });
+
+        // Auto-anchor the draft even on error
+        const draftAnchorData = {
+          id: draft.draft_id,
+          type: 'draft',
+          data: draft
+        };
+        handleAnchorChange(draftAnchorData);
+      }
+      return; // Exit early for calendar drafts
+    }
+
     // Set loading state
     setEmailSidebar({
       open: true,
@@ -1320,6 +1472,110 @@ function App() {
       };
       handleAnchorChange(draftAnchorData);
       fetchDraftValidation(draft.draft_id);
+    }
+  };
+
+  // Calendar event sidebar functions - following email pattern exactly
+  const handleOpenCalendarEvent = async (eventOrDraft) => {
+    console.log('Opening calendar event with unified approach:', eventOrDraft);
+
+    // On mobile, close the drawer sidebar to make room for calendar sidebar
+    if (isMobile) {
+      setDrawerOpen(false);
+    }
+
+    // Set loading state - use 'combined' contentType like emails
+    setEmailSidebar({
+      open: true,
+      email: null,
+      threadEmails: [],
+      threadDrafts: [],
+      gmailThreadId: null,
+      pmCopilotThreadId: threadId,
+      loading: true,
+      error: null,
+      draft: null,
+      contentType: 'combined',
+      // Calendar-specific props
+      calendarEvent: null,
+      threadCalendarEvents: [],
+      threadCalendarDrafts: []
+    });
+
+    try {
+      // Determine the Google Calendar event ID
+      const googleEventId = eventOrDraft.google_event_id || eventOrDraft.original_event_id || eventOrDraft.id;
+      
+      if (!googleEventId) {
+        throw new Error('No Google Calendar event ID found');
+      }
+
+      // Use unified calendar event data fetching
+      const result = await fetchUnifiedCalendarEventData(googleEventId, threadId);
+
+      if (result.success) {
+        console.log(`Calendar unified approach: Found original event and ${result.threadCalendarDrafts.length} drafts`);
+        console.log('[App.js] Calendar data being set:', {
+          originalEvent: result.originalEvent,
+          threadCalendarEvents: result.threadCalendarEvents,
+          threadCalendarDrafts: result.threadCalendarDrafts
+        });
+
+        // Set up sidebar with unified calendar data - using combined mode for calendar thread view
+        setEmailSidebar({
+          open: true,
+          email: null,
+          threadEmails: [], // Keep empty for calendar mode
+          threadDrafts: [], // Keep empty for calendar mode
+          gmailThreadId: null,
+          pmCopilotThreadId: threadId,
+          loading: false,
+          error: null,
+          draft: null,
+          contentType: 'combined', // This will trigger CalendarThreadComponent detection
+          // Calendar-specific props for combined view
+          calendarEvent: result.originalEvent,
+          threadCalendarEvents: result.threadCalendarEvents,
+          threadCalendarDrafts: result.threadCalendarDrafts
+        });
+
+        // Auto-anchor the calendar event when sidebar opens
+        const eventAnchorData = {
+          id: googleEventId,
+          type: 'calendar_event',
+          data: result.originalEvent
+        };
+        handleAnchorChange(eventAnchorData);
+        return; // Success
+      } else {
+        throw new Error(result.error || 'Failed to fetch calendar event data');
+      }
+    } catch (error) {
+      console.error('Error in handleOpenCalendarEvent:', error);
+      setEmailSidebar({
+        open: true,
+        email: null,
+        threadEmails: [], // Keep empty for calendar mode
+        threadDrafts: [], // Keep empty for calendar mode
+        gmailThreadId: null,
+        pmCopilotThreadId: threadId,
+        loading: false,
+        error: error.message,
+        draft: null,
+        contentType: 'combined', // This will trigger CalendarThreadComponent detection
+        // Calendar-specific props for error fallback
+        calendarEvent: eventOrDraft,
+        threadCalendarEvents: [eventOrDraft],
+        threadCalendarDrafts: []
+      });
+
+      // Auto-anchor the calendar event even on error
+      const eventAnchorData = {
+        id: eventOrDraft.google_event_id || eventOrDraft.id,
+        type: 'calendar_event',
+        data: eventOrDraft
+      };
+      handleAnchorChange(eventAnchorData);
     }
   };
 
@@ -1433,12 +1689,23 @@ function App() {
         setDrawerOpen(false);
       }
 
-      setEmailSidebar({
-        open: true,
-        calendarEvent: anchorData.data,
-        contentType: 'calendar-event',
-        loading: false,
-        error: null
+      // Only set sidebar if it's not already open with combined calendar data
+      setEmailSidebar(prevSidebar => {
+        // If sidebar is already open with combined calendar data, don't override it
+        if (prevSidebar.open && prevSidebar.contentType === 'combined' && 
+            (prevSidebar.threadCalendarEvents?.length > 0 || prevSidebar.threadCalendarDrafts?.length > 0)) {
+          console.log('[App.js] Sidebar already open with combined calendar data, not overriding');
+          return prevSidebar;
+        }
+        
+        // Otherwise, set the sidebar with single calendar event
+        return {
+          open: true,
+          calendarEvent: anchorData.data,
+          contentType: 'calendar-event',
+          loading: false,
+          error: null
+        };
       });
     }
     // If anchoring a draft, fetch its validation status
@@ -2119,6 +2386,8 @@ function App() {
             pmCopilotThreadId={emailSidebar.pmCopilotThreadId}
             draft={emailSidebar.draft}
             calendarEvent={emailSidebar.calendarEvent}
+            threadCalendarEvents={emailSidebar.threadCalendarEvents || []}
+            threadCalendarDrafts={emailSidebar.threadCalendarDrafts || []}
             loading={emailSidebar.loading}
             error={emailSidebar.error}
             contentType={emailSidebar.contentType}

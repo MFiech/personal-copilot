@@ -12,6 +12,7 @@ import EmailThreadComponent from './EmailThreadComponent';
 import EmailDraftComponent from './EmailDraftComponent';
 import CalendarDraftComponent from './CalendarDraftComponent';
 import CalendarEventComponent from './CalendarEventComponent';
+import CalendarThreadComponent from './CalendarThreadComponent';
 import { DraftService } from '../utils/draftService';
 import { useSnackbar } from './SnackbarProvider';
 
@@ -24,6 +25,8 @@ const UnifiedSidebar = ({
   pmCopilotThreadId = null,
   draft = null,
   calendarEvent = null,
+  threadCalendarEvents = [],
+  threadCalendarDrafts = [],
   loading,
   error,
   onClose,
@@ -175,7 +178,19 @@ const UnifiedSidebar = ({
         );
 
       case 'combined':
-        // Combined view shows complete thread emails and filtered drafts
+        // Check if we have calendar data - use calendar thread component
+        if ((threadCalendarEvents && threadCalendarEvents.length > 0) || (threadCalendarDrafts && threadCalendarDrafts.length > 0)) {
+          return (
+            <CalendarThreadComponent
+              threadCalendarEvents={threadCalendarEvents}
+              threadCalendarDrafts={threadCalendarDrafts}
+              onSendDraft={handleSendDraft}
+              isSendingDraft={isSendingDraft}
+              showSnackbar={showSnackbar}
+            />
+          );
+        }
+        // Otherwise use email thread component for emails + drafts
         return (
           <EmailThreadComponent
             threadEmails={threadEmails}
