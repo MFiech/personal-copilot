@@ -2,6 +2,7 @@ from datetime import datetime
 from utils.mongo_client import get_collection, get_db
 from config.mongo_config import CONVERSATIONS_COLLECTION
 from models.email import Email
+from models.calendar_event import CalendarEvent
 from utils.date_parser import parse_email_date
 import time
 import uuid
@@ -164,6 +165,38 @@ class Conversation:
                         tool_data_from_db['emails'] = hydrated_emails
                     else:
                         tool_data_from_db['emails'] = []
+
+                # Handle calendar events hydration - similar to emails
+                if 'calendar_events' in tool_data_from_db and tool_data_from_db['calendar_events']:
+                    calendar_event_ids_from_db = tool_data_from_db['calendar_events']
+
+                    if calendar_event_ids_from_db:
+                        # Fetch calendar events from DB using internal event IDs
+                        calendar_events = []
+                        for internal_event_id in calendar_event_ids_from_db:
+                            calendar_event = CalendarEvent.get_by_internal_id(internal_event_id)
+                            if calendar_event:
+                                # Convert to dict and format for frontend compatibility
+                                event_dict = calendar_event.to_dict()
+                                # Convert to frontend-compatible format (matching what app.py sends)
+                                formatted_event = {
+                                    'internal_event_id': event_dict['internal_event_id'],
+                                    'id': event_dict['google_event_id'],  # Frontend expects 'id' field
+                                    'summary': event_dict['summary'],
+                                    'description': event_dict['description'],
+                                    'start': event_dict['start_time'],
+                                    'end': event_dict['end_time'],
+                                    'attendees': event_dict['attendees'],
+                                    'status': event_dict['status'],
+                                    'location': event_dict['location'],
+                                    'updated': event_dict['google_updated'],
+                                    'recurringEventId': event_dict['recurring_event_id'],
+                                }
+                                calendar_events.append(formatted_event)
+
+                        tool_data_from_db['calendar_events'] = calendar_events
+                    else:
+                        tool_data_from_db['calendar_events'] = []
 
                 formatted_message['tool_results'] = tool_data_from_db
             else:

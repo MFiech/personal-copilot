@@ -5,10 +5,12 @@ from .mongo_schema import (
     INSIGHTS_SCHEMA,
     EMAILS_SCHEMA,
     DRAFTS_SCHEMA,
+    CALENDAR_EVENTS_SCHEMA,
     CONVERSATIONS_INDEXES,
     INSIGHTS_INDEXES,
     EMAILS_INDEXES,
-    DRAFTS_INDEXES
+    DRAFTS_INDEXES,
+    CALENDAR_EVENTS_INDEXES
 )
 
 # Load environment variables
@@ -27,6 +29,7 @@ EMAILS_COLLECTION = 'emails'
 CONTACTS_COLLECTION = 'contacts'
 CONTACT_SYNC_LOG_COLLECTION = 'contact_sync_log'
 DRAFTS_COLLECTION = 'drafts'
+CALENDAR_EVENTS_COLLECTION = 'calendar_events'
 
 # MongoDB connection options
 MONGO_OPTIONS = {
@@ -70,12 +73,21 @@ def init_collections(db):
             **DRAFTS_SCHEMA
         )
         print(f"Created collection: {DRAFTS_COLLECTION}")
-    
+
+    # Initialize calendar events collection
+    if CALENDAR_EVENTS_COLLECTION not in db.list_collection_names():
+        db.create_collection(
+            CALENDAR_EVENTS_COLLECTION,
+            **CALENDAR_EVENTS_SCHEMA
+        )
+        print(f"Created collection: {CALENDAR_EVENTS_COLLECTION}")
+
     # Create indexes
     conversations = db[CONVERSATIONS_COLLECTION]
     insights = db[INSIGHTS_COLLECTION]
     emails = db[EMAILS_COLLECTION]
     drafts = db[DRAFTS_COLLECTION]
+    calendar_events = db[CALENDAR_EVENTS_COLLECTION]
     
     for index_config in CONVERSATIONS_INDEXES:
         conversations.create_index(**index_config)
@@ -87,4 +99,7 @@ def init_collections(db):
         emails.create_index(**index_config)
     
     for index_config in DRAFTS_INDEXES:
-        drafts.create_index(**index_config) 
+        drafts.create_index(**index_config)
+
+    for index_config in CALENDAR_EVENTS_INDEXES:
+        calendar_events.create_index(**index_config)

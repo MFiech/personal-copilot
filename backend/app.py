@@ -38,6 +38,7 @@ from models.thread import Thread
 from prompts import email_summarization_prompt
 from bson import ObjectId
 from models.email import Email
+from models.calendar_event import CalendarEvent
 from utils.date_parser import parse_email_date
 from pydantic import SecretStr
 from services.contact_service import ContactSyncService
@@ -1159,39 +1160,124 @@ def chat():
                             "emails": []
                         }
                 elif raw_tool_results and raw_tool_results.get('source_type') == 'google-calendar':
-                    # Process calendar events for database storage
+                    # Process calendar events for database storage (like emails)
                     print(f"[DEBUG] Processing calendar results for database storage")
                     calendar_data = raw_tool_results.get('data', {})
-                    
+
                     # Handle both creation and search responses
-                    events = []
+                    raw_events = []
                     if calendar_data:
                         if 'created_event' in calendar_data:
                             # This is a creation response - wrap the single event in a list
                             created_event = calendar_data.get('created_event', {})
                             if created_event:
-                                events = [created_event]
+                                raw_events = [created_event]
                             print(f"[DEBUG] Processing calendar creation response with 1 created event")
                         elif 'data' in calendar_data and isinstance(calendar_data['data'], dict) and 'items' in calendar_data['data']:
                             # Nested items in calendar_data.data.items (Composio structure) - for database storage
-                            events = calendar_data['data'].get('items', [])
-                            print(f"[DEBUG] Processing calendar search response with {len(events)} events (nested items for DB)")
+                            raw_events = calendar_data['data'].get('items', [])
+                            print(f"[DEBUG] Processing calendar search response with {len(raw_events)} events (nested items for DB)")
                         elif 'items' in calendar_data:
                             # Direct items in calendar_data.items (legacy compatibility) - for database storage
-                            events = calendar_data.get('items', [])
-                            print(f"[DEBUG] Processing calendar search response with {len(events)} events (direct items for DB)")
+                            raw_events = calendar_data.get('items', [])
+                            print(f"[DEBUG] Processing calendar search response with {len(raw_events)} events (direct items for DB)")
                         else:
                             # Fallback: check if calendar_data itself is an event object
                             if isinstance(calendar_data, dict) and 'id' in calendar_data:
-                                events = [calendar_data]
+                                raw_events = [calendar_data]
                                 print(f"[DEBUG] Processing single calendar event as fallback")
-                    
-                    # For calendar events, we store the full event objects (not just IDs like emails)
-                    assistant_tool_results = {
-                        "source_type": "google-calendar", 
-                        "calendar_events": events
-                    }
-                    print(f"[DEBUG] Processed {len(events)} calendar events for conversation storage")
+
+                    if raw_events and len(raw_events) > 0:
+                        print(f"[DEBUG] Processing {len(raw_events)} raw calendar events...")
+
+                        # Process each raw calendar event and create CalendarEvent model instances
+                        processed_events = []
+                        internal_event_ids_for_conversation = []
+
+                        for raw_event in raw_events:
+                            try:
+                                # Extract Google Calendar event data
+                                google_event_id = raw_event.get('id')
+                                if not google_event_id:
+                                    print(f"[DEBUG] Skipping event with no Google ID: {raw_event}")
+                                    continue
+
+                                # Extract event data from Google Calendar format
+                                summary = raw_event.get('summary', 'Untitled Event')
+                                description = raw_event.get('description', '')
+                                start_time = raw_event.get('start', {})
+                                end_time = raw_event.get('end', {})
+                                status = raw_event.get('status', 'confirmed')
+                                location = raw_event.get('location', '')
+                                recurring_event_id = raw_event.get('recurringEventId')
+                                google_updated = raw_event.get('updated')
+
+                                # Process attendees
+                                attendees = []
+                                raw_attendees = raw_event.get('attendees', [])
+                                for attendee in raw_attendees:
+                                    attendees.append({
+                                        'email': attendee.get('email', ''),
+                                        'displayName': attendee.get('displayName', ''),
+                                        'responseStatus': attendee.get('responseStatus', 'needsAction')
+                                    })
+
+                                # Create CalendarEvent model instance
+                                calendar_event = CalendarEvent(
+                                    google_event_id=google_event_id,
+                                    recurring_event_id=recurring_event_id,
+                                    summary=summary,
+                                    description=description,
+                                    start_time=start_time,
+                                    end_time=end_time,
+                                    attendees=attendees,
+                                    status=status,
+                                    location=location,
+                                    google_updated=google_updated
+                                )
+
+                                # Save to database (using upsert to handle updates)
+                                calendar_event.save()
+                                print(f"[DEBUG] Saved calendar event to database: {calendar_event.internal_event_id} - Summary: {summary}")
+
+                                # Create dict for frontend use (full object for immediate display)
+                                event_dict = {
+                                    'internal_event_id': calendar_event.internal_event_id,
+                                    'google_event_id': google_event_id,
+                                    'recurring_event_id': recurring_event_id,
+                                    'summary': summary,
+                                    'description': description,
+                                    'start': start_time,
+                                    'end': end_time,
+                                    'attendees': attendees,
+                                    'status': status,
+                                    'location': location,
+                                    'updated': google_updated
+                                }
+
+                                processed_events.append(event_dict)
+                                internal_event_ids_for_conversation.append(calendar_event.internal_event_id)
+
+                            except Exception as e:
+                                print(f"[DEBUG] Error processing calendar event {raw_event.get('id', 'unknown')}: {str(e)}")
+                                import traceback
+                                print(f"[DEBUG] Traceback: {traceback.format_exc()}")
+                                continue
+
+                        # Set the variables for use in the rest of the function
+                        raw_calendar_events = processed_events  # For frontend response
+                        assistant_tool_results = {
+                            "source_type": "google-calendar",
+                            "calendar_events": internal_event_ids_for_conversation  # Only internal IDs for conversation storage
+                        }
+                        print(f"[DEBUG] Processed {len(processed_events)} calendar events. Created {len(internal_event_ids_for_conversation)} internal event IDs for conversation.")
+                    else:
+                        print(f"[DEBUG] No calendar events extracted. raw_events: {raw_events}")
+                        raw_calendar_events = []
+                        assistant_tool_results = {
+                            "source_type": "google-calendar",
+                            "calendar_events": []
+                        }
                 elif raw_tool_results and raw_tool_results.get('source_type') == 'contact':
                     # For contact tool results, structure the data for prompt building
                     contact_data = raw_tool_results.get('data', {}) if isinstance(raw_tool_results, dict) else {}
@@ -1928,43 +2014,36 @@ def chat():
             print(f"[DEBUG] Added {len(sorted_emails)} email objects and {len(email_tiles)} email tiles to response")
         
         # If we have calendar results, add them in the proper format for the frontend
-        elif raw_tool_results and raw_tool_results.get('source_type') == 'google-calendar':
-            print(f"[DEBUG] Processing calendar results for frontend")
-            calendar_data = raw_tool_results.get('data', {})
-            
-            print(f"[DEBUG] Calendar data type: {type(calendar_data)}")
-            print(f"[DEBUG] Calendar data keys: {list(calendar_data.keys()) if isinstance(calendar_data, dict) else 'Not a dict'}")
-            print(f"[DEBUG] Calendar data content (first 500 chars): {str(calendar_data)[:500] if calendar_data else 'None'}")
-            
-            # Handle both creation and search responses for frontend
-            events = []
-            if calendar_data:
-                if 'created_event' in calendar_data:
-                    # This is a creation response - wrap the single event in a list
-                    created_event = calendar_data.get('created_event', {})
-                    if created_event:
-                        events = [created_event]
-                    print(f"[DEBUG] Processing calendar creation response for frontend with 1 created event")
-                elif 'items' in calendar_data:
-                    # Direct items in calendar_data
-                    events = calendar_data.get('items', [])
-                    print(f"[DEBUG] Processing calendar search response for frontend with {len(events)} events (direct items)")
-                elif 'data' in calendar_data and isinstance(calendar_data['data'], dict) and 'items' in calendar_data['data']:
-                    # Nested items in calendar_data.data.items (Composio structure)
-                    events = calendar_data['data'].get('items', [])
-                    print(f"[DEBUG] Processing calendar search response for frontend with {len(events)} events (nested items)")
-                else:
-                    # Fallback: check if calendar_data itself is an event object
-                    if isinstance(calendar_data, dict) and 'id' in calendar_data:
-                        events = [calendar_data]
-                        print(f"[DEBUG] Processing single calendar event for frontend as fallback")
-                    else:
-                        print(f"[DEBUG] Calendar data structure not recognized - no 'items', 'created_event', or 'id' found")
-            
+        elif 'raw_calendar_events' in locals() and raw_calendar_events is not None:
+            print(f"[DEBUG] Processing calendar events for frontend response")
+
+            # Create tile data for each calendar event
+            calendar_tiles = []
+            for event in raw_calendar_events:
+                tile_data = {
+                    "internal_event_id": event.get('internal_event_id'),
+                    "google_event_id": event.get('google_event_id'),
+                    "type": "calendar_event",
+                    "summary": event.get('summary'),
+                    "description": event.get('description'),
+                    "start": event.get('start'),
+                    "end": event.get('end'),
+                    "attendees": event.get('attendees'),
+                    "status": event.get('status'),
+                    "location": event.get('location'),
+                    "updated": event.get('updated'),
+                    "recurring_event_id": event.get('recurring_event_id'),
+                    # Include any other event fields the frontend might need
+                    **{k: v for k, v in event.items() if k not in ['internal_event_id', 'google_event_id', 'summary', 'description', 'start', 'end', 'attendees', 'status', 'location', 'updated', 'recurring_event_id']}
+                }
+                calendar_tiles.append(tile_data)
+
+            # Add both tile data and raw calendar data to the response
             response_data['tool_results'] = {
-                'calendar_events': events
+                'calendar_events': raw_calendar_events,  # Keep the raw event data for compatibility
+                'tiles': calendar_tiles                  # Add tile data for the frontend
             }
-            print(f"[DEBUG] Added {len(events)} calendar events to response")
+            print(f"[DEBUG] Added {len(raw_calendar_events)} calendar events and {len(calendar_tiles)} calendar tiles to response")
         
         # If we have contact results, add them in the proper format for the frontend
         elif raw_tool_results and raw_tool_results.get('source_type') == 'contact':
@@ -3928,6 +4007,53 @@ def get_draft_summary(draft_id):
         
     except Exception as e:
         print(f"[ERROR] Get draft summary error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/calendar_events/<internal_event_id>', methods=['GET'])
+def get_calendar_event(internal_event_id):
+    """Get calendar event by internal event ID"""
+    try:
+        if not internal_event_id:
+            return jsonify({'error': 'Missing internal_event_id parameter'}), 400
+
+        # Get calendar event from database by internal ID
+        calendar_event = CalendarEvent.get_by_internal_id(internal_event_id)
+
+        if not calendar_event:
+            return jsonify({
+                'success': False,
+                'error': f'Calendar event not found: {internal_event_id}'
+            }), 404
+
+        # Return calendar event data in format compatible with frontend
+        event_data = calendar_event.to_dict()
+
+        # Convert to frontend-compatible format (matching Google Calendar structure)
+        response_data = {
+            'internal_event_id': event_data['internal_event_id'],
+            'id': event_data['google_event_id'],  # Frontend expects 'id' field
+            'summary': event_data['summary'],
+            'description': event_data['description'],
+            'start': event_data['start_time'],
+            'end': event_data['end_time'],
+            'attendees': event_data['attendees'],
+            'status': event_data['status'],
+            'location': event_data['location'],
+            'updated': event_data['google_updated'],
+            'recurringEventId': event_data['recurring_event_id'],
+            'created_at': event_data['created_at'],
+            'updated_at': event_data['updated_at']
+        }
+
+        return jsonify({
+            'success': True,
+            'event': response_data
+        }), 200
+
+    except Exception as e:
+        print(f"[ERROR] Exception in get_calendar_event: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/health', methods=['GET'])

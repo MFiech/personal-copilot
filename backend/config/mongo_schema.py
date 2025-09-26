@@ -894,4 +894,123 @@ DRAFTS_INDEXES = [
         "keys": [("updated_at", -1)],
         "name": "updated_at_idx"
     }
-] 
+]
+
+# Schema for calendar events collection
+CALENDAR_EVENTS_SCHEMA = {
+    "validator": {
+        "$jsonSchema": {
+            "bsonType": "object",
+            "required": ["internal_event_id", "google_event_id", "summary", "start_time", "end_time", "status"],
+            "properties": {
+                "internal_event_id": {
+                    "bsonType": "string",
+                    "description": "Unique internal identifier for the calendar event"
+                },
+                "google_event_id": {
+                    "bsonType": "string",
+                    "description": "Google Calendar event ID"
+                },
+                "recurring_event_id": {
+                    "bsonType": ["string", "null"],
+                    "description": "Google Calendar recurring event ID for recurring events"
+                },
+                "summary": {
+                    "bsonType": "string",
+                    "description": "Calendar event title/summary"
+                },
+                "description": {
+                    "bsonType": ["string", "null"],
+                    "description": "Calendar event description"
+                },
+                "start_time": {
+                    "bsonType": ["string", "object"],
+                    "description": "Event start time (ISO string or Google Calendar time object)"
+                },
+                "end_time": {
+                    "bsonType": ["string", "object"],
+                    "description": "Event end time (ISO string or Google Calendar time object)"
+                },
+                "attendees": {
+                    "bsonType": "array",
+                    "description": "List of event attendees",
+                    "items": {
+                        "bsonType": "object",
+                        "properties": {
+                            "email": {
+                                "bsonType": "string",
+                                "description": "Attendee's email address"
+                            },
+                            "displayName": {
+                                "bsonType": ["string", "null"],
+                                "description": "Attendee's display name"
+                            },
+                            "responseStatus": {
+                                "bsonType": ["string", "null"],
+                                "description": "Attendee's response status (accepted, declined, tentative, needsAction)"
+                            }
+                        }
+                    }
+                },
+                "status": {
+                    "bsonType": "string",
+                    "description": "Event status (confirmed, tentative, cancelled)"
+                },
+                "location": {
+                    "bsonType": ["string", "null"],
+                    "description": "Event location (physical address or meeting link)"
+                },
+                "google_updated": {
+                    "bsonType": ["string", "null"],
+                    "description": "Google Calendar last updated timestamp"
+                },
+                "created_at": {
+                    "bsonType": "int",
+                    "description": "Creation timestamp"
+                },
+                "updated_at": {
+                    "bsonType": "int",
+                    "description": "Last update timestamp"
+                }
+            }
+        }
+    }
+}
+
+# Index configurations for calendar events collection
+CALENDAR_EVENTS_INDEXES = [
+    {
+        "keys": [("internal_event_id", 1)],
+        "name": "internal_event_id_idx",
+        "unique": True
+    },
+    {
+        "keys": [("google_event_id", 1)],
+        "name": "google_event_id_idx",
+        "unique": True
+    },
+    {
+        "keys": [("recurring_event_id", 1)],
+        "name": "recurring_event_id_idx"
+    },
+    {
+        "keys": [("start_time", 1)],
+        "name": "start_time_idx"
+    },
+    {
+        "keys": [("end_time", 1)],
+        "name": "end_time_idx"
+    },
+    {
+        "keys": [("status", 1)],
+        "name": "status_idx"
+    },
+    {
+        "keys": [("created_at", -1)],
+        "name": "created_at_idx"
+    },
+    {
+        "keys": [("updated_at", -1)],
+        "name": "updated_at_idx"
+    }
+]
