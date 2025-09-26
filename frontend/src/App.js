@@ -1397,12 +1397,52 @@ function App() {
     }
   }, [anchoredItem, emailSidebar.open, emailSidebar.contentType, emailSidebar.draft?.draft_id]);
 
+  // Handle calendar event + draft combined view
+  useEffect(() => {
+    // Check if we have a calendar draft created that relates to an anchored calendar event
+    const latestMessage = messages[messages.length - 1];
+    if (latestMessage?.drafts) {
+      const calendarDraft = latestMessage.drafts.find(draft =>
+        draft.draft_type === 'calendar_event' &&
+        draft.original_event_id &&
+        anchoredItem?.type === 'calendar_event' &&
+        anchoredItem?.data?.id === draft.original_event_id
+      );
+
+      if (calendarDraft && emailSidebar.contentType === 'calendar-event') {
+        console.log('[App.js] Calendar draft created for anchored event, switching to combined view');
+        setEmailSidebar(prev => ({
+          ...prev,
+          draft: calendarDraft,
+          contentType: 'calendar-combined'
+        }));
+      }
+    }
+  }, [messages, anchoredItem, emailSidebar.contentType]);
+
   // Update URL when anchor changes
   const handleAnchorChange = (anchorData) => {
     setAnchoredItem(anchorData);
     setDraftValidation(null);
+
+    // Handle calendar event anchoring - open sidebar
+    if (anchorData && anchorData.type === 'calendar_event') {
+      console.log('[App.js] Calendar event anchored, opening sidebar:', anchorData);
+      // On mobile, close the drawer sidebar to make room for calendar sidebar
+      if (isMobile && drawerOpen) {
+        setDrawerOpen(false);
+      }
+
+      setEmailSidebar({
+        open: true,
+        calendarEvent: anchorData.data,
+        contentType: 'calendar-event',
+        loading: false,
+        error: null
+      });
+    }
     // If anchoring a draft, fetch its validation status
-    if (anchorData && anchorData.type === 'draft') {
+    else if (anchorData && anchorData.type === 'draft') {
       fetchDraftValidation(anchorData.id);
     }
     // Update the URL query params
@@ -2078,6 +2118,7 @@ function App() {
             gmailThreadId={emailSidebar.gmailThreadId}
             pmCopilotThreadId={emailSidebar.pmCopilotThreadId}
             draft={emailSidebar.draft}
+            calendarEvent={emailSidebar.calendarEvent}
             loading={emailSidebar.loading}
             error={emailSidebar.error}
             contentType={emailSidebar.contentType}

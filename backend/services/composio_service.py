@@ -1469,7 +1469,102 @@ class ComposioService:
             return {"data": response.get("data", {})}
         else:
             return {"error": response.get("error") if response else "No response received"}
+
+    def patch_calendar_event(self, event_id, calendar_id="primary", **updates):
+        """
+        Patch (partially update) a calendar event using GOOGLECALENDAR_PATCH_EVENT.
+        Only sends fields that need to be changed, more efficient than PUT.
+        
+        Args:
+            event_id: Google Calendar event ID
+            calendar_id: Calendar ID (usually "primary")
+            **updates: Dictionary of fields to update (summary, start_time, end_time, location, description, attendees)
+        
+        Returns:
+            dict: Response with success/error information
+        """
+        print(f"🔴 [COMPOSIO] Starting patch_calendar_event for event_id: {event_id}, calendar_id: {calendar_id}")
+        print(f"🔴 [COMPOSIO] Updates to apply: {updates}")
+        
+        # Build parameters with only the fields that need updating
+        params = {
+            "calendarId": calendar_id,  # GOOGLECALENDAR_PATCH_EVENT expects camelCase
+            "eventId": event_id         # But eventId can be camelCase
+        }
+        
+        # Add only the fields that are provided for updating
+        if "summary" in updates and updates["summary"]:
+            params["summary"] = updates["summary"]
+        if "start_time" in updates and updates["start_time"]:
+            params["start_time"] = updates["start_time"]  # Composio expects start_time
+        if "end_time" in updates and updates["end_time"]:
+            params["end_time"] = updates["end_time"]      # Composio expects end_time
+        if "location" in updates and updates["location"]:
+            params["location"] = updates["location"]
+        if "description" in updates and updates["description"]:
+            params["description"] = updates["description"]
+        if "attendees" in updates and updates["attendees"]:
+            # Convert attendees to proper format
+            if isinstance(updates["attendees"], list):
+                attendee_emails = []
+                for att in updates["attendees"]:
+                    if isinstance(att, dict) and "email" in att:
+                        attendee_emails.append(att["email"])
+                    elif isinstance(att, str):
+                        attendee_emails.append(att)
+                params["attendees"] = [{"email": email} for email in attendee_emails]
             
+        print(f"🔴 [COMPOSIO] Patch params: {params}")
+        print(f"🔴 [COMPOSIO] Using action: GOOGLECALENDAR_PATCH_EVENT")
+        
+        response = self._execute_action(
+            action=Action.GOOGLECALENDAR_PATCH_EVENT,
+            params=params
+        )
+        
+        self._log_composio_response("calendar_patch", response, "PATCH_EVENT")
+        
+        if response and response.get("successful"):
+            print(f"🔴 [COMPOSIO] Patch successful")
+            return {"data": response.get("data", {})}
+        else:
+            error_msg = response.get("error") if response else "No response received"
+            print(f"🔴 [COMPOSIO] Patch failed: {error_msg}")
+            return {"error": error_msg}
+
+    def get_calendar_event(self, event_id, calendar_id="primary"):
+        """
+        Get a single calendar event using GOOGLECALENDAR_GET_EVENT.
+
+        Args:
+            event_id: Google Calendar event ID
+            calendar_id: Calendar ID (usually "primary")
+
+        Returns:
+            dict: Response with event data or error information
+        """
+        print(f"🔴 [COMPOSIO] Getting calendar event: event_id={event_id}, calendar_id={calendar_id}")
+
+        params = {
+            "calendarId": calendar_id,
+            "eventId": event_id
+        }
+
+        response = self._execute_action(
+            action=Action.GOOGLECALENDAR_GET_EVENT,
+            params=params
+        )
+
+        self._log_composio_response("calendar_get_event", response, "GET_EVENT")
+
+        if response and response.get("successful"):
+            print(f"🔴 [COMPOSIO] Get event successful")
+            return {"successful": True, "data": response.get("data", {})}
+        else:
+            error_msg = response.get("error") if response else "No response received"
+            print(f"🔴 [COMPOSIO] Get event failed: {error_msg}")
+            return {"successful": False, "error": error_msg}
+
     def delete_calendar_event(self, event_id, calendar_id="primary"):
         """
         Delete a calendar event using proper schema structure.
