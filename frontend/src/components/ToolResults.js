@@ -16,6 +16,10 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
   // Thread data state for indicators
   const [threadData, setThreadData] = useState(null);
   const [loadingThreads, setLoadingThreads] = useState(false);
+  
+  // Calendar events state
+  const [calendarEventsData, setCalendarEventsData] = useState({});
+  const [loadingCalendarEvents, setLoadingCalendarEvents] = useState(false);
 
   // Debug pagination props
   console.log('[ToolResults] Pagination props:', {
@@ -32,6 +36,13 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
       fetchThreadData();
     }
   }, [results?.emails]);
+
+  // Fetch calendar events when they're detected as internal IDs
+  useEffect(() => {
+    if (results?.calendar_events && results.calendar_events.length > 0) {
+      fetchCalendarEventsData();
+    }
+  }, [results?.calendar_events]);
 
   const fetchThreadData = async () => {
     if (!results?.emails || results.emails.length === 0) return;
@@ -54,6 +65,63 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
       console.error('[ToolResults] Error fetching thread data:', error);
     } finally {
       setLoadingThreads(false);
+    }
+  };
+
+  const fetchCalendarEventsData = async () => {
+    if (!results?.calendar_events || results.calendar_events.length === 0) return;
+    
+    // Check if calendar_events are already hydrated (have summary field) or are internal IDs
+    const firstEvent = results.calendar_events[0];
+    if (firstEvent && typeof firstEvent === 'object' && firstEvent.summary) {
+      // Already hydrated, no need to fetch
+      console.log('[ToolResults] Calendar events already hydrated');
+      return;
+    }
+    
+    setLoadingCalendarEvents(true);
+    try {
+      console.log('[ToolResults] Fetching calendar events data for', results.calendar_events.length, 'events');
+      
+      // Fetch each calendar event by internal ID
+      const eventPromises = results.calendar_events.map(async (internalEventId) => {
+        try {
+          const response = await fetch(`http://localhost:5001/calendar_events/${internalEventId}`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' }
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success && data.event) {
+              return { internalEventId, event: data.event };
+            }
+          }
+          console.warn(`[ToolResults] Failed to fetch calendar event ${internalEventId}`);
+          return { internalEventId, event: null };
+        } catch (error) {
+          console.error(`[ToolResults] Error fetching calendar event ${internalEventId}:`, error);
+          return { internalEventId, event: null };
+        }
+      });
+      
+      const eventResults = await Promise.all(eventPromises);
+      
+      // Create a map of internal ID to event data
+      const eventsMap = {};
+      eventResults.forEach(({ internalEventId, event }) => {
+        if (event) {
+          eventsMap[internalEventId] = event;
+        }
+      });
+      
+      setCalendarEventsData(eventsMap);
+      console.log('[ToolResults] Calendar events data fetched:', Object.keys(eventsMap).length, 'events');
+      
+    } catch (error) {
+      console.error('[ToolResults] Error fetching calendar events data:', error);
+    } finally {
+      setLoadingCalendarEvents(false);
     }
   };
 
@@ -708,66 +776,93 @@ const ToolResults = ({ results, threadId, messageId, onUpdate, onNewMessageRecei
         
         {calendar_events && calendar_events.length > 0 && (
           <div className="veyra-section">
+            {loadingCalendarEvents && (
+              <div className="loading-calendar-events">
+                Loading calendar events...
+              </div>
+            )}
             <div className="veyra-grid">
-              {calendar_events.map((event, index) => (
-                <ToolTile 
-                  key={event.id || index}
-                  type="event"
-                  data={event} 
-                  threadId={threadId}
-                  messageId={messageId}
-                  isSelected={selectedEvents.includes(event.id)}
-                  onSelect={() => {
-                    const eventId = event.id;
-                    setSelectedEvents(prev => 
-                      prev.includes(eventId) 
-                        ? prev.filter(id => id !== eventId)
-                        : [...prev, eventId]
-                    );
-                  }}
-                  onDelete={async (eventId) => {
-                    console.log('Delete calendar event:', eventId);
-                    
-                    try {
-                      const response = await fetch('http://localhost:5001/delete_calendar_event', {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                          event_id: eventId,
-                          thread_id: threadId,
-                          message_id: messageId
-                        })
-                      });
-
-                      const result = await response.json();
+              {calendar_events.map((eventOrId, index) => {
+                // Determine if this is an internal ID (string) or hydrated event (object)
+                const isInternalId = typeof eventOrId === 'string';
+                const eventData = isInternalId ? calendarEventsData[eventOrId] : eventOrId;
+                
+                // Skip rendering if we're still loading and this is an internal ID
+                if (isInternalId && !eventData && loadingCalendarEvents) {
+                  return (
+                    <div key={eventOrId} className="calendar-event-loading">
+                      Loading event...
+                    </div>
+                  );
+                }
+                
+                // Skip rendering if we couldn't fetch the event data
+                if (isInternalId && !eventData) {
+                  return null;
+                }
+                
+                const event = eventData || eventOrId;
+                const eventId = event.id || event.internal_event_id;
+                
+                return (
+                  <ToolTile 
+                    key={eventId || index}
+                    type="event"
+                    data={event} 
+                    threadId={threadId}
+                    messageId={messageId}
+                    isSelected={selectedEvents.includes(eventId)}
+                    onSelect={() => {
+                      setSelectedEvents(prev => 
+                        prev.includes(eventId) 
+                          ? prev.filter(id => id !== eventId)
+                          : [...prev, eventId]
+                      );
+                    }}
+                    onDelete={async (eventId) => {
+                      console.log('Delete calendar event:', eventId);
                       
-                      if (result.success) {
-                        if (showSnackbar) {
-                          showSnackbar('Calendar event deleted successfully', 'success');
+                      try {
+                        const response = await fetch('http://localhost:5001/delete_calendar_event', {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                          },
+                          body: JSON.stringify({
+                            event_id: eventId,
+                            thread_id: threadId,
+                            message_id: messageId
+                          })
+                        });
+
+                        const result = await response.json();
+                        
+                        if (result.success) {
+                          if (showSnackbar) {
+                            showSnackbar('Calendar event deleted successfully', 'success');
+                          }
+                          // Remove the event from the UI by calling onUpdate to refresh
+                          if (onUpdate) {
+                            onUpdate();
+                          }
+                        } else {
+                          console.error('Failed to delete calendar event:', result.error);
+                          if (showSnackbar) {
+                            showSnackbar(`Failed to delete event: ${result.error}`, 'error');
+                          }
                         }
-                        // Remove the event from the UI by calling onUpdate to refresh
-                        if (onUpdate) {
-                          onUpdate();
-                        }
-                      } else {
-                        console.error('Failed to delete calendar event:', result.error);
+                      } catch (error) {
+                        console.error('Error deleting calendar event:', error);
                         if (showSnackbar) {
-                          showSnackbar(`Failed to delete event: ${result.error}`, 'error');
+                          showSnackbar('Error deleting calendar event', 'error');
                         }
                       }
-                    } catch (error) {
-                      console.error('Error deleting calendar event:', error);
-                      if (showSnackbar) {
-                        showSnackbar('Error deleting calendar event', 'error');
-                      }
-                    }
-                  }}
-                  isAnchored={anchoredItem?.id === event.id}
-                  onAnchor={() => handleAnchorSelect(event, 'calendar_event')}
-                />
-              ))}
+                    }}
+                    isAnchored={anchoredItem?.id === eventId}
+                    onAnchor={() => handleAnchorSelect(event, 'calendar_event')}
+                  />
+                );
+              })}
             </div>
           </div>
         )}
